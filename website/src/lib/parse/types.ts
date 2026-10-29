@@ -13,6 +13,7 @@ export interface Contribution {
   stats?: Stats;
   zones?: Record<string, string>;
   items?: Record<string, string>;
+  utcOffset?: number; // seconds the PC clock is ahead of UTC (our addon saves it)
 }
 
 // Where a file was found: WTF\Account\<account>\<realm>\<character>\SavedVariables\<file>

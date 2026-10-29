@@ -242,17 +242,30 @@ function brannocJT(rtsEnd: number, level: number, deathsAt: number[]) {
   } as V;
 }
 
+// As addon/FORMAT.md lays it out: keyed entries with the file name each
+// screenshot should get (UTC here, as utcOffset is 0).
+function shotName(t: number): string {
+  const d = new Date(t * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `WoWScrnShot_${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCFullYear() % 100)}_${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`;
+}
+
 function brannocJF(rtsEnd: number, dingAt: Record<number, number>) {
+  const shot = (t: number, kind: string, detail: Record<string, V>, place: Record<string, V>) => ({
+    t, kind, detail, shot: shotName(t), ok: true, hiddenUI: true, ...place,
+  });
   return {
     schemaVersion: 1,
     addon: "1.0.0",
-    char: { guid: "Player-0000-00SAMPLE", name: "Brannoc", realm: "Sample Realm", class: "PALADIN", race: "Dwarf" },
+    utcOffset: 0,
+    char: { guid: "Player-0000-00SAMPLE", name: "Brannoc", realm: "SampleRealm", class: "PALADIN", race: "Dwarf", faction: "Alliance", level: 8 },
     screenshots: [
-      [dingAt[3] + 1, "level", 1426, 0.41, 0.55, { level: 3 }],
-      [rtsEnd - 149, "epic", null, null, null, { item: link(9490, "Sample Epic Gizmo", "a335ee"), quality: 4 }],
-      [rtsEnd - 145, "dungeon", null, null, null, { instance: "Gnomeregan", instanceID: 90 }],
+      shot(dingAt[3] + 1, "level", { level: 3 }, { mapID: 1426, x: 0.41, y: 0.55, zone: "Dun Morogh", level: 3 }),
+      shot(rtsEnd - 149, "epic", { item: "item:9490::::::::8:::::", itemID: 9490, name: "Sample Epic Gizmo", quality: 4 }, { mapID: 226, zone: "Gnomeregan", level: 8 }),
+      shot(rtsEnd - 145, "dungeon", { instance: "Gnomeregan", instanceID: 90, boss: "Sample Boss", via: "encounter" }, { mapID: 226, zone: "Gnomeregan", level: 8 }),
     ],
-    notes: [[START + 1500, "Made it out of Coldridge Valley!", 1426, 0.46, 0.5, "Dun Morogh"]],
+    notes: [{ t: START + 1500, text: "Made it out of Coldridge Valley!", mapID: 1426, x: 0.46, y: 0.5, zone: "Dun Morogh", level: 2 }],
+    paused: false,
   } as V;
 }
 

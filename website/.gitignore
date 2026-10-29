@@ -3,3 +3,8 @@ dist/
 .wrangler/
 .dev.vars
 *.tsbuildinfo
+
+# The made-up sample account is meant to be committed, though the root
+# .gitignore keeps real WTF folders and saved files out.
+!/samples/WTF/
+!/samples/**/SavedVariables/

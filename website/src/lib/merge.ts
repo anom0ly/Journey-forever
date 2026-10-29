@@ -181,6 +181,7 @@ export function buildJourney(parts: Contribution[], now = Math.floor(Date.now() 
     stats: jt?.stats ?? {},
     zones,
     items: { ...rts?.items, ...jf?.items },
+    ...(jf?.utcOffset !== undefined ? { utcOffset: jf.utcOffset } : {}),
     updatedAt: now,
   };
 }
@@ -235,6 +236,7 @@ export function mergeJourneys(old: Journey | undefined, next: Journey): Journey 
     stats,
     zones: { ...old.zones, ...next.zones },
     items: { ...old.items, ...next.items },
+    ...((next.utcOffset ?? old.utcOffset) !== undefined ? { utcOffset: next.utcOffset ?? old.utcOffset } : {}),
   };
 }
 

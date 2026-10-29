@@ -134,3 +134,21 @@ describe("mergeJourneys", () => {
     expect(merged.events).toHaveLength(full.events.length);
   });
 });
+
+describe("the addon's own sample file", () => {
+  it("reads addon/samples/JourneyForever.lua", async () => {
+    const { readFileSync } = await import("node:fs");
+    const text = readFileSync(new URL("../../addon/samples/JourneyForever.lua", import.meta.url), "utf8");
+    const { journeys, notes } = readUpload([{ path: "ACC/TestRealm/Testchar/SavedVariables/JourneyForever.lua", text }]);
+    expect(notes).toEqual([]);
+    const j = journeys[0];
+    expect(j.character).toMatchObject({ name: "Testchar", className: "WARRIOR", race: "Human", level: 24 });
+    expect(j.sources.find((s) => s.addon === "jf")).toMatchObject({ status: "ok", version: "1.0.0" });
+    const shots = j.events.filter((e) => e.k === "shot");
+    expect(shots.length).toBeGreaterThan(2);
+    expect(shots[0]).toMatchObject({ kind: "level", c: 0, x: -11015, y: 854, shot: "WoWScrnShot_110426_195506" });
+    const epic = shots.find((e) => e.kind === "epic")!;
+    expect((epic.detail as { item: unknown }).item).toMatchObject({ id: 5196, name: "Smite's Reaver", quality: 4 });
+    expect(j.events.filter((e) => e.k === "note")[0]).toMatchObject({ text: expect.stringContaining("Stitches"), zone: "Duskwood" });
+  });
+});

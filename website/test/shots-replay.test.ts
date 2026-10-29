@@ -60,3 +60,25 @@ describe("replay clock", () => {
     expect(here.c).toBe(0);
   });
 });
+
+describe("matching by the name the addon logged", () => {
+  it("prefers the exact file name and reads times with the saved UTC offset", () => {
+    const j = readUpload(sampleFiles()).journeys.find((x) => x.character.name === "Brannoc")!;
+    j.utcOffset = -7 * 3600; // a PC seven hours behind UTC
+    const shot = j.events.find((e) => e.k === "shot")!;
+    shot.shot = "WoWScrnShot_010199_000000";
+    const local = shot.t + j.utcOffset; // the PC's wall clock, as the file name has it
+    const d = new Date(local * 1000);
+    const p = (n: number) => String(n).padStart(2, "0");
+    const byTime = `WoWScrnShot_${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCFullYear() % 100)}_${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}.jpg`;
+    const m = matchShots(
+      [
+        { name: "WoWScrnShot_010199_000000.png", time: 0 },
+        { name: byTime, time: 0 },
+      ],
+      [j],
+    );
+    expect(m.matched.find((x) => x.kind === "level")?.file.name).toBe("WoWScrnShot_010199_000000.png");
+    expect(m.matched.filter((x) => x.file.name === byTime)).toHaveLength(0);
+  });
+});

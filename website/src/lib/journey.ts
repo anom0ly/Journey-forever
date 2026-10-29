@@ -147,6 +147,7 @@ export interface Journey {
   stats: Stats;
   zones: Record<string, string>; // uiMapID -> name, learned from the files
   items: Record<string, string>; // item ID -> name, from item links seen
+  utcOffset?: number; // seconds the player's PC clock is ahead of UTC, from our addon
   updatedAt: number;
 }
 
