@@ -1,0 +1,8 @@
+# Copy to .dev.vars for local work (wrangler dev reads it; it's not committed).
+# dev: /auth/login signs you in as a local "Dev" account, on localhost only.
+AUTH_MODE=dev
+# Or, with a Battle.net client from https://develop.battle.net/access/clients
+# (redirect URL http://localhost:8787/auth/callback):
+# AUTH_MODE=battlenet
+# BNET_CLIENT_ID=
+# BNET_CLIENT_SECRET=

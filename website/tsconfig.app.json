@@ -15,7 +15,7 @@
     "noUnusedParameters": true,
     "composite": true,
     "tsBuildInfoFile": "node_modules/.tmp/app.tsbuildinfo",
-    "types": []
+    "types": ["vite/client"]
   },
   "include": ["src/app", "src/lib"]
 }
