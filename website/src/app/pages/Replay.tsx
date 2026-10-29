@@ -21,6 +21,15 @@ const LAYERS = [
 ] as const;
 type LayerId = (typeof LAYERS)[number]["id"];
 
+// Which zone's map is showing, and the one fading out since `at`.
+interface Fade {
+  cur?: number;
+  prev?: number;
+  at: number;
+  busy: boolean;
+}
+const CROSSFADE_MS = 300;
+
 interface View {
   cx: number; // world y at the canvas centre (screen x)
   cy: number; // world x at the canvas centre (screen y)
@@ -54,7 +63,8 @@ function draw(
   now: number,
   layers: Set<LayerId>,
   visited: Set<number>,
-  art: (mapID: number) => HTMLCanvasElement | undefined,
+  art: (mapID: number, feathered?: boolean) => HTMLCanvasElement | undefined,
+  fade: Fade,
 ) {
   // North up: screen x runs east (world y falls), screen y runs south (world x falls).
   const sx = (y: number) => w / 2 - (y - view.cx) * view.scale;
@@ -76,25 +86,44 @@ function draw(
     const r = rect(cont);
     ctx.drawImage(contArt, r.left, r.top, r.width, r.height);
   }
-  // Zone art fades in as zones grow to fill the view: the zone under the
-  // centre on top, then the ones the character has been to.
+  // Zoomed in, the zone under the centre shows its own map, its edges
+  // fading into the continent's, which dims behind it. Moving into another
+  // zone cross-fades between the two maps.
   const cy = view.cy, cx = view.cx;
   const area = (z: MapInfo) => (z.maxX - z.minX) * (z.maxY - z.minY);
+  const shownAt = (z: MapInfo | undefined) => (z ? Math.min(1, Math.max(0, (rect(z).width / w - 0.3) / 0.2)) : 0);
   const under = zones
     .filter((z) => cy >= z.minX && cy <= z.maxX && cx >= z.minY && cx <= z.maxY)
     .sort((a, b) => area(a) - area(b))[0];
-  const near = zones
-    .map((z) => ({ z, r: rect(z) }))
-    .filter(({ r }) => r.left < w && r.left + r.width > 0 && r.top < h && r.top + r.height > 0 && r.width > w * 0.35)
-    .sort((a, b) => Number(a.z === under) - Number(b.z === under) || Number(visited.has(a.z.id)) - Number(visited.has(b.z.id)))
-    .slice(-4);
-  for (const { z, r } of near) {
-    const zoneArt = art(z.id);
-    if (!zoneArt) continue;
-    ctx.globalAlpha = Math.min(1, (r.width / w - 0.35) / 0.3);
-    ctx.drawImage(zoneArt, r.left, r.top, r.width, r.height);
+  const target = shownAt(under) > 0 ? under : undefined;
+  const clock = performance.now();
+  if (target?.id !== fade.cur) {
+    fade.prev = fade.cur;
+    fade.cur = target?.id;
+    fade.at = clock;
+  }
+  // Until its map has loaded, the new zone's fade waits.
+  const curArt = fade.cur !== undefined ? art(fade.cur, true) : undefined;
+  if (fade.cur !== undefined && !curArt) fade.at = clock;
+  const t = Math.min(1, (clock - fade.at) / CROSSFADE_MS);
+  const prevZone = fade.prev !== undefined ? zones.find((z) => z.id === fade.prev) : undefined;
+  const prevArt = prevZone && t < 1 ? art(prevZone.id, true) : undefined;
+  const dim = Math.max(curArt ? shownAt(target) * t : 0, prevArt ? shownAt(prevZone) * (1 - t) : 0);
+  if (contArt && dim > 0) {
+    ctx.fillStyle = `rgba(18, 21, 26, ${0.35 * dim})`;
+    ctx.fillRect(0, 0, w, h);
+  }
+  for (const [z, img, alpha] of [
+    [prevZone, prevArt, shownAt(prevZone) * (1 - t)],
+    [target, curArt, shownAt(target) * t],
+  ] as const) {
+    if (!z || !img || alpha <= 0) continue;
+    const r = rect(z);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(img, r.left, r.top, r.width, r.height);
   }
   ctx.globalAlpha = 1;
+  fade.busy = t < 1;
 
   // Without art (still loading, or none for this continent): the zones as
   // their world rectangles, brighter where the character has been.
@@ -284,8 +313,9 @@ function Player({ j, base }: { j: Journey; base: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 860, h: 620 });
   const drag = useRef<{ x: number; y: number; view: View } | null>(null);
-  // Bumped as each map's art arrives, to redraw with it.
-  const [, setArtLoaded] = useState(0);
+  // Bumped as each map's art arrives, and each frame of a cross-fade, to redraw.
+  const [, setFrame] = useState(0);
+  const fade = useRef<Fade>({ at: 0, busy: false });
 
   const now = toReal(clock, r);
   const here = whereAt(tracks, now);
@@ -335,7 +365,12 @@ function Player({ j, base }: { j: Journey; base: string }) {
     if (canvas.height !== Math.round(size.h * dpr)) canvas.height = Math.round(size.h * dpr);
     const ctx = canvas.getContext("2d")!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    draw(ctx, size.w, size.h, shown, j, tracks, continent, now, layers, visited, (id) => mapArt(id, () => setArtLoaded((n) => n + 1)));
+    const redraw = () => setFrame((n) => n + 1);
+    draw(ctx, size.w, size.h, shown, j, tracks, continent, now, layers, visited, (id, soft) => mapArt(id, redraw, soft), fade.current);
+    if (fade.current.busy) {
+      const id = requestAnimationFrame(redraw);
+      return () => cancelAnimationFrame(id);
+    }
   });
 
   const onWheel = (e: WheelEvent) => {
