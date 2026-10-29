@@ -18,6 +18,10 @@ export function authMode(env: Env, url: URL): AuthMode {
   return env.BNET_CLIENT_ID && env.BNET_CLIENT_SECRET ? "battlenet" : "unconfigured";
 }
 
+export function clearSessionCookie(url: URL): string {
+  return cookie(SESSION_COOKIE, "", url, 0);
+}
+
 export async function currentUser(req: Request, env: Env): Promise<User | null> {
   const token = parseCookies(req)[SESSION_COOKIE];
   if (!token) return null;
@@ -115,7 +119,7 @@ export async function handleAuth(req: Request, env: Env, url: URL): Promise<Resp
   if (url.pathname === "/auth/logout" && req.method === "POST") {
     const token = parseCookies(req)[SESSION_COOKIE];
     if (token) await env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(await sha256(token)).run();
-    return json({ ok: true }, { headers: { "set-cookie": cookie(SESSION_COOKIE, "", url, 0) } });
+    return json({ ok: true }, { headers: { "set-cookie": clearSessionCookie(url) } });
   }
 
   throw new HttpError(404, "Not found");

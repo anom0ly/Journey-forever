@@ -176,3 +176,14 @@ table.data th { color: var(--muted); font-weight: 600; font-size: 13px; }
   .tile .value { font-size: 22px; }
   .moment { grid-template-columns: 60px 1fr; }
 }
+
+/* Account page */
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 24px; }
+.card.danger-zone { border: 1px solid #5a2c26; background: #1f1716; }
+.btn.danger-outline { border-color: var(--red); color: var(--red); }
+.btn.danger-outline:hover { border-color: var(--red); background: #2a1a18; color: var(--red); }
+dialog.confirm.wide { max-width: 560px; }
+.delete-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.confirm-field { display: flex; flex-direction: column; gap: 8px; }
+.text-input { min-height: 44px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text); padding: 0 14px; font: inherit; width: 100%; }
+.notice.ok { border-color: #2f4d4b; color: var(--teal-hi); }

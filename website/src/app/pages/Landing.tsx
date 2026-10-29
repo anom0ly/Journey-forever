@@ -12,6 +12,11 @@ export function Landing({ me }: { me: Me | null }) {
           own small addon, and turns them into a recap for every character: the road you walked, replayed on the map, with every level,
           death, dungeon, quest and gold piece along the way.
         </p>
+        {params.has("deleted") && (
+          <div class="notice ok">
+            Your account is deleted. Its characters, journeys, screenshots and public links are gone, and you've been signed out.
+          </div>
+        )}
         {problem === "unconfigured" || me?.authMode === "unconfigured" ? (
           <div class="notice warn">
             Sign-in with Battle.net isn't switched on for this site yet. You can still look around with the sample journey.
