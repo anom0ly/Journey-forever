@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { describe, duration, levelAt, zoneAt } from "../../lib/insights";
 import type { JEvent, Journey } from "../../lib/journey";
 import { buildClock, continentsOf, toReal, toReplay, tracksOf, whereAt, type Track } from "../../lib/replay";
+import { zonesOn } from "../../lib/maps";
 import { continentName } from "../../lib/wow";
 import { day, time } from "../format";
 import { useJourney, type JourneySource } from "../source";
@@ -51,7 +52,7 @@ function draw(
   c: number,
   now: number,
   layers: Set<LayerId>,
-  zoneLabels: { name: string; x: number; y: number }[],
+  visited: Set<number>,
 ) {
   // North up: screen x runs east (world y falls), screen y runs south (world x falls).
   const sx = (y: number) => w / 2 - (y - view.cx) * view.scale;
@@ -60,27 +61,46 @@ function draw(
   ctx.fillStyle = "#16211C";
   ctx.fillRect(0, 0, w, h);
 
-  // A faint yard grid for scale: one line per 500 or 1000 yards.
-  const step = view.scale > 0.25 ? 500 : view.scale > 0.05 ? 1000 : 5000;
-  ctx.strokeStyle = "rgba(62, 82, 71, 0.35)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  const y0 = view.cx + (w / 2) / view.scale, y1 = view.cx - (w / 2) / view.scale;
-  for (let y = Math.floor(y1 / step) * step; y <= y0; y += step) {
-    ctx.moveTo(sx(y), 0);
-    ctx.lineTo(sx(y), h);
+  // Zones as their world rectangles (the game's own bounds, so neighbours
+  // overlap a little), brighter where the character has been.
+  const zones = zonesOn(c);
+  for (const z of zones) {
+    const left = sx(z.maxY), right = sx(z.minY), top = sy(z.maxX), bottom = sy(z.minX);
+    if (right < 0 || left > w || bottom < 0 || top > h) continue;
+    const been = visited.has(z.id);
+    ctx.fillStyle = been ? "rgba(43, 58, 51, 0.75)" : "rgba(36, 52, 44, 0.35)";
+    ctx.strokeStyle = been ? "rgba(94, 122, 106, 0.9)" : "rgba(62, 82, 71, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(left, top, right - left, bottom - top, 6);
+    ctx.fill();
+    ctx.stroke();
   }
-  const x0 = view.cy + (h / 2) / view.scale, x1 = view.cy - (h / 2) / view.scale;
-  for (let x = Math.floor(x1 / step) * step; x <= x0; x += step) {
-    ctx.moveTo(0, sy(x));
-    ctx.lineTo(w, sy(x));
+  if (!zones.length) {
+    // No zone data for this continent: a faint yard grid for scale.
+    const step = view.scale > 0.25 ? 500 : view.scale > 0.05 ? 1000 : 5000;
+    ctx.strokeStyle = "rgba(62, 82, 71, 0.35)";
+    ctx.beginPath();
+    const y0 = view.cx + (w / 2) / view.scale, y1 = view.cx - (w / 2) / view.scale;
+    for (let y = Math.floor(y1 / step) * step; y <= y0; y += step) {
+      ctx.moveTo(sx(y), 0);
+      ctx.lineTo(sx(y), h);
+    }
+    const x0 = view.cy + (h / 2) / view.scale, x1 = view.cy - (h / 2) / view.scale;
+    for (let x = Math.floor(x1 / step) * step; x <= x0; x += step) {
+      ctx.moveTo(0, sy(x));
+      ctx.lineTo(w, sy(x));
+    }
+    ctx.stroke();
   }
-  ctx.stroke();
-
   ctx.font = "13px Inter, sans-serif";
-  ctx.fillStyle = "#9DB3A6";
   ctx.textAlign = "center";
-  for (const z of zoneLabels) ctx.fillText(z.name, sx(z.y), sy(z.x) - 12);
+  for (const z of zones) {
+    const left = sx(z.maxY), right = sx(z.minY);
+    if (right - left < 70) continue;
+    ctx.fillStyle = visited.has(z.id) ? "#9DB3A6" : "#5F7468";
+    ctx.fillText(z.name, (left + right) / 2, (sy(z.maxX) + sy(z.minX)) / 2);
+  }
 
   const styles: Record<string, { color: string; dash: number[]; width: number }> = {
     w: { color: "#5FB8B4", dash: [], width: 3 },
@@ -179,17 +199,7 @@ function Player({ j, base }: { j: Journey; base: string }) {
   const tracks = useMemo(() => tracksOf(j.segments), [j]);
   const clock = useMemo(() => buildClock(tracks), [tracks]);
   const continents = useMemo(() => continentsOf(j), [j]);
-  const zoneLabels = useMemo(() => {
-    const seen = new Set<unknown>();
-    const out: { name: string; x: number; y: number; c: number }[] = [];
-    for (const e of j.events) {
-      if (e.k !== "zone" || seen.has(e.mapID) || e.c === undefined) continue;
-      seen.add(e.mapID);
-      const name = typeof e.mapID === "number" ? j.zones[e.mapID] : undefined;
-      if (name) out.push({ name, x: e.x as number, y: e.y as number, c: e.c });
-    }
-    return out;
-  }, [j]);
+  const visited = useMemo(() => new Set(j.events.filter((e) => e.k === "zone" && typeof e.mapID === "number").map((e) => e.mapID as number)), [j]);
   const ticks = useMemo(
     () =>
       j.events
@@ -259,7 +269,7 @@ function Player({ j, base }: { j: Journey; base: string }) {
     if (canvas.height !== Math.round(size.h * dpr)) canvas.height = Math.round(size.h * dpr);
     const ctx = canvas.getContext("2d")!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    draw(ctx, size.w, size.h, shown, j, tracks, continent, now, layers, zoneLabels.filter((z) => z.c === continent));
+    draw(ctx, size.w, size.h, shown, j, tracks, continent, now, layers, visited);
   });
 
   const onWheel = (e: WheelEvent) => {

@@ -13,6 +13,7 @@ import {
 import type { Journey, JEvent } from "../../lib/journey";
 import { firstSeen } from "../../lib/merge";
 import { decodeSegment, distanceByMode, km } from "../../lib/path";
+import { zonesOn } from "../../lib/maps";
 import { QUALITY_COLORS } from "../../lib/wow";
 import type { Screenshot, StoredCharacter } from "../api";
 import { classColor, date, dateTime, day, describeCharacter, plural } from "../format";
@@ -20,7 +21,7 @@ import { useJourney, type JourneySource } from "../source";
 import { PublicToggle, shareUrl } from "./Characters";
 
 function RouteThumb({ j }: { j: Journey }) {
-  const { lines, end, zones } = useMemo(() => {
+  const { lines, end, zones, rects } = useMemo(() => {
     // The continent with the most path, drawn north up.
     const byC = new Map<number, number>();
     for (const s of j.segments) byC.set(s.c, (byC.get(s.c) ?? 0) + s.d.length + 1);
@@ -48,13 +49,26 @@ function RouteThumb({ j }: { j: Journey }) {
     });
     const last = pts.at(-1);
     const end = last ? { x: sx(last.y.at(-1)!), y: sy(last.x.at(-1)!) } : undefined;
-    const zones = new Set(j.events.filter((e) => e.k === "zone").map((e) => e.mapID)).size;
-    return { lines, end, zones };
+    const visited = new Set(j.events.filter((e) => e.k === "zone").map((e) => e.mapID));
+    const rects = zonesOn(c ?? 0)
+      .filter((z) => visited.has(z.id))
+      .map((z) => ({ id: z.id, name: z.name, x: sx(z.maxY), y: sy(z.maxX), w: sx(z.minY) - sx(z.maxY), h: sy(z.minX) - sy(z.maxX) }));
+    return { lines, end, zones: visited.size, rects };
   }, [j]);
   const dist = distanceByMode(j.segments);
   return (
     <>
       <svg viewBox="0 0 320 220" style={{ width: "100%", height: "auto", borderRadius: "10px", background: "#1E2A24" }} role="img" aria-label="Thumbnail of the route walked so far">
+        {rects.map((z) => (
+          <g key={z.id}>
+            <rect x={z.x} y={z.y} width={z.w} height={z.h} rx="6" fill="#2B3A33" stroke="#3E5247" />
+            {z.w > 60 && (
+              <text x={z.x + z.w / 2} y={z.y + 16} text-anchor="middle" fill="#9DB3A6" font-size="11">
+                {z.name}
+              </text>
+            )}
+          </g>
+        ))}
         {lines.map((l, i) => (
           <polyline
             key={i}

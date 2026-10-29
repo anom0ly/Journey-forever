@@ -27,8 +27,10 @@ and everything else still loads.
   public/private switch), journey overview, map replay, data sources, and a
   `/demo` journey built from the sample files.
 
-Positions are world yards, so the replay draws the path on a plain grid with
-zone names where each zone was entered. Zone map art isn't drawn yet.
+Positions are world yards. The replay draws them over zone outlines taken
+from the Forever client's map tables (`src/lib/map-data.json`, written by
+`node --experimental-strip-types scripts/fetch-map-data.ts`
+from wago.tools). Blizzard's map art isn't used.
 
 ## Working on it
 

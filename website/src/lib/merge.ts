@@ -16,6 +16,7 @@ import {
 } from "./journey";
 import { distanceByMode, PathIndex } from "./path";
 import type { Contribution } from "./parse/types";
+import { mapToWorld, MAPS } from "./maps";
 import { ZONE_NAMES } from "./wow";
 
 const ADDONS: AddonId[] = ["rts", "jt", "jf"];
@@ -107,7 +108,10 @@ function mergeDeaths(events: JEvent[], deaths: Death[] | undefined): void {
     Object.assign(e, strip({ killer: d.killer, zone: d.zone, subzone: d.subzone, dungeon: d.dungeon, level: d.level, grouped: d.grouped }));
   }
   for (const d of pool) {
-    events.push(strip({ t: d.t, k: "die", killer: d.killer, zone: d.zone, subzone: d.subzone, dungeon: d.dungeon, level: d.level, grouped: d.grouped }));
+    events.push(strip({
+      t: d.t, k: "die", killer: d.killer, zone: d.zone, subzone: d.subzone, dungeon: d.dungeon, level: d.level, grouped: d.grouped,
+      mapID: d.mapID, mapX: d.mapX, mapY: d.mapY,
+    }));
   }
 }
 
@@ -117,7 +121,8 @@ function strip<T extends object>(o: T): T {
 }
 
 // Events with no world position (screenshots, notes, Journey Tracker's
-// deaths) are put where the path was at that moment, or inside an instance,
+// deaths) are put where their zone map position says, else where the path
+// was at that moment, or inside an instance,
 // where there is no path, where the last placed event was (Road to Sixty
 // gives events inside instances the last outdoor position).
 const PLACE_FROM_EVENT_SECONDS = 6 * 3600;
@@ -127,6 +132,12 @@ function placeEvents(events: JEvent[], segments: Segment[]): void {
   let last: JEvent | undefined;
   for (const e of events) {
     if (e.c !== undefined && !e.approx) {
+      last = e;
+      continue;
+    }
+    const onMap = typeof e.mapX === "number" && typeof e.mapY === "number" ? mapToWorld(e.mapID, e.mapX, e.mapY) : undefined;
+    if (onMap) {
+      Object.assign(e, onMap);
       last = e;
       continue;
     }
@@ -166,6 +177,7 @@ export function buildJourney(parts: Contribution[], now = Math.floor(Date.now() 
 
   const zones: Record<string, string> = {};
   for (const [id, name] of Object.entries(ZONE_NAMES)) zones[id] = name;
+  for (const m of MAPS) zones[m.id] = m.name;
   Object.assign(zones, jt?.zones, jf?.zones);
   for (const e of events) if (e.k === "in" && typeof e.instanceID === "number" && typeof e.name === "string") zones[`i${e.instanceID}`] = e.name;
 

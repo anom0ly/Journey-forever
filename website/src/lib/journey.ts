@@ -102,6 +102,9 @@ export interface Death {
   subzone?: string;
   dungeon?: string;
   grouped?: boolean;
+  mapID?: number; // and 0-1 on its map, outdoors
+  mapX?: number;
+  mapY?: number;
 }
 
 export interface DungeonRun {

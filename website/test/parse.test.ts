@@ -45,7 +45,11 @@ describe("readUpload with the sample account", () => {
     expect(shots).toHaveLength(3);
     expect(shots.every((s) => s.c === 0 && typeof s.x === "number")).toBe(true);
     const note = brannoc.events.find((e) => e.k === "note");
-    expect(note).toMatchObject({ text: "Made it out of Coldridge Valley!", zone: "Dun Morogh", approx: true });
+    // The note has a zone map position, turned into world yards with Dun Morogh's bounds.
+    expect(note).toMatchObject({ text: "Made it out of Coldridge Valley!", zone: "Dun Morogh", c: 0 });
+    expect(note?.approx).toBeUndefined();
+    expect(note?.x).toBeGreaterThan(-7161);
+    expect(note?.x).toBeLessThan(-3877);
   });
 
   it("joins Road to Sixty's deaths with Journey Tracker's killers", () => {
@@ -150,5 +154,16 @@ describe("the addon's own sample file", () => {
     const epic = shots.find((e) => e.kind === "epic")!;
     expect((epic.detail as { item: unknown }).item).toMatchObject({ id: 5196, name: "Smite's Reaver", quality: 4 });
     expect(j.events.filter((e) => e.k === "note")[0]).toMatchObject({ text: expect.stringContaining("Stitches"), zone: "Duskwood" });
+  });
+});
+
+describe("zone bounds from the Forever client", () => {
+  it("turns zone map positions into world yards", async () => {
+    const { mapToWorld, mapInfo } = await import("../src/lib/maps");
+    expect(mapInfo(1426)?.name).toBe("Dun Morogh");
+    const dm = mapInfo(1426)!;
+    expect(mapToWorld(1426, 0, 0)).toEqual({ c: 0, x: dm.maxX, y: dm.maxY });
+    expect(mapToWorld(1426, 1, 1)).toEqual({ c: 0, x: dm.minX, y: dm.minY });
+    expect(mapToWorld(999999, 0.5, 0.5)).toBeUndefined();
   });
 });

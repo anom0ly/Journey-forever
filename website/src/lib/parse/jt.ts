@@ -35,6 +35,10 @@ function deathsOf(v: LuaValue | undefined): Death[] {
       subzone: str(d.subzone),
       dungeon: str(d.dungeon),
       grouped: d.grouped === true || undefined,
+      mapID: num(d.mapID),
+      // Journey Tracker saves map positions as percentages.
+      mapX: num(d.x) !== undefined ? num(d.x)! / 100 : undefined,
+      mapY: num(d.y) !== undefined ? num(d.y)! / 100 : undefined,
     }));
   }
   return out.sort((a, b) => a.t - b.t);
