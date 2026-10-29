@@ -1,6 +1,7 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { api, type Me } from "./api";
+import { AccountPage } from "./pages/Account";
 import { CharactersPage } from "./pages/Characters";
 import { DataPage } from "./pages/Data";
 import { JourneyPage } from "./pages/Journey";
@@ -26,8 +27,9 @@ function Header({ me, path, onSignOut }: { me: Me | null; path: string; onSignOu
         {signedIn && link("/upload", "Upload", path === "/upload")}
         {signedIn && link("/characters", "Characters", path === "/characters" || path.startsWith("/c/"))}
         {link("/data", "Data sources", path === "/data")}
+        {signedIn && link("/account", me?.user?.battletag ?? "Account", path === "/account")}
         {signedIn ? (
-          <button type="button" class="link" onClick={onSignOut} title={me?.user?.battletag ?? undefined}>
+          <button type="button" class="link" onClick={onSignOut}>
             Sign out
           </button>
         ) : (
@@ -82,6 +84,11 @@ function App() {
     navigate("/");
   };
 
+  const accountDeleted = () => {
+    setMe((m) => (m ? { ...m, user: null } : m));
+    navigate("/?deleted=1");
+  };
+
   let page;
   let m: Record<string, string> | null;
   const signedIn = !!me?.user;
@@ -89,6 +96,7 @@ function App() {
   if (path === "/") page = loaded ? signedIn ? <CharactersPage /> : <Landing me={me} /> : null;
   else if (path === "/upload") page = needsUser(<UploadPage />);
   else if (path === "/characters") page = needsUser(<CharactersPage />);
+  else if (path === "/account") page = needsUser(<AccountPage onDeleted={accountDeleted} />);
   else if (path === "/data") page = <DataPage signedIn={signedIn} />;
   else if (path === "/demo") page = <JourneyPage source={{ kind: "demo" }} />;
   else if (path === "/demo/replay") page = <ReplayPage source={{ kind: "demo" }} />;

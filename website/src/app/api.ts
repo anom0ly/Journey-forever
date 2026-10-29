@@ -26,6 +26,16 @@ export interface Screenshot {
   thumb: string;
 }
 
+export interface AccountSummary {
+  battletag: string | null;
+  createdAt: number | null;
+  lastUploadAt: number | null;
+  characters: string[];
+  publicLinks: string[];
+  screenshots: number;
+  screenshotBytes: number;
+}
+
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -62,6 +72,13 @@ export const api = {
       body: JSON.stringify({ isPublic }),
     }),
   deleteCharacter: (key: string) => call<{ ok: true }>(`/api/characters/${encodeURIComponent(key)}`, { method: "DELETE" }),
+  account: () => call<AccountSummary>("/api/account"),
+  deleteAccount: (confirm: string) =>
+    call<{ ok: true }>("/api/account", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirm }),
+    }),
   publicJourney: (slug: string) => call<{ character: StoredCharacter; screenshots: Screenshot[] }>(`/api/public/${encodeURIComponent(slug)}`),
   publicJourneyData: (slug: string) => call<Journey>(`/api/public/${encodeURIComponent(slug)}/journey`),
 

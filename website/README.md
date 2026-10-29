@@ -24,8 +24,12 @@ and everything else still loads.
 - **The Worker** (`src/worker/`) handles sign-in, stores journeys and
   screenshots in R2 and a summary per character in D1, and serves public links.
 - **The pages** (`src/app/`, Preact): upload, characters (with the
-  public/private switch), journey overview, map replay, data sources, and a
-  `/demo` journey built from the sample files.
+  public/private switch), journey overview, map replay, data sources, your
+  account, and a `/demo` journey built from the sample files.
+- **Deleting an account** (`DELETE /api/account`, from the account page) removes
+  every R2 object under `journeys/<user>/` and `shots/<user>/`, then the user's
+  screenshots, characters (and so public links), sessions and user row in D1.
+  Shared map tiles under `maps/` are left alone.
 
 Positions are world yards. The replay draws them on the Forever client's own
 map art: zone bounds and art tile lists are in `src/lib/map-data.json`

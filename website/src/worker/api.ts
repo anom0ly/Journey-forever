@@ -5,7 +5,7 @@
 // they hold other players' names.
 
 import type { CharacterSummary } from "../lib/journey";
-import { requireUser } from "./auth";
+import { clearSessionCookie, requireUser } from "./auth";
 import type { Env, User } from "./env";
 import { HttpError, json, now, readBody, sha256 } from "./http";
 
@@ -120,6 +120,40 @@ async function serveJourney(env: Env, userId: string, key: string, cache: string
   });
 }
 
+// Every R2 object under a prefix, in pages of up to 1000 (one delete call each).
+async function deletePrefix(env: Env, prefix: string): Promise<number> {
+  let count = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await env.FILES.list({ prefix, cursor });
+    if (page.objects.length) await env.FILES.delete(page.objects.map((o) => o.key));
+    count += page.objects.length;
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return count;
+}
+
+// What the account page shows, and what deleting the account removes.
+async function accountSummary(env: Env, user: User) {
+  const [account, chars, shots] = await env.DB.batch([
+    env.DB.prepare("SELECT created_at FROM users WHERE id = ?").bind(user.id),
+    env.DB.prepare("SELECT name, slug, is_public FROM characters WHERE user_id = ? ORDER BY updated_at DESC").bind(user.id),
+    env.DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM screenshots WHERE user_id = ?").bind(user.id),
+  ]);
+  const created = (account.results[0] as { created_at: number } | undefined)?.created_at ?? null;
+  const rows = chars.results as { name: string; slug: string | null; is_public: number }[];
+  const s = shots.results[0] as { n: number; bytes: number };
+  return {
+    battletag: user.battletag,
+    createdAt: created,
+    lastUploadAt: user.last_upload_at,
+    characters: rows.map((r) => r.name),
+    publicLinks: rows.filter((r) => r.is_public && r.slug).map((r) => r.slug!),
+    screenshots: s.n,
+    screenshotBytes: s.bytes,
+  };
+}
+
 async function listShots(env: Env, userId: string, key: string) {
   const { results } = await env.DB.prepare(
     "SELECT id, char_key, t, kind, label, file, width, height FROM screenshots WHERE user_id = ? AND char_key = ? ORDER BY t",
@@ -145,6 +179,28 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
   }
 
   const user = await requireUser(req, env);
+
+  if (parts[0] === "account" && parts.length === 1) {
+    if (m === "GET") return json(await accountSummary(env, user));
+    if (m === "DELETE") {
+      // The page asks for the BattleTag to be typed; checking it here too
+      // means a stray request can't wipe an account.
+      const body = (await req.json().catch(() => ({}))) as { confirm?: unknown };
+      if (body.confirm !== (user.battletag ?? "DELETE")) throw new HttpError(400, "Type your BattleTag to confirm");
+      // Files first, rows last: if this stops halfway the account still
+      // exists and can be deleted again. Only this user's own prefixes;
+      // shared map tiles live under maps/.
+      await deletePrefix(env, `journeys/${user.id}/`);
+      await deletePrefix(env, `shots/${user.id}/`);
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM screenshots WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM characters WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id),
+      ]);
+      return json({ ok: true }, { headers: { "set-cookie": clearSessionCookie(url) } });
+    }
+  }
 
   if (parts[0] === "characters") {
     if (parts.length === 1 && m === "GET") {
@@ -278,7 +334,7 @@ export async function handleMedia(req: Request, env: Env, url: URL, userOf: (r: 
   return new Response(obj.body, {
     headers: {
       "content-type": obj.httpMetadata?.contentType ?? "image/jpeg",
-      "cache-control": row.is_public ? "public, max-age=86400" : "private, max-age=3600",
+      "cache-control": row.is_public ? "public, max-age=3600" : "private, max-age=3600",
     },
   });
 }
