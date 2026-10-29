@@ -24,6 +24,10 @@
   ],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "journey-forever-files" }],
   // Sign-in: "battlenet" needs the BNET_CLIENT_ID and BNET_CLIENT_SECRET
-  // secrets (wrangler secret put). For local work, .dev.vars sets AUTH_MODE=dev.
-  "vars": { "AUTH_MODE": "battlenet" }
+  // secrets (wrangler secret put, or type "Secret" in the dashboard). For local
+  // work, .dev.vars sets AUTH_MODE=dev.
+  "vars": { "AUTH_MODE": "battlenet" },
+  // Deploys otherwise replace every plain-text variable set in the dashboard
+  // with the vars above; secrets are never touched either way.
+  "keep_vars": true
 }
