@@ -2,21 +2,22 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { describe, duration, levelAt, zoneAt } from "../../lib/insights";
 import type { JEvent, Journey } from "../../lib/journey";
 import { buildClock, continentsOf, toReal, toReplay, tracksOf, whereAt, type Track } from "../../lib/replay";
-import { zonesOn } from "../../lib/maps";
+import { continentMap, zonesOn, type MapInfo } from "../../lib/maps";
 import { continentName } from "../../lib/wow";
 import { day, time } from "../format";
+import { mapArt } from "../mapArt";
 import { useJourney, type JourneySource } from "../source";
 
 const SPEEDS = [1, 8, 32, 128, 512, 2048];
 
 const LAYERS = [
-  { id: "w", label: "On foot or mounted", color: "#5FB8B4", style: "solid" },
-  { id: "t", label: "Flight path", color: "#C9B6E4", style: "dashed" },
-  { id: "g", label: "Ghost (corpse run)", color: "#ECE6D8", style: "dotted" },
-  { id: "die", label: "Deaths", color: "#E07A6A", style: "solid" },
-  { id: "lvl", label: "Level ups and quests", color: "#E0B252", style: "dotted" },
-  { id: "in", label: "Dungeon entrances", color: "#C9B6E4", style: "solid" },
-  { id: "shot", label: "Screenshots and notes", color: "#F0C987", style: "solid" },
+  { id: "w", label: "On foot or mounted", color: "#1D6F6B", style: "solid" },
+  { id: "t", label: "Flight path", color: "#6B4FA0", style: "dashed" },
+  { id: "g", label: "Ghost (corpse run)", color: "#FFFFFF", style: "dotted" },
+  { id: "die", label: "Deaths", color: "#B3261E", style: "solid" },
+  { id: "lvl", label: "Level ups and quests", color: "#A8761C", style: "dotted" },
+  { id: "in", label: "Dungeon entrances", color: "#6B4FA0", style: "solid" },
+  { id: "shot", label: "Screenshots and notes", color: "#7A3FB0", style: "solid" },
 ] as const;
 type LayerId = (typeof LAYERS)[number]["id"];
 
@@ -53,28 +54,71 @@ function draw(
   now: number,
   layers: Set<LayerId>,
   visited: Set<number>,
+  art: (mapID: number) => HTMLCanvasElement | undefined,
 ) {
   // North up: screen x runs east (world y falls), screen y runs south (world x falls).
   const sx = (y: number) => w / 2 - (y - view.cx) * view.scale;
   const sy = (x: number) => h / 2 - (x - view.cy) * view.scale;
+  const zones = zonesOn(c);
+  const cont = continentMap(c);
+  const contArt = cont && art(cont.id);
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#16211C";
+  ctx.fillStyle = contArt ? "#12151A" : "#16211C";
   ctx.fillRect(0, 0, w, h);
 
-  // Zones as their world rectangles (the game's own bounds, so neighbours
-  // overlap a little), brighter where the character has been.
-  const zones = zonesOn(c);
-  for (const z of zones) {
-    const left = sx(z.maxY), right = sx(z.minY), top = sy(z.maxX), bottom = sy(z.minX);
-    if (right < 0 || left > w || bottom < 0 || top > h) continue;
-    const been = visited.has(z.id);
-    ctx.fillStyle = been ? "rgba(43, 58, 51, 0.75)" : "rgba(36, 52, 44, 0.35)";
-    ctx.strokeStyle = been ? "rgba(94, 122, 106, 0.9)" : "rgba(62, 82, 71, 0.6)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(left, top, right - left, bottom - top, 6);
-    ctx.fill();
-    ctx.stroke();
+  // Where a map's art goes: its world rectangle on screen.
+  const rect = (m: MapInfo) => ({ left: sx(m.maxY), top: sy(m.maxX), width: sx(m.minY) - sx(m.maxY), height: sy(m.minX) - sy(m.maxX) });
+  ctx.imageSmoothingQuality = "high";
+
+  // The continent's own map art, and once a zone fills most of the view,
+  // that zone's art fading in over it for the sharper detail.
+  if (cont && contArt) {
+    const r = rect(cont);
+    ctx.drawImage(contArt, r.left, r.top, r.width, r.height);
+  }
+  // Zone art fades in as zones grow to fill the view: the zone under the
+  // centre on top, then the ones the character has been to.
+  const cy = view.cy, cx = view.cx;
+  const area = (z: MapInfo) => (z.maxX - z.minX) * (z.maxY - z.minY);
+  const under = zones
+    .filter((z) => cy >= z.minX && cy <= z.maxX && cx >= z.minY && cx <= z.maxY)
+    .sort((a, b) => area(a) - area(b))[0];
+  const near = zones
+    .map((z) => ({ z, r: rect(z) }))
+    .filter(({ r }) => r.left < w && r.left + r.width > 0 && r.top < h && r.top + r.height > 0 && r.width > w * 0.35)
+    .sort((a, b) => Number(a.z === under) - Number(b.z === under) || Number(visited.has(a.z.id)) - Number(visited.has(b.z.id)))
+    .slice(-4);
+  for (const { z, r } of near) {
+    const zoneArt = art(z.id);
+    if (!zoneArt) continue;
+    ctx.globalAlpha = Math.min(1, (r.width / w - 0.35) / 0.3);
+    ctx.drawImage(zoneArt, r.left, r.top, r.width, r.height);
+  }
+  ctx.globalAlpha = 1;
+
+  // Without art (still loading, or none for this continent): the zones as
+  // their world rectangles, brighter where the character has been.
+  if (!contArt) {
+    for (const z of zones) {
+      const r = rect(z);
+      if (r.left + r.width < 0 || r.left > w || r.top + r.height < 0 || r.top > h) continue;
+      const been = visited.has(z.id);
+      ctx.fillStyle = been ? "rgba(43, 58, 51, 0.75)" : "rgba(36, 52, 44, 0.35)";
+      ctx.strokeStyle = been ? "rgba(94, 122, 106, 0.9)" : "rgba(62, 82, 71, 0.6)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(r.left, r.top, r.width, r.height, 6);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.font = "13px Inter, sans-serif";
+    ctx.textAlign = "center";
+    for (const z of zones) {
+      const r = rect(z);
+      if (r.width < 70) continue;
+      ctx.fillStyle = visited.has(z.id) ? "#9DB3A6" : "#5F7468";
+      ctx.fillText(z.name, r.left + r.width / 2, r.top + r.height / 2);
+    }
   }
   if (!zones.length) {
     // No zone data for this continent: a faint yard grid for scale.
@@ -93,48 +137,56 @@ function draw(
     }
     ctx.stroke();
   }
-  ctx.font = "13px Inter, sans-serif";
-  ctx.textAlign = "center";
-  for (const z of zones) {
-    const left = sx(z.maxY), right = sx(z.minY);
-    if (right - left < 70) continue;
-    ctx.fillStyle = visited.has(z.id) ? "#9DB3A6" : "#5F7468";
-    ctx.fillText(z.name, (left + right) / 2, (sy(z.maxX) + sy(z.minX)) / 2);
-  }
 
-  const styles: Record<string, { color: string; dash: number[]; width: number }> = {
-    w: { color: "#5FB8B4", dash: [], width: 3 },
-    t: { color: "#C9B6E4", dash: [6, 6], width: 2.5 },
-    g: { color: "#ECE6D8", dash: [1.5, 5], width: 2 },
+  // Dark lines with a pale edge read on light parchment and dark
+  // mountains alike; the ghost run is white, so its edge is dark.
+  const styles: Record<string, { color: string; halo: string; dash: number[]; width: number }> = {
+    w: { color: "#1D6F6B", halo: "rgba(255, 248, 230, 0.85)", dash: [], width: 3.5 },
+    t: { color: "#6B4FA0", halo: "rgba(255, 248, 230, 0.85)", dash: [7, 6], width: 3 },
+    g: { color: "#FFFFFF", halo: "rgba(29, 42, 42, 0.7)", dash: [1.5, 5.5], width: 2.5 },
+  };
+  const trace = (tr: Track, upTo: number) => {
+    const n = tr.t.length;
+    ctx.beginPath();
+    let lx = sx(tr.y[0]), ly = sy(tr.x[0]);
+    ctx.moveTo(lx, ly);
+    for (let i = 1; i < n; i++) {
+      if (tr.t[i] > upTo) {
+        const here = whereAt([tr], upTo);
+        if (here) ctx.lineTo(sx(here.y), sy(here.x));
+        break;
+      }
+      const px = sx(tr.y[i]), py = sy(tr.x[i]);
+      // Points closer than a pixel add nothing at this zoom.
+      if (i < n - 1 && Math.abs(px - lx) < 1.2 && Math.abs(py - ly) < 1.2) continue;
+      ctx.lineTo(px, py);
+      lx = px;
+      ly = py;
+    }
   };
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  for (const pass of ["future", "past"] as const) {
-    for (const tr of tracks) {
-      if (tr.c !== c || !layers.has(tr.m as LayerId)) continue;
+  const shownTracks = tracks.filter((tr) => tr.c === c && layers.has(tr.m as LayerId));
+  // What's still to come, faintly.
+  ctx.globalAlpha = 0.3;
+  for (const tr of shownTracks) {
+    const st = styles[tr.m] ?? styles.w;
+    ctx.strokeStyle = st.color;
+    ctx.lineWidth = st.width * 0.8;
+    ctx.setLineDash(st.dash);
+    trace(tr, Infinity);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // The path so far: the edge first, then the line.
+  for (const part of ["halo", "line"] as const) {
+    for (const tr of shownTracks) {
+      if (tr.t[0] > now) continue;
       const st = styles[tr.m] ?? styles.w;
-      const n = tr.t.length;
-      if (pass === "past" && tr.t[0] > now) continue;
-      ctx.strokeStyle = st.color;
-      ctx.globalAlpha = pass === "future" ? 0.16 : 1;
-      ctx.lineWidth = st.width;
+      ctx.strokeStyle = part === "halo" ? st.halo : st.color;
+      ctx.lineWidth = part === "halo" ? st.width + 4 : st.width;
       ctx.setLineDash(st.dash);
-      ctx.beginPath();
-      let lx = sx(tr.y[0]), ly = sy(tr.x[0]);
-      ctx.moveTo(lx, ly);
-      for (let i = 1; i < n; i++) {
-        if (pass === "past" && tr.t[i] > now) {
-          const here = whereAt([tr], now);
-          if (here) ctx.lineTo(sx(here.y), sy(here.x));
-          break;
-        }
-        const px = sx(tr.y[i]), py = sy(tr.x[i]);
-        // Points closer than a pixel add nothing at this zoom.
-        if (i < n - 1 && Math.abs(px - lx) < 1.2 && Math.abs(py - ly) < 1.2) continue;
-        ctx.lineTo(px, py);
-        lx = px;
-        ly = py;
-      }
+      trace(tr, now);
       ctx.stroke();
     }
   }
@@ -147,49 +199,61 @@ function draw(
     const px = sx(e.y as number), py = sy(e.x as number);
     if (px < -20 || py < -20 || px > w + 20 || py > h + 20) continue;
     if (e.k === "die" && layers.has("die")) {
-      ctx.strokeStyle = "#E07A6A";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(px - 6, py - 6);
-      ctx.lineTo(px + 6, py + 6);
-      ctx.moveTo(px + 6, py - 6);
-      ctx.lineTo(px - 6, py + 6);
-      ctx.stroke();
+      ctx.lineCap = "round";
+      for (const [color, width] of [["rgba(255, 248, 230, 0.9)", 6], ["#B3261E", 3.5]] as const) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(px - 6, py - 6);
+        ctx.lineTo(px + 6, py + 6);
+        ctx.moveTo(px + 6, py - 6);
+        ctx.lineTo(px - 6, py + 6);
+        ctx.stroke();
+      }
     } else if ((e.k === "lvl" || e.k === "qd") && layers.has("lvl")) {
       ctx.fillStyle = "#E0B252";
-      ctx.globalAlpha = e.k === "lvl" ? 1 : 0.55;
+      ctx.strokeStyle = "#3B2A0A";
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = e.k === "lvl" ? 1 : 0.7;
       ctx.beginPath();
-      ctx.arc(px, py, e.k === "lvl" ? 4.5 : 2.5, 0, Math.PI * 2);
+      ctx.arc(px, py, e.k === "lvl" ? 5 : 3, 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
       ctx.globalAlpha = 1;
     } else if (e.k === "in" && layers.has("in")) {
-      ctx.strokeStyle = "#C9B6E4";
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(255, 248, 230, 0.9)";
+      ctx.lineWidth = 4.5;
+      ctx.strokeRect(px - 8, py - 8, 16, 16);
+      ctx.strokeStyle = "#6B4FA0";
+      ctx.lineWidth = 2.5;
       ctx.strokeRect(px - 8, py - 8, 16, 16);
     } else if ((e.k === "shot" || e.k === "note") && layers.has("shot")) {
-      ctx.fillStyle = "#F0C987";
+      ctx.fillStyle = "#7A3FB0";
+      ctx.strokeStyle = "#FFFFFF";
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(px, py - 7);
-      ctx.lineTo(px + 6, py);
-      ctx.lineTo(px, py + 7);
-      ctx.lineTo(px - 6, py);
+      ctx.moveTo(px, py - 8);
+      ctx.lineTo(px + 7, py);
+      ctx.lineTo(px, py + 8);
+      ctx.lineTo(px - 7, py);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
     }
   }
 
   const here = whereAt(tracks, now);
   if (here && here.c === c) {
     const px = sx(here.y), py = sy(here.x);
-    ctx.fillStyle = "rgba(224, 178, 82, 0.25)";
+    ctx.fillStyle = "rgba(224, 178, 82, 0.35)";
     ctx.beginPath();
-    ctx.arc(px, py, 14, 0, Math.PI * 2);
+    ctx.arc(px, py, 16, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#E0B252";
     ctx.strokeStyle = "#12151A";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.arc(px, py, 7, 0, Math.PI * 2);
+    ctx.arc(px, py, 8, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
@@ -220,6 +284,8 @@ function Player({ j, base }: { j: Journey; base: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 860, h: 620 });
   const drag = useRef<{ x: number; y: number; view: View } | null>(null);
+  // Bumped as each map's art arrives, to redraw with it.
+  const [, setArtLoaded] = useState(0);
 
   const now = toReal(clock, r);
   const here = whereAt(tracks, now);
@@ -269,7 +335,7 @@ function Player({ j, base }: { j: Journey; base: string }) {
     if (canvas.height !== Math.round(size.h * dpr)) canvas.height = Math.round(size.h * dpr);
     const ctx = canvas.getContext("2d")!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    draw(ctx, size.w, size.h, shown, j, tracks, continent, now, layers, visited);
+    draw(ctx, size.w, size.h, shown, j, tracks, continent, now, layers, visited, (id) => mapArt(id, () => setArtLoaded((n) => n + 1)));
   });
 
   const onWheel = (e: WheelEvent) => {
@@ -278,7 +344,7 @@ function Player({ j, base }: { j: Journey; base: string }) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const mx = e.clientX - rect.left - size.w / 2, my = e.clientY - rect.top - size.h / 2;
     const k = Math.exp(-e.deltaY * 0.0015);
-    const scale = Math.min(20, Math.max(0.002, view.scale * k));
+    const scale = Math.min(1.2, Math.max(0.002, view.scale * k));
     const f = 1 / view.scale - 1 / scale;
     // Keep the point under the cursor in place.
     setView({ scale, cx: view.cx - mx * f, cy: view.cy - my * f });
@@ -364,6 +430,7 @@ function Player({ j, base }: { j: Journey; base: string }) {
               {here && here.c !== continent ? ` · now in ${continentName(here.c)}` : ""}
             </span>
           </div>
+          <span class="credit">Map art © Blizzard Entertainment</span>
         </div>
 
         <div class="card" style={{ padding: "16px 20px", gap: "12px" }}>
@@ -442,7 +509,9 @@ function Player({ j, base }: { j: Journey; base: string }) {
                   setLayers(next);
                 }}
               />
-              <span class="swatch" style={{ borderTopStyle: l.style, borderTopColor: l.color }} />
+              <span class="swatch">
+                <span style={{ borderTopStyle: l.style, borderTopColor: l.color }} />
+              </span>
               <span>{l.label}</span>
             </label>
           ))}

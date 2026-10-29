@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { duration } from "../../lib/insights";
 import { km } from "../../lib/path";
 import { api, type StoredCharacter } from "../api";
@@ -35,7 +35,51 @@ export function shareUrl(slug: string): string {
   return `${location.origin}/j/${slug}`;
 }
 
-function Card({ c, onChange }: { c: StoredCharacter; onChange: (c: StoredCharacter) => void }) {
+// Asks before deleting a character: the journey, public link and
+// screenshots go; the saved files on the player's PC don't.
+function DeleteButton({ c, onDeleted }: { c: StoredCharacter; onDeleted: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const remove = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await api.deleteCharacter(c.key);
+      ref.current?.close();
+      onDeleted();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button type="button" class="linkish small muted" onClick={() => ref.current?.showModal()}>
+        Delete
+      </button>
+      <dialog ref={ref} class="confirm" aria-labelledby={`del-${c.key}`} onClose={() => setError(undefined)}>
+        <h2 id={`del-${c.key}`}>Delete {c.summary.name}?</h2>
+        <p class="muted">
+          This removes the journey, the public link and all their screenshots from Journey Forever. Your saved files on your PC aren't
+          touched, and uploading {c.summary.name} again brings them back.
+        </p>
+        {error && <div class="notice err">{error}</div>}
+        <div class="row" style={{ justifyContent: "flex-end", gap: "12px" }}>
+          <button type="button" class="btn" onClick={() => ref.current?.close()} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" class="btn danger" onClick={remove} disabled={busy}>
+            {busy ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </dialog>
+    </>
+  );
+}
+
+function Card({ c, onChange, onDeleted }: { c: StoredCharacter; onChange: (c: StoredCharacter) => void; onDeleted: () => void }) {
   const s = c.summary;
   const href = `/c/${encodeURIComponent(c.key)}`;
   return (
@@ -75,9 +119,12 @@ function Card({ c, onChange }: { c: StoredCharacter; onChange: (c: StoredCharact
       </div>
       <div class="row between" style={{ paddingTop: "16px", borderTop: "1px solid var(--line)" }}>
         <PublicToggle c={c} onChange={onChange} />
-        <a href={href} class="small" style={{ fontWeight: 600, textDecoration: "none" }}>
-          Open journey
-        </a>
+        <div class="row" style={{ gap: "20px" }}>
+          <DeleteButton c={c} onDeleted={onDeleted} />
+          <a href={href} class="small" style={{ fontWeight: 600, textDecoration: "none" }}>
+            Open journey
+          </a>
+        </div>
       </div>
       {c.isPublic && c.slug && (
         <div class="tiny muted" style={{ marginTop: "-8px", overflowWrap: "anywhere" }}>
@@ -123,7 +170,7 @@ export function CharactersPage() {
           </p>
         </div>
       )}
-      <div class="grid-cards">{chars?.map((c) => <Card key={c.key} c={c} onChange={update} />)}</div>
+      <div class="grid-cards">{chars?.map((c) => <Card key={c.key} c={c} onChange={update} onDeleted={() => setChars((list) => list?.filter((x) => x.key !== c.key))} />)}</div>
     </main>
   );
 }

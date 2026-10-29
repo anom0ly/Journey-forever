@@ -1,5 +1,5 @@
-// Zones of the Forever client with their world rectangles, from
-// map-data.json (scripts/fetch-map-data.ts writes it from wago.tools).
+// Zones of the Forever client with their world rectangles and map art,
+// from map-data.json (scripts/fetch-map-data.ts writes it from wago.tools).
 
 import data from "./map-data.json";
 
@@ -13,9 +13,13 @@ export interface MapInfo {
   minY: number;
   maxX: number;
   maxY: number;
+  // The map's art: w x h pixels laid out from tiles of tileW x tileH,
+  // each [row, column, file ID]. Covers exactly the world rectangle above.
+  art?: { w: number; h: number; tileW: number; tileH: number; tiles: number[][] };
 }
 
 export const MAPS: MapInfo[] = data.zones;
+export const ART_BUILD: string = data.build;
 const BY_ID = new Map(MAPS.map((m) => [m.id, m]));
 
 export function mapInfo(id: unknown): MapInfo | undefined {
@@ -27,6 +31,12 @@ export function zonesOn(c: number): MapInfo[] {
   return MAPS.filter((m) => m.type === 3 && m.c === c).sort(
     (a, b) => (b.maxX - b.minX) * (b.maxY - b.minY) - (a.maxX - a.minX) * (a.maxY - a.minY),
   );
+}
+
+// The map of a whole continent. The client has a second, smaller one for
+// each (a later overview); the first listed is the world map's.
+export function continentMap(c: number): MapInfo | undefined {
+  return MAPS.find((m) => m.type === 2 && m.c === c);
 }
 
 // 0-1 coordinates on a zone's map to world yards: map x runs east (world y

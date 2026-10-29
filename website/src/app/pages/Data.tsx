@@ -127,7 +127,7 @@ export function DataPage({ signedIn }: { signedIn: boolean }) {
           <ul class="muted small stack" style={{ margin: 0, paddingLeft: "20px" }}>
             <li>Road to Sixty checks your position 4 times a second and keeps a point every 3 to 20 yards, more often where you turn.</li>
             <li>The path is split into stretches on foot or mounted, by flight path, and as a ghost. Each jump is labelled: hearthstone, teleport, death, boat.</li>
-            <li>Positions are in world yards. The replay draws them over each zone's outline from the game's own map bounds, with the zones you've been to lit up.</li>
+            <li>Positions are in world yards. The replay draws them on the game's own map art: the continent when zoomed out, each zone's map when zoomed in.</li>
             <li>Inside dungeons the game gives no position, so the trail shows going in and coming out.</li>
           </ul>
         </div>
