@@ -1,0 +1,28 @@
+// Cloudflare Worker for Journey Forever: serves the built site from dist/
+// and the API from src/worker. Before the first deploy, create the database
+// and bucket (see README) and put the database's ID below.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "journey-forever",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/auth/*", "/media/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "journey-forever",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "journey-forever-files" }],
+  // Sign-in: "battlenet" needs the BNET_CLIENT_ID and BNET_CLIENT_SECRET
+  // secrets (wrangler secret put). For local work, .dev.vars sets AUTH_MODE=dev.
+  "vars": { "AUTH_MODE": "battlenet" }
+}

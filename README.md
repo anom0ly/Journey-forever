@@ -16,7 +16,7 @@ Journey Forever turns the saved files your addons already write into a recap pag
 | Folder | What it is |
 | --- | --- |
 | [`addon/`](addon/) | The in-game addon: automatic screenshots (dungeon cleared, epic loot, level up) and `/jf note` entries. |
-| [`website/`](website/) | The site that reads your saved files and builds the journey pages. Hosted on Cloudflare. |
+| [`website/`](website/) | The site that reads your saved files and builds the journey pages. Hosted on Cloudflare; its README covers running it locally and deploying. |
 
 ## Install the addon
 
