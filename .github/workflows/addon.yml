@@ -1,0 +1,60 @@
+name: Addon
+
+on:
+  push:
+    branches: [main]
+    paths: ["addon/**", ".github/workflows/addon.yml"]
+    tags: ["addon-v*"]
+  pull_request:
+    paths: ["addon/**", ".github/workflows/addon.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1 and luacheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks
+          sudo luarocks install luacheck
+      - name: Lint
+        working-directory: addon
+        run: luacheck JourneyForever
+      - name: Test (UTC and a US time zone)
+        run: |
+          TZ=UTC lua5.1 addon/tests/run.lua
+          TZ=America/Los_Angeles lua5.1 addon/tests/run.lua
+
+  release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/addon-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the version matches the tag
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME#addon-v}"
+          toc=$(sed -n 's/^## Version: *//p' addon/JourneyForever/JourneyForever.toc | tr -d '\r')
+          if [ "$tag" != "$toc" ]; then
+            echo "Tag says $tag but JourneyForever.toc says $toc" >&2
+            exit 1
+          fi
+          echo "version=$toc" >> "$GITHUB_OUTPUT"
+      - name: Zip the addon
+        run: |
+          cd addon
+          zip -r "../JourneyForever-${{ steps.version.outputs.version }}.zip" JourneyForever
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "JourneyForever-${{ steps.version.outputs.version }}.zip" \
+            --title "Journey Forever addon ${{ steps.version.outputs.version }}" \
+            --notes "Unzip into World of Warcraft\\_forever_\\Interface\\AddOns\\. See addon/README.md."
