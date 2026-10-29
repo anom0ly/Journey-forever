@@ -27,10 +27,15 @@ and everything else still loads.
   public/private switch), journey overview, map replay, data sources, and a
   `/demo` journey built from the sample files.
 
-Positions are world yards. The replay draws them over zone outlines taken
-from the Forever client's map tables (`src/lib/map-data.json`, written by
-`node --experimental-strip-types scripts/fetch-map-data.ts`
-from wago.tools). Blizzard's map art isn't used.
+Positions are world yards. The replay draws them on the Forever client's own
+map art: zone bounds and art tile lists are in `src/lib/map-data.json`
+(written by `node --experimental-strip-types scripts/fetch-map-data.ts` from
+wago.tools). The art itself isn't in this repo. The Worker's `/maps/<id>.blp`
+route copies each listed tile from wago.tools into R2 the first time it's
+asked for, and the browser decodes the BLP tiles (`src/lib/blp.ts`). The map
+art belongs to Blizzard Entertainment. Locally, wrangler dev can't fetch from
+wago.tools behind some proxies; put tiles in local R2 with
+`wrangler r2 object put journey-forever-files/maps/<build>/<id>.blp --local`.
 
 ## Working on it
 

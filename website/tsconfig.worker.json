@@ -8,11 +8,12 @@
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
+    "resolveJsonModule": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "composite": true,
     "tsBuildInfoFile": "node_modules/.tmp/worker.tsbuildinfo",
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/worker", "src/lib/journey.ts"]
+  "include": ["src/worker", "src/lib/journey.ts", "src/lib/map-data.json"]
 }

@@ -2,6 +2,7 @@ import { handleApi, handleMedia } from "./api";
 import { authMode, currentUser, handleAuth } from "./auth";
 import type { Env } from "./env";
 import { checkSameOrigin, HttpError, json } from "./http";
+import { handleMapTile } from "./maps";
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -18,6 +19,7 @@ export default {
       if (url.pathname.startsWith("/api/")) return await handleApi(req, env, url);
       if (url.pathname.startsWith("/auth/")) return await handleAuth(req, env, url);
       if (url.pathname.startsWith("/media/")) return await handleMedia(req, env, url, (r) => currentUser(r, env));
+      if (url.pathname.startsWith("/maps/")) return await handleMapTile(env, url);
       return env.ASSETS.fetch(req);
     } catch (err) {
       if (err instanceof HttpError) return json({ error: err.message }, { status: err.status });
