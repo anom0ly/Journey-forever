@@ -19,10 +19,10 @@ const LAYERS = [
   { id: "in", label: "Dungeon entrances", color: "#6B4FA0", style: "solid" },
   { id: "shot", label: "Screenshots and notes", color: "#7A3FB0", style: "solid" },
 ] as const;
-type LayerId = (typeof LAYERS)[number]["id"];
+export type LayerId = (typeof LAYERS)[number]["id"];
 
 // Which zone's map is showing, and the one fading out since `at`.
-interface Fade {
+export interface Fade {
   cur?: number;
   prev?: number;
   at: number;
@@ -36,7 +36,7 @@ interface View {
   scale: number; // pixels per yard
 }
 
-function fitView(tracks: Track[], c: number, w: number, h: number): View {
+export function fitView(tracks: Track[], c: number, w: number, h: number): View {
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const tr of tracks) {
     if (tr.c !== c) continue;
@@ -52,7 +52,7 @@ function fitView(tracks: Track[], c: number, w: number, h: number): View {
   return { cx: (minY + maxY) / 2, cy: (minX + maxX) / 2, scale: Math.min((w * 0.88) / spanY, (h * 0.88) / spanX) };
 }
 
-function draw(
+export function draw(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
