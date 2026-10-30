@@ -1,4 +1,4 @@
-import { useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   deathRows,
   duration,
@@ -12,82 +12,72 @@ import {
 } from "../../lib/insights";
 import type { Journey, JEvent } from "../../lib/journey";
 import { firstSeen } from "../../lib/merge";
-import { decodeSegment, distanceByMode, km } from "../../lib/path";
-import { zonesOn } from "../../lib/maps";
+import { distanceByMode, km } from "../../lib/path";
+import { tracksOf } from "../../lib/replay";
 import { QUALITY_COLORS } from "../../lib/wow";
 import type { Screenshot, StoredCharacter } from "../api";
 import { classColor, date, dateTime, day, describeCharacter, plural } from "../format";
 import { useJourney, type JourneySource } from "../source";
+import { mapArt } from "../mapArt";
 import { PublicToggle, shareUrl } from "./Characters";
+import { draw, fitView, type Fade, type LayerId } from "./Replay";
 
+const THUMB_LAYERS = new Set<LayerId>(["w", "t", "g"]);
+
+// A small, still version of the replay map: the game's map art with the
+// whole path on the continent walked most, framed to fit.
 function RouteThumb({ j }: { j: Journey }) {
-  const { lines, end, zones, rects } = useMemo(() => {
-    // The continent with the most path, drawn north up.
+  const tracks = useMemo(() => tracksOf(j.segments), [j]);
+  const c = useMemo(() => {
     const byC = new Map<number, number>();
     for (const s of j.segments) byC.set(s.c, (byC.get(s.c) ?? 0) + s.d.length + 1);
-    const c = [...byC.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-    const segs = j.segments.filter((s) => s.c === c);
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    const pts = segs.map((s) => decodeSegment(s));
-    for (const p of pts) for (let i = 0; i < p.x.length; i++) {
-      minX = Math.min(minX, p.x[i]); maxX = Math.max(maxX, p.x[i]);
-      minY = Math.min(minY, p.y[i]); maxY = Math.max(maxY, p.y[i]);
-    }
-    const W = 320, H = 220, pad = 18;
-    const span = Math.max(maxX - minX, maxY - minY, 200);
-    const scale = Math.min((W - pad * 2) / Math.max(maxY - minY, 1), (H - pad * 2) / Math.max(maxX - minX, 1), (W - pad * 2) / span * 3);
-    const cx = (minY + maxY) / 2, cy = (minX + maxX) / 2;
-    // Screen x grows east (world y shrinks), screen y grows south (world x shrinks).
-    const sx = (y: number) => W / 2 - (y - cx) * scale;
-    const sy = (x: number) => H / 2 - (x - cy) * scale;
-    const lines = pts.map((p) => {
-      const step = Math.max(1, Math.floor(p.x.length / 200));
-      const out: string[] = [];
-      for (let i = 0; i < p.x.length; i += step) out.push(`${sx(p.y[i]).toFixed(1)},${sy(p.x[i]).toFixed(1)}`);
-      out.push(`${sx(p.y.at(-1)!).toFixed(1)},${sy(p.x.at(-1)!).toFixed(1)}`);
-      return { pts: out.join(" "), flight: segs[pts.indexOf(p)].m === "t" };
-    });
-    const last = pts.at(-1);
-    const end = last ? { x: sx(last.y.at(-1)!), y: sy(last.x.at(-1)!) } : undefined;
-    const visited = new Set(j.events.filter((e) => e.k === "zone").map((e) => e.mapID));
-    const rects = zonesOn(c ?? 0)
-      .filter((z) => visited.has(z.id))
-      .map((z) => ({ id: z.id, name: z.name, x: sx(z.maxY), y: sy(z.maxX), w: sx(z.minY) - sx(z.maxY), h: sy(z.minX) - sy(z.maxX) }));
-    return { lines, end, zones: visited.size, rects };
+    return [...byC.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
   }, [j]);
+  const visited = useMemo(() => new Set(j.events.filter((e) => e.k === "zone" && typeof e.mapID === "number").map((e) => e.mapID as number)), [j]);
+  const zones = visited.size;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [size, setSize] = useState({ w: 320, h: 220 });
+  const [, setFrame] = useState(0);
+  const fade = useRef<Fade>({ at: 0, busy: false });
+
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || c === undefined || !size.w) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(size.w * dpr);
+    canvas.height = Math.round(size.h * dpr);
+    const ctx = canvas.getContext("2d")!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const redraw = () => setFrame((n) => n + 1);
+    const view = fitView(tracks, c, size.w, size.h);
+    draw(ctx, size.w, size.h, view, j, tracks, c, Infinity, THUMB_LAYERS, visited, (id, soft) => mapArt(id, redraw, soft), fade.current);
+    if (fade.current.busy) {
+      const id = requestAnimationFrame(redraw);
+      return () => cancelAnimationFrame(id);
+    }
+  });
+
   const dist = distanceByMode(j.segments);
   return (
     <>
-      <svg viewBox="0 0 320 220" style={{ width: "100%", height: "auto", borderRadius: "10px", background: "#1E2A24" }} role="img" aria-label="Thumbnail of the route walked so far">
-        {rects.map((z) => (
-          <g key={z.id}>
-            <rect x={z.x} y={z.y} width={z.w} height={z.h} rx="6" fill="#2B3A33" stroke="#3E5247" />
-            {z.w > 60 && (
-              <text x={z.x + z.w / 2} y={z.y + 16} text-anchor="middle" fill="#9DB3A6" font-size="11">
-                {z.name}
-              </text>
-            )}
-          </g>
-        ))}
-        {lines.map((l, i) => (
-          <polyline
-            key={i}
-            points={l.pts}
-            fill="none"
-            stroke={l.flight ? "#C9B6E4" : "#5FB8B4"}
-            stroke-width={l.flight ? 2 : 2.5}
-            stroke-dasharray={l.flight ? "2 6" : undefined}
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        ))}
-        {end && <circle cx={end.x} cy={end.y} r="6" fill="#E0B252" />}
-        {!lines.length && (
-          <text x="160" y="115" text-anchor="middle" fill="#A7A196" font-size="13">
-            No path yet (needs Road to Sixty)
-          </text>
+      <div class="thumb">
+        {tracks.length ? (
+          <>
+            <canvas ref={canvasRef} role="img" aria-label="Map of the route walked so far" />
+            <span class="open">Open replay →</span>
+          </>
+        ) : (
+          <span class="empty">No path yet (needs Road to Sixty)</span>
         )}
-      </svg>
+      </div>
       <span class="small muted">
         {plural(zones, "zone")} · {km(dist.w)} km on foot or mounted{dist.t ? `, ${km(dist.t)} km by flight path` : ""}
         {dist.g ? `, ${km(dist.g)} km as a ghost` : ""}
