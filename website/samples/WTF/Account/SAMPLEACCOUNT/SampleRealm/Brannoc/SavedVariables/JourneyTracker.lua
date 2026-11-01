@@ -195,7 +195,7 @@ JourneyTrackerDB = {
 			}, -- [1]
 			{
 				["start"] = 1793905200,
-				["last"] = 1793912880,
+				["last"] = 1793914200,
 				["startLevel"] = 4,
 				["levels"] = 4,
 			}, -- [2]
@@ -318,7 +318,7 @@ JourneyTrackerDB = {
 		["runs"] = {
 			{
 				["name"] = "Gnomeregan",
-				["start"] = 1793908780,
+				["start"] = 1793910100,
 				["level"] = 7,
 				["bosses"] = 4,
 				["deaths"] = 1,

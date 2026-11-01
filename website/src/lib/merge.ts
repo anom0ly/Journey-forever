@@ -25,6 +25,9 @@ const ADDONS: AddonId[] = ["rts", "jt", "jf"];
 // the realm's, so the same death can be this far apart.
 const DEATH_MATCH_SECONDS = 180;
 
+// How Journey Tracker names a player who killed the character.
+const PVP_KILLER = "Player (PvP)";
+
 export function characterKey(c: Partial<Character>): string {
   if (c.guid) return c.guid;
   return `${c.name ?? "Unknown"}-${c.realm ?? "Unknown"}`;
@@ -105,11 +108,24 @@ function mergeDeaths(events: JEvent[], deaths: Death[] | undefined): void {
     });
     if (best < 0) continue;
     const d = pool.splice(best, 1)[0];
-    Object.assign(e, strip({ killer: d.killer, zone: d.zone, subzone: d.subzone, dungeon: d.dungeon, level: d.level, grouped: d.grouped }));
+    // Road to Sixty's own killer (from the death recap, 1.18 on) wins; a
+    // player's name it never keeps, so Journey Tracker's "Player (PvP)" is
+    // only taken as the kind.
+    const pvp = d.killer === PVP_KILLER;
+    const fill = strip({
+      killer: pvp ? undefined : d.killer, killerKind: pvp ? "player" : undefined,
+      zone: d.zone, subzone: d.subzone, dungeon: d.dungeon, level: d.level, grouped: d.grouped,
+    }) as Record<string, unknown>;
+    const killed = e.killerKind !== undefined || e.killer !== undefined;
+    for (const [k, v] of Object.entries(fill)) {
+      if ((k === "killer" || k === "killerKind") && killed) continue;
+      if (k === "killer" || k === "killerKind" || e[k] === undefined) e[k] = v;
+    }
   }
   for (const d of pool) {
+    const pvp = d.killer === PVP_KILLER;
     events.push(strip({
-      t: d.t, k: "die", killer: d.killer, zone: d.zone, subzone: d.subzone, dungeon: d.dungeon, level: d.level, grouped: d.grouped,
+      t: d.t, k: "die", killer: pvp ? undefined : d.killer, killerKind: pvp ? "player" : undefined, zone: d.zone, subzone: d.subzone, dungeon: d.dungeon, level: d.level, grouped: d.grouped,
       mapID: d.mapID, mapX: d.mapX, mapY: d.mapY,
     }));
   }
@@ -200,7 +216,9 @@ export function buildJourney(parts: Contribution[], now = Math.floor(Date.now() 
 
 function eventKey(e: JEvent): string {
   const extra = e.questID ?? e.level ?? e.mapID ?? e.instanceID ?? (e.item as { id?: number } | undefined)?.id ?? e.name ?? e.text ?? e.kind ?? e.slot ?? "";
-  return `${e.t}|${e.k}|${String(extra)}`;
+  // A skill can rise more than one step in a second (several found at login).
+  const rank = e.k === "skill" ? `|${String(e.rank)}` : "";
+  return `${e.t}|${e.k}|${String(extra)}${rank}`;
 }
 
 // Folds a newly uploaded journey into the stored one. Saved files are

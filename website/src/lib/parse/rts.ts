@@ -1,4 +1,4 @@
-// Road to Sixty (v1.15, saved layout DATA_VERSION 4): RoadToSixtyCharDB, one
+// Road to Sixty (v1.15 to 1.18, saved layout DATA_VERSION 4): RoadToSixtyCharDB, one
 // per character, holds the journey: path segments, an event timeline and a
 // snapshot at each level. RoadToSixtyDB, account-wide, holds the roster
 // (each character's name, realm and class by GUID).
@@ -8,7 +8,7 @@
 // was known. Kinds this site doesn't know are skipped (the addon adds kinds
 // without bumping its layout version).
 
-import type { Item, JEvent, LevelInfo, RunSummary, Segment, Session } from "../journey";
+import type { Item, JEvent, LevelInfo, PvpSummary, RunSummary, Segment, Session } from "../journey";
 import { entries, isObj, list, num, str, type LuaValue } from "../lua";
 import { parseItem } from "../wow";
 import type { Contribution, FileContext } from "./types";
@@ -46,21 +46,76 @@ function runSummary(v: LuaValue | undefined, names: Record<string, string>): Run
     // party is a list of the others' GUIDs: only how many is kept.
     groupSize: list(v.party).length ? list(v.party).length + 1 : undefined,
     type: str(v.type),
+    pvp: pvpOf(v.pvp),
   };
 }
+
+// A battleground's result (1.18 on). chatKills, the honorable kills chat
+// named, are other players: left out.
+function pvpOf(v: LuaValue | undefined): PvpSummary | undefined {
+  if (!isObj(v)) return undefined;
+  const stats: { name: string; value: number }[] = [];
+  for (const s of list(v.stats)) {
+    const row = list(s);
+    const name = str(isObj(s) && !Array.isArray(s) && s.name !== undefined ? s.name : row[0]);
+    const value = num(isObj(s) && !Array.isArray(s) && s.value !== undefined ? s.value : row[1]);
+    if (name && value !== undefined) stats.push({ name, value });
+  }
+  const rep: Record<string, number> = {};
+  for (const [k, x] of entries(v.rep)) if (typeof x === "number") rep[k] = x;
+  const t = isObj(v.teams) && ("horde" in v.teams || "alliance" in v.teams) ? [v.teams.horde, v.teams.alliance] : list(v.teams);
+  const out = clean({
+    won: v.won === true ? true : v.won === false ? false : undefined,
+    length: num(v.length),
+    kb: num(v.kb),
+    hk: num(v.hk),
+    deaths: num(v.deaths),
+    honor: num(v.honor),
+    scoreHonor: num(v.scoreHonor),
+    damage: num(v.damage),
+    healing: num(v.healing),
+    stats: stats.length ? stats : undefined,
+    rep: Object.keys(rep).length ? rep : undefined,
+    teams: num(t[0]) !== undefined || num(t[1]) !== undefined ? clean({ horde: num(t[0]), alliance: num(t[1]) }) : undefined,
+  });
+  return out as PvpSummary;
+}
+
+// "itemID:count,itemID:count", as gathering saves its loot.
+function lootOf(v: LuaValue | undefined): { id: number; count: number }[] | undefined {
+  const s = str(v);
+  if (!s) return undefined;
+  const out: { id: number; count: number }[] = [];
+  for (const m of s.matchAll(/(\d+):(\d+)/g)) out.push({ id: Number(m[1]), count: Number(m[2]) });
+  return out.length ? out : undefined;
+}
+
+const GATHER = { m: "mining", h: "herbalism", f: "fishing" } as Record<string, string>;
+const DUEL_RESULTS = new Set(["won", "lost", "fled", "theyFled"]);
 
 // One saved event as the site's event, or undefined for a kind it skips.
 // f is the kind's own fields (the saved array from its sixth entry).
 function convert(kind: string, f: LuaValue[], names: Record<string, string>): Record<string, unknown> | undefined {
   switch (kind) {
     case "on":
-      return { level: num(f[0]) };
+      // money: the gold held at login (1.18 on).
+      return { level: num(f[0]), money: num(f[1]) };
     case "off":
-      return {};
+      return { money: num(f[0]) };
     case "lvl":
       return { level: num(f[0]) };
-    case "die":
-      return {};
+    case "die": {
+      // Who killed the player (1.18 on): kind "p" a player, "pet" a player's
+      // pet, "e" the world (falling, lava), nil a creature. A player's or a
+      // pet's name names another player, so only the kind is kept.
+      const kind = str(f[1]);
+      const killerKind = kind === "p" ? "player" : kind === "pet" ? "pet" : kind === "e" ? "world" : f[0] !== undefined ? "creature" : undefined;
+      return {
+        killer: killerKind === "player" || killerKind === "pet" ? undefined : str(f[0]),
+        killerKind,
+        spell: str(f[2]),
+      };
+    }
     case "qa":
       return { questID: num(f[0]) };
     case "qd":
@@ -90,6 +145,29 @@ function convert(kind: string, f: LuaValue[], names: Record<string, string>): Re
     }
     case "prof":
       return { name: str(f[0]), rank: num(f[1]), max: num(f[2]), baseline: bool(f[3]) };
+    case "skill":
+      return { name: str(f[0]), rank: num(f[1]), from: num(f[2]), late: bool(f[3]) };
+    case "craft": {
+      const item = parseItem(f[0], f[2]);
+      if (item?.id && item.name) names[item.id] = item.name;
+      return { item, count: num(f[1]), profession: str(f[3]) };
+    }
+    case "gath": {
+      const prof = str(f[0]);
+      return { prof: prof && GATHER[prof], itemID: num(f[1]), loot: lootOf(f[3]), instanceID: num(f[4]) };
+    }
+    case "duel": {
+      // The opponent's name and guild are left out; class, race and level stay.
+      const result = str(f[1]);
+      return {
+        result: result && DUEL_RESULTS.has(result) ? result : undefined,
+        by: f[2] === "me" || f[2] === "them" ? f[2] : undefined,
+        class: str(f[3]),
+        level: num(f[4]),
+        race: str(f[5]),
+        toDeath: bool(f[7]),
+      };
+    }
     case "rec":
       return { name: str(f[0]), profession: str(f[2]), trainer: f[3] === "t" || undefined };
     case "gj":
@@ -150,7 +228,18 @@ function levelsOf(v: LuaValue | undefined): LevelInfo[] {
   for (const [k, snap] of entries(v)) {
     const level = Number(k);
     if (!Number.isInteger(level) || !isObj(snap)) continue;
-    out.push(clean({ level, t: num(snap.t), money: num(snap.money) }) as unknown as LevelInfo);
+    const skills: Record<string, { rank: number; max?: number }> = {};
+    for (const [name, sk] of entries(snap.skills)) {
+      const v = list(sk);
+      const rank = num(v[0]);
+      if (rank !== undefined) skills[name] = clean({ rank, max: num(v[1]) }) as { rank: number; max?: number };
+    }
+    out.push(clean({
+      level, t: num(snap.t), money: num(snap.money), played: num(snap.played),
+      kills: num(snap.kills), killXP: num(snap.killXP), questXP: num(snap.questXP), deaths: num(snap.deaths),
+      quests: num(snap.quests), instances: num(snap.instances), distance: num(snap.distance), flown: num(snap.flown),
+      skills: Object.keys(skills).length ? skills : undefined,
+    }) as unknown as LevelInfo);
   }
   return out.sort((a, b) => a.level - b.level);
 }

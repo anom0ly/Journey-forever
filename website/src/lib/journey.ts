@@ -62,6 +62,24 @@ export interface RunSummary {
   items?: Item[];
   groupSize?: number;
   type?: string;
+  pvp?: PvpSummary; // a battleground's result (Road to Sixty 1.18 on)
+}
+
+// The player's own row of a battleground's score board, and the match's
+// result. Who else was there is never kept.
+export interface PvpSummary {
+  won?: boolean; // undefined when left before the end
+  length?: number; // seconds, by the match's clock
+  kb?: number;
+  hk?: number;
+  deaths?: number;
+  honor?: number; // every honor point awarded inside, bonus honor included
+  scoreHonor?: number; // the score board's honor (bonus left out)
+  damage?: number;
+  healing?: number;
+  stats?: { name: string; value: number }[]; // the map's own columns (flags, bases, ...)
+  rep?: Record<string, number>; // reputation gained, by faction name
+  teams?: { horde?: number; alliance?: number };
 }
 
 // A path segment, in Road to Sixty's packed form: the start point, then
@@ -85,6 +103,16 @@ export interface LevelInfo {
   secondsOnLevel?: number; // played time spent on this level before the next ding
   money?: number; // copper on hand at the ding
   zone?: string;
+  // Road to Sixty's running totals at the ding (cumulative since the journey began).
+  kills?: number;
+  killXP?: number;
+  questXP?: number;
+  deaths?: number;
+  quests?: number;
+  instances?: number;
+  distance?: number; // yards on foot or mounted
+  flown?: number; // yards by flight path
+  skills?: Record<string, { rank: number; max?: number }>; // profession skill at the ding
 }
 
 export interface Session {

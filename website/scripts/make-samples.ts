@@ -2,7 +2,7 @@
 // for tests and for trying the upload page without playing. The characters,
 // realm and account are invented. Run: node --experimental-strip-types scripts/make-samples.ts
 //
-// The layouts follow the addons' own format notes (Road to Sixty 1.15,
+// The layouts follow the addons' own format notes (Road to Sixty 1.18,
 // Journey Tracker 0.6, Journey Forever 1); the output imitates how the game
 // writes SavedVariables: tabs, ["key"] = value, and "-- [n]" after list items.
 
@@ -82,6 +82,8 @@ function brannoc() {
   const killNames = ["Rockjaw Trogg", "Burly Rockjaw Trogg", "Small Crag Boar", "Frostmane Troll Whelp", "Ice Claw Bear", "Mangy Wolf", "Tunnel Rat Kobold"];
   let lastKill = 0;
   let level = 1;
+  let killXP = 0, questXP = 0, quests = 0, deaths = 0, walked = 0, flown = 0;
+  const skills: Record<string, V> = {};
   const levels: Record<string, V> = {};
   const ev = (t: number, kind: string, pos: [number, number] | null, ...fields: V[]) =>
     events.push([t, kind, pos ? 0 : -1, pos ? pos[0] : 0, pos ? pos[1] : 0, ...fields]);
@@ -91,19 +93,24 @@ function brannoc() {
     level++;
     dingAt[level] = t;
     ev(t, "lvl", pos, level);
-    levels[level] = { t, money: level * 1350, kills: kills.length, quests: level * 3, deaths: 0, distance: 0, flown: 0, gear: {}, links: {} };
+    walked += 900;
+    levels[level] = {
+      t, money: level * 1350, kills: kills.length, killXP, questXP, quests, deaths, instances: level > 7 ? 1 : 0,
+      distance: walked, flown, played: level * 2400, skills: structuredClone(skills), gear: {}, links: {},
+    };
   };
   const kill = (t: number, xp: number) => {
     const n = Math.floor(rand() * killNames.length);
     kills.push(`${t - lastKill},${xp},${n + 1};`);
     lastKill = t;
+    killXP += xp;
   };
 
   // Session 1: Coldridge Valley to Kharanos.
   let t = START;
   let pos: [number, number] = [-6240, 330];
   levels[1] = { t, money: 0, gear: {}, links: {}, kills: 0, quests: 0, deaths: 0, distance: 0, flown: 0 };
-  ev(t, "on", pos, 1);
+  ev(t, "on", pos, 1, null);
   ev(t + 2, "zone", pos, 1426);
   const route1: [number, number][] = [[-6180, 380], [-6080, 420], [-6120, 520], [-5980, 600], [-5850, 470], [-5720, 120], [-5600, -480]];
   let quest = 179;
@@ -113,6 +120,8 @@ function brannoc() {
     for (let k = 0; k < 6; k++) kill(t + 40 + k * 55, 40 + level * 6);
     ev(t + 60, "qa", pos, quest);
     ev(s.t - 20, "qd", s.end, quest, 80 + level * 25, 15 * level, `Sample Quest ${i + 1}`);
+    questXP += 80 + level * 25;
+    quests++;
     quest++;
     if (i % 2 === 1) ding(s.t - 10, s.end);
     t = s.t + 5;
@@ -120,20 +129,28 @@ function brannoc() {
   }
   ev(t, "loot", pos, link(2361, "Battleworn Hammer", "1eff00"), 2, null);
   ev(t + 4, "eq", pos, 16, 2361, "item:2361::::::::5:::::::::", null, { how: "drop", t: t, c: 0, x: pos[0], y: pos[1], name: "Rockjaw Trogg", kind: "Creature", id: 707 });
-  // A death and the ghost run back.
-  ev(t + 30, "die", pos);
+  // A death (with who killed him, from the death recap) and the ghost run back.
+  ev(t + 30, "die", pos, "Burly Rockjaw Trogg", null, null);
   deathsAt.push(t + 30);
+  deaths++;
   const ghost = segment({ m: "g", c: 0, t: t + 60, from: [-5650, -350], to: pos, seconds: 70, j: "d" });
   segs.push(ghost.seg);
   t = ghost.t + 30;
   ev(t, "prof", pos, "Mining", 1, 75, null);
+  skills.Mining = [1, 75];
+  ev(t + 2, "prof", pos, "First Aid", 1, 75, null);
+  skills["First Aid"] = [1, 75];
+  // Bandages made from the linen looted on the way.
+  ev(t + 3, "craft", pos, link(1251, "Linen Bandage", "ffffff"), 6, 1, "First Aid", 3275);
+  for (let r = 2; r <= 22; r += 4) ev(t + 3, "skill", pos, "First Aid", r, r - 4 < 1 ? 1 : r - 4, null);
+  skills["First Aid"] = [22, 75];
   ev(t + 5, "gj", pos, "The Sample Guild", "Initiate", null);
-  ev(t + 10, "off", pos);
+  ev(t + 10, "off", pos, 2 * 1350 + 870);
   const end1 = t + 10;
 
   // Session 2, next evening: Ironforge, a flight to Thelsamar, Loch Modan.
   t = START + 86400 + 3600;
-  ev(t, "on", pos, level);
+  ev(t, "on", pos, level, 2 * 1350 + 870);
   const s2a = segment({ m: "w", c: 0, t, from: pos, to: [-4980, -880], seconds: 600, j: "l" });
   segs.push(s2a.seg);
   ev(s2a.t - 30, "zone", s2a.end, 1455);
@@ -142,6 +159,7 @@ function brannoc() {
   pos = s2a.end;
   const fly = segment({ m: "t", c: 0, t, from: [-4820, -1150], to: [-5420, -2930], seconds: 180 });
   segs.push(fly.seg);
+  flown += 1900;
   t = fly.t + 5;
   pos = fly.end;
   ev(t, "zone", pos, 1432);
@@ -155,6 +173,11 @@ function brannoc() {
     quest++;
     if (i === 1 || i === 3) ding(s.t - 5, s.end);
     if (i === 2) ev(s.t - 2, "rare", s.end, "Sample Rare Boar", "rare", 12, 90001, "x");
+    // Copper veins along the way: each gather raises Mining.
+    const mined = 2 + i * 2;
+    ev(t + 200, "gath", pos, "m", 2770, 1731, `2770:${mined},774:1`, null);
+    ev(t + 201, "skill", pos, "Mining", 10 + i * 12, i ? i * 12 - 2 : 1, null);
+    skills.Mining = [10 + i * 12, 75];
     t = s.t + 5;
     pos = s.end;
   }
@@ -162,8 +185,9 @@ function brannoc() {
   ev(t, "grp", pos, "party", [["Player-0000-0000AAAA", "Groupmate-Elsewhere", "Human", "Female", "PRIEST", 12, null, null]], null, null);
   ev(t + 60, "in", pos, 90, "Gnomeregan", "party");
   const runEnd = t + 60 + 3900;
-  ev(runEnd - 1500, "die", pos);
+  ev(runEnd - 1500, "die", pos, "Sample Boss", null, "Sample Smash");
   deathsAt.push(runEnd - 1500);
+  deaths++;
   ev(runEnd, "loot", pos, link(9490, "Sample Epic Gizmo", "a335ee"), 4, 90);
   ev(runEnd + 30, "out", pos, 90, {
     name: "Gnomeregan", duration: 3930, kills: 64, xp: 9800, deaths: 1, money: 2210, levels: 1,
@@ -174,12 +198,31 @@ function brannoc() {
   t = runEnd + 120;
   ev(t, "grpx", pos, { duration: 4100, kills: 64, xp: 9800, quests: 0, deaths: 1, instances: 1, met: ["Player-0000-0000AAAA"], levels: {} });
   ev(t + 20, "rep", pos, 47, 5, "Ironforge", true);
-  ev(t + 30, "off", pos);
+  // The bars smelted from that copper, back in Thelsamar.
+  ev(t + 25, "craft", pos, link(2840, "Copper Bar", "ffffff"), 8, 1, "Mining", 2657);
+  ev(t + 26, "skill", pos, "Mining", 64, 58, null);
+  skills.Mining = [64, 75];
+  // A duel outside the inn. The opponent's name and guild are another
+  // player's: the site keeps only class, race, level and the result.
+  ev(t + 40, "duel", pos, "Duelist-Elsewhere", "won", "them", "WARRIOR", 8, "Human", "Elsewhere Guild", null);
+  // A Warsong Gulch match (made up: the sample is below its level range).
+  const bg = t + 120;
+  ev(bg, "in", pos, 489, "Warsong Gulch", "pvp");
+  ev(bg + 1150, "out", pos, 489, {
+    name: "Warsong Gulch", duration: 1150, kills: 0, xp: 0, deaths: 0, money: 0, levels: 0, items: [], party: [], type: "pvp",
+    pvp: {
+      won: true, length: 1210, kb: 3, hk: 14, deaths: 0, scoreHonor: 120, honor: 240, damage: 15400, healing: 3300,
+      stats: [["Flag Captures", 1], ["Flag Returns", 2]], rep: { "Silverwing Sentinels": 70 }, teams: { horde: 10, alliance: 10 },
+      chatKills: ["Enemy-Elsewhere"],
+    },
+  });
+  t = bg + 1200;
+  ev(t + 30, "off", pos, level * 1350 + 2210);
 
   return {
     char: {
       version: 4,
-      addon: "1.15.0",
+      addon: "1.18.0",
       journeyId: "Player-0000-00SAMPLE:0",
       class: "PALADIN",
       segments: segs,

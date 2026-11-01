@@ -76,6 +76,7 @@ export function dungeonRuns(j: Journey): { t: number; name: string; run?: RunSum
   for (const e of j.events) {
     if (e.k !== "out") continue;
     const run = e.run as RunSummary | undefined;
+    if (run?.pvp || run?.type === "pvp") continue; // battlegrounds have their own tab
     const name = run?.name ?? (typeof e.instanceID === "number" ? j.zones[`i${e.instanceID}`] : undefined);
     if (name) out.push({ t: e.t, name, run });
   }
@@ -147,7 +148,7 @@ export function tiles(j: Journey): Tile[] {
     {
       label: "Deaths",
       value: deathCount(j),
-      sub: deaths.length && typeof deaths.at(-1)!.killer === "string" ? `last: ${deaths.at(-1)!.killer}` : undefined,
+      sub: deaths.at(-1)?.killerKind === "player" ? "last: another player" : deaths.length && typeof deaths.at(-1)!.killer === "string" ? `last: ${deaths.at(-1)!.killer}` : undefined,
     },
     {
       label: "Dungeons",
@@ -224,7 +225,7 @@ export function deathRows(j: Journey): DeathRow[] {
     .map((e) => ({
       t: e.t,
       level: e.level as number | undefined,
-      killer: e.killer as string | undefined,
+      killer: e.killerKind === "player" ? "Another player" : (e.killer as string | undefined),
       where: [e.dungeon ?? e.zone ?? zoneAt(j, e.t), e.subzone].filter(Boolean).join(", ") || undefined,
     }))
     .reverse();
@@ -244,7 +245,7 @@ export function moments(j: Journey): Moment[] {
       out.push({ t: e.t, level: e.level, title: `Reached level ${e.level}`, where, kind: "level" });
     } else if (e.k === "out") {
       const run = e.run as RunSummary | undefined;
-      if (!run?.name) continue;
+      if (!run?.name || run.pvp || run.type === "pvp") continue;
       const mins = run.duration ? `${Math.round(run.duration / 60)} min` : undefined;
       const group = run.groupSize ? `group of ${run.groupSize}` : undefined;
       out.push({ t: e.t, level, title: `${firstDungeon ? "First dungeon: " : "Dungeon: "}${run.name}`, where: [mins, group].filter(Boolean).join(", ") || undefined, kind: "dungeon" });
@@ -278,7 +279,7 @@ export function moments(j: Journey): Moment[] {
 export function describe(j: Journey, e: JEvent): { text: string; tone: "gold" | "red" | "plain" | "muted" | "lilac" } | undefined {
   switch (e.k) {
     case "lvl": return { text: `Reached level ${e.level}`, tone: "gold" };
-    case "die": return { text: e.killer ? `Died to ${e.killer}` : "Died", tone: "red" };
+    case "die": return { text: e.killerKind === "player" ? "Killed by another player" : e.killer ? `Died to ${e.killer}` : "Died", tone: "red" };
     case "qd": return { text: `Quest: ${e.title ?? `#${e.questID}`}`, tone: "gold" };
     case "zone": return { text: `Entered ${zoneName(j, e.mapID)}`, tone: "plain" };
     case "in": return { text: `Entered ${e.name ?? "a dungeon"}`, tone: "lilac" };
