@@ -29,7 +29,7 @@ JourneyForeverDB = {
 			["level"] = 3,
 		}, -- [1]
 		{
-			["t"] = 1793912731,
+			["t"] = 1793914051,
 			["kind"] = "epic",
 			["detail"] = {
 				["item"] = "item:9490::::::::8:::::",
@@ -37,7 +37,7 @@ JourneyForeverDB = {
 				["name"] = "Sample Epic Gizmo",
 				["quality"] = 4,
 			},
-			["shot"] = "WoWScrnShot_110526_210531",
+			["shot"] = "WoWScrnShot_110526_212731",
 			["ok"] = true,
 			["hiddenUI"] = true,
 			["mapID"] = 226,
@@ -45,7 +45,7 @@ JourneyForeverDB = {
 			["level"] = 8,
 		}, -- [2]
 		{
-			["t"] = 1793912735,
+			["t"] = 1793914055,
 			["kind"] = "dungeon",
 			["detail"] = {
 				["instance"] = "Gnomeregan",
@@ -53,7 +53,7 @@ JourneyForeverDB = {
 				["boss"] = "Sample Boss",
 				["via"] = "encounter",
 			},
-			["shot"] = "WoWScrnShot_110526_210535",
+			["shot"] = "WoWScrnShot_110526_212735",
 			["ok"] = true,
 			["hiddenUI"] = true,
 			["mapID"] = 226,

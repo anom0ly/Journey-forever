@@ -82,3 +82,18 @@ export const SLOT_NAMES: Record<number, string> = {
   10: "Hands", 11: "Finger", 12: "Finger", 13: "Trinket", 14: "Trinket", 15: "Back", 16: "Main hand",
   17: "Off hand", 18: "Ranged", 19: "Tabard",
 };
+
+// Names of the classic ores, stones and herbs, by item ID, for gathering
+// (Road to Sixty saves only the IDs).
+export const GATHER_NAMES: Record<number, string> = {
+  2770: "Copper Ore", 2771: "Tin Ore", 2775: "Silver Ore", 2772: "Iron Ore", 2776: "Gold Ore", 3858: "Mithril Ore",
+  7911: "Truesilver Ore", 10620: "Thorium Ore", 11370: "Dark Iron Ore", 3340: "Incendicite Ore", 4278: "Lesser Bloodstone Ore",
+  5833: "Indurium Ore", 2835: "Rough Stone", 2836: "Coarse Stone", 2838: "Heavy Stone", 7912: "Solid Stone", 12365: "Dense Stone",
+  774: "Malachite", 818: "Tigerseye", 1210: "Shadowgem",
+  2447: "Peacebloom", 765: "Silverleaf", 2449: "Earthroot", 785: "Mageroyal", 2450: "Briarthorn", 3820: "Stranglekelp",
+  2453: "Bruiseweed", 3355: "Wild Steelbloom", 3369: "Grave Moss", 3356: "Kingsblood", 3357: "Liferoot", 3818: "Fadeleaf",
+  3821: "Goldthorn", 3358: "Khadgar's Whisker", 3819: "Wintersbite", 4625: "Firebloom", 8831: "Purple Lotus",
+  8836: "Arthas' Tears", 8838: "Sungrass", 8839: "Blindweed", 8845: "Ghost Mushroom", 8846: "Gromsblood",
+  13464: "Golden Sansam", 13463: "Dreamfoil", 13465: "Mountain Silversage", 13466: "Plaguebloom", 13467: "Icecap",
+  13468: "Black Lotus", 19726: "Bloodvine", 2452: "Swiftthistle",
+};

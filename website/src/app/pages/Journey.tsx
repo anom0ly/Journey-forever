@@ -21,18 +21,27 @@ import { useJourney, type JourneySource } from "../source";
 import { mapArt } from "../mapArt";
 import { PublicToggle, shareUrl } from "./Characters";
 import { draw, fitView, type Fade, type LayerId } from "./Replay";
+import { DeathsTab, GoldTab, LevelsTab, ProfessionsTab, PvpTab, TabNav, type TabId } from "./JourneyTabs";
 
 const THUMB_LAYERS = new Set<LayerId>(["w", "t", "g"]);
+const DEATH_LAYERS = new Set<LayerId>(["w", "t", "g", "die"]);
 
 // A small, still version of the replay map: the game's map art with the
 // whole path on the continent walked most, framed to fit.
-function RouteThumb({ j }: { j: Journey }) {
+function RouteThumb({ j, layers = THUMB_LAYERS, caption = true }: { j: Journey; layers?: Set<LayerId>; caption?: boolean }) {
   const tracks = useMemo(() => tracksOf(j.segments), [j]);
   const c = useMemo(() => {
     const byC = new Map<number, number>();
     for (const s of j.segments) byC.set(s.c, (byC.get(s.c) ?? 0) + s.d.length + 1);
+    // The death map shows the continent with the most deaths.
+    if (layers.has("die")) {
+      const deaths = new Map<number, number>();
+      for (const e of j.events) if (e.k === "die" && typeof e.c === "number") deaths.set(e.c, (deaths.get(e.c) ?? 0) + 1);
+      const top = [...deaths.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (top !== undefined && byC.has(top)) return top;
+    }
     return [...byC.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-  }, [j]);
+  }, [j, layers]);
   const visited = useMemo(() => new Set(j.events.filter((e) => e.k === "zone" && typeof e.mapID === "number").map((e) => e.mapID as number)), [j]);
   const zones = visited.size;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -58,7 +67,7 @@ function RouteThumb({ j }: { j: Journey }) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const redraw = () => setFrame((n) => n + 1);
     const view = fitView(tracks, c, size.w, size.h);
-    draw(ctx, size.w, size.h, view, j, tracks, c, Infinity, THUMB_LAYERS, visited, (id, soft) => mapArt(id, redraw, soft), fade.current);
+    draw(ctx, size.w, size.h, view, j, tracks, c, Infinity, layers, visited, (id, soft) => mapArt(id, redraw, soft), fade.current);
     if (fade.current.busy) {
       const id = requestAnimationFrame(redraw);
       return () => cancelAnimationFrame(id);
@@ -71,17 +80,17 @@ function RouteThumb({ j }: { j: Journey }) {
       <div class="thumb">
         {tracks.length ? (
           <>
-            <canvas ref={canvasRef} role="img" aria-label="Map of the route walked so far" />
+            <canvas ref={canvasRef} role="img" aria-label={layers.has("die") ? "Map of where you died, on the route walked" : "Map of the route walked so far"} />
             <span class="open">Open replay →</span>
           </>
         ) : (
           <span class="empty">No path yet (needs Road to Sixty)</span>
         )}
       </div>
-      <span class="small muted">
+      {caption && <span class="small muted">
         {plural(zones, "zone")} · {km(dist.w)} km on foot or mounted{dist.t ? `, ${km(dist.t)} km by flight path` : ""}
         {dist.g ? `, ${km(dist.g)} km as a ghost` : ""}
-      </span>
+      </span>}
     </>
   );
 }
@@ -333,7 +342,7 @@ function Sources({ j }: { j: Journey }) {
   );
 }
 
-export function JourneyView({ j, stored, shots, base, onStored }: { j: Journey; stored?: StoredCharacter; shots: Screenshot[]; base: string; onStored?: (c: StoredCharacter) => void }) {
+export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j: Journey; stored?: StoredCharacter; shots: Screenshot[]; base: string; onStored?: (c: StoredCharacter) => void; tab?: TabId }) {
   const c = j.character;
   const start = firstSeen(j);
   const p = played(j);
@@ -368,7 +377,28 @@ export function JourneyView({ j, stored, shots, base, onStored }: { j: Journey; 
       )}
       {base === "/demo" && <div class="notice small">This is a made-up sample journey, built from the sample saved files that ship with the site. Nothing here is saved.</div>}
       <Sources j={j} />
+      <TabNav base={base} tab={tab} />
 
+      {tab === "deaths" ? (
+        <DeathsTab j={j} map={<a href={`${base}/replay`} style={{ textDecoration: "none", color: "var(--text)" }}><RouteThumb j={j} layers={DEATH_LAYERS} caption={false} /></a>} />
+      ) : tab === "gold" ? (
+        <GoldTab j={j} />
+      ) : tab === "professions" ? (
+        <ProfessionsTab j={j} />
+      ) : tab === "pvp" ? (
+        <PvpTab j={j} />
+      ) : tab === "levels" ? (
+        <LevelsTab j={j} base={base} />
+      ) : (
+        <Overview j={j} shots={shots} base={base} />
+      )}
+    </main>
+  );
+}
+
+function Overview({ j, shots, base }: { j: Journey; shots: Screenshot[]; base: string }) {
+  return (
+    <>
       <section class="tiles">
         {tiles(j).map((t) => (
           <div class="tile" key={t.label}>
@@ -404,11 +434,11 @@ export function JourneyView({ j, stored, shots, base, onStored }: { j: Journey; 
         </div>
         <Sessions j={j} />
       </section>
-    </main>
+    </>
   );
 }
 
-export function JourneyPage({ source }: { source: JourneySource }) {
+export function JourneyPage({ source, tab = "" }: { source: JourneySource; tab?: TabId }) {
   const { data, error } = useJourney(source);
   const [stored, setStored] = useState<StoredCharacter>();
   if (error) {
@@ -435,6 +465,7 @@ export function JourneyPage({ source }: { source: JourneySource }) {
       shots={data.screenshots}
       base={data.base}
       onStored={source.kind === "owner" ? setStored : undefined}
+      tab={tab}
     />
   );
 }

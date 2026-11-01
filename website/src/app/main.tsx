@@ -5,6 +5,7 @@ import { AccountPage } from "./pages/Account";
 import { CharactersPage } from "./pages/Characters";
 import { DataPage } from "./pages/Data";
 import { JourneyPage } from "./pages/Journey";
+import { isTab } from "./pages/JourneyTabs";
 import { Landing } from "./pages/Landing";
 import { ReplayPage } from "./pages/Replay";
 import { UploadPage } from "./pages/Upload";
@@ -100,10 +101,13 @@ function App() {
   else if (path === "/data") page = <DataPage signedIn={signedIn} />;
   else if (path === "/demo") page = <JourneyPage source={{ kind: "demo" }} />;
   else if (path === "/demo/replay") page = <ReplayPage source={{ kind: "demo" }} />;
+  else if ((m = match("/demo/:tab", path)) && isTab(m.tab)) page = <JourneyPage source={{ kind: "demo" }} tab={m.tab} />;
   else if ((m = match("/c/:key", path))) page = needsUser(<JourneyPage source={{ kind: "owner", key: m.key }} />);
   else if ((m = match("/c/:key/replay", path))) page = needsUser(<ReplayPage source={{ kind: "owner", key: m.key }} />);
+  else if ((m = match("/c/:key/:tab", path)) && isTab(m.tab)) page = needsUser(<JourneyPage source={{ kind: "owner", key: m.key }} tab={m.tab} />);
   else if ((m = match("/j/:slug", path))) page = <JourneyPage source={{ kind: "public", slug: m.slug }} />;
   else if ((m = match("/j/:slug/replay", path))) page = <ReplayPage source={{ kind: "public", slug: m.slug }} />;
+  else if ((m = match("/j/:slug/:tab", path)) && isTab(m.tab)) page = <JourneyPage source={{ kind: "public", slug: m.slug }} tab={m.tab} />;
   else page = <NotFound />;
 
   return (
