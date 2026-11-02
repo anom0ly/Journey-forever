@@ -28,7 +28,7 @@ export function journeyStart(j: Journey): number | undefined {
 }
 
 // When each level was reached: from the snapshots, else the level-up events.
-function levelTimes(j: Journey): Map<number, number> {
+export function levelTimes(j: Journey): Map<number, number> {
   const out = new Map<number, number>();
   for (const e of j.events) if (e.k === "lvl" && typeof e.level === "number" && !out.has(e.level)) out.set(e.level, e.t);
   for (const l of j.levels) if (l.t !== undefined) out.set(l.level, Math.min(l.t, out.get(l.level) ?? Infinity));

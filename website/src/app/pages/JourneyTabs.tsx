@@ -92,7 +92,7 @@ interface Series {
 }
 
 // A line chart in SVG: x and y domains given, ticks labelled.
-function LineChart(props: {
+export function LineChart(props: {
   series: Series[];
   x: [number, number];
   y: [number, number];
@@ -177,14 +177,14 @@ export function labelEvery(max: number): number {
   return max <= 12 ? 1 : max <= 30 ? 5 : 10;
 }
 
-function levelTicks(max: number): { at: number; label: string }[] {
+export function levelTicks(max: number): { at: number; label: string }[] {
   const every = labelEvery(max);
   const out = [{ at: 1, label: "1" }];
   for (let l = every === 1 ? 2 : every; l <= max; l += every) out.push({ at: l, label: String(l) });
   return out;
 }
 
-function niceMax(v: number): number {
+export function niceMax(v: number): number {
   if (v <= 0) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(v)));
   for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;

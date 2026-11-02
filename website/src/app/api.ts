@@ -36,6 +36,15 @@ export interface AccountSummary {
   screenshotBytes: number;
 }
 
+export interface PublicHit {
+  name: string;
+  realm: string;
+  slug: string;
+  level: number;
+  className?: string;
+  race?: string;
+}
+
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -80,6 +89,7 @@ export const api = {
       body: JSON.stringify({ confirm }),
     }),
   publicJourney: (slug: string) => call<{ character: StoredCharacter; screenshots: Screenshot[] }>(`/api/public/${encodeURIComponent(slug)}`),
+  searchPublic: (q: string) => call<{ results: PublicHit[] }>(`/api/public?q=${encodeURIComponent(q)}`),
   publicJourneyData: (slug: string) => call<Journey>(`/api/public/${encodeURIComponent(slug)}/journey`),
 
   async saveJourney(journey: Journey, summary: CharacterSummary): Promise<StoredCharacter> {

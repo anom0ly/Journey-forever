@@ -362,6 +362,14 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
         </div>
         <div class="row">
           {stored && onStored ? <PublicToggle c={stored} onChange={onStored} /> : stored?.isPublic ? <span class="pill teal">Public</span> : null}
+          {(base === "/demo" || (stored?.isPublic && stored.slug)) && (
+            <a class="btn" href={base === "/demo" ? "/demo/compare" : `/compare/${encodeURIComponent(stored!.slug!)}`}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7 4L3 8l4 4M3 8h14M17 12l4 4-4 4M21 16H7" />
+              </svg>
+              Compare
+            </a>
+          )}
           <a class="btn primary" href={`${base}/replay`}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="#12151A" aria-hidden="true">
               <path d="M7 4l13 8-13 8z" />
