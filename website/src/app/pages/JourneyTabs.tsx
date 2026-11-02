@@ -73,7 +73,7 @@ function ShowMore<T>({ rows, first, render }: { rows: T[]; first: number; render
       {rows.length > first && (
         <tr>
           <td colSpan={99}>
-            <button type="button" class="linkish" style={{ color: "var(--gold)" }} onClick={() => setAll(!all)}>
+            <button type="button" class="linkish" style={{ color: "var(--accent)" }} onClick={() => setAll(!all)}>
               {all ? "Show fewer" : `Show ${rows.length - first} more`}
             </button>
           </td>
@@ -984,7 +984,7 @@ export function LevelsTab({ j, base }: { j: Journey; base: string }) {
               {rows.length > 8 && (
                 <tr>
                   <td colSpan={12}>
-                    <button type="button" class="linkish" style={{ color: "var(--gold)" }} onClick={() => setAll(!all)}>
+                    <button type="button" class="linkish" style={{ color: "var(--accent)" }} onClick={() => setAll(!all)}>
                       {all ? "Show fewer" : `Show levels 1 to ${rows.length - 8}`}
                     </button>
                   </td>

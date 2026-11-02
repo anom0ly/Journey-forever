@@ -22,13 +22,12 @@ function Header({ me, path, onSignOut }: { me: Me | null; path: string; onSignOu
   const signedIn = !!me?.user;
   return (
     <header class="site-header">
-      <a class="brand" href={signedIn ? "/characters" : "/"}>
-        Journey Forever
-      </a>
-      <nav class="nav" aria-label="Main">
+      <nav class="nav" aria-label="Journey Forever">
+        {!signedIn && link("/", "Home", path === "/")}
         {signedIn && link("/upload", "Upload", path === "/upload")}
         {signedIn && link("/characters", "Characters", path === "/characters" || path.startsWith("/c/"))}
         {link("/data", "Data sources", path === "/data")}
+        <span class="push" />
         {signedIn && link("/account", me?.user?.battletag ?? "Account", path === "/account")}
         {signedIn ? (
           <button type="button" class="link" onClick={onSignOut}>

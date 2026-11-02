@@ -213,7 +213,7 @@ export function UploadPage() {
           if (e.dataTransfer) take(await fromDrop(e.dataTransfer));
         }}
       >
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E0B252" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E5675C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 16V4" />
           <path d="M7 9l5-5 5 5" />
           <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
@@ -234,7 +234,7 @@ export function UploadPage() {
             Open one character's SavedVariables folder and pick the files below (JourneyTracker.lua only if you use it). Repeat for each character you played.
           </span>
           <code class="small" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>WTF\Account\[ACCOUNT]\[Realm]\[Character]\SavedVariables\</code>
-          <div class="stack mono small" style={{ gap: "4px", color: "var(--gold-hi)" }}>
+          <div class="stack mono small" style={{ gap: "4px", color: "var(--accent-hi)" }}>
             <span>RoadToSixty.lua</span>
             <span>JourneyTracker.lua <span class="muted">(optional)</span></span>
             <span>JourneyForever.lua</span>
@@ -366,7 +366,7 @@ export function UploadPage() {
                     timeline at the moment they were taken.
                   </span>
                   <label class="row" style={{ gap: "8px", cursor: "pointer" }}>
-                    <input type="checkbox" checked={includeManual} onChange={(e) => setIncludeManual((e.target as HTMLInputElement).checked)} style={{ width: "18px", height: "18px", accentColor: "var(--gold)" }} />
+                    <input type="checkbox" checked={includeManual} onChange={(e) => setIncludeManual((e.target as HTMLInputElement).checked)} style={{ width: "18px", height: "18px", accentColor: "var(--accent)" }} />
                     Include them
                   </label>
                 </div>

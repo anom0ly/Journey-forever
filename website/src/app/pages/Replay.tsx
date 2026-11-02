@@ -14,7 +14,7 @@ const LAYERS = [
   { id: "w", label: "On foot or mounted", color: "#1D6F6B", style: "solid" },
   { id: "t", label: "Flight path", color: "#6B4FA0", style: "dashed" },
   { id: "g", label: "Ghost (corpse run)", color: "#FFFFFF", style: "dotted" },
-  { id: "die", label: "Deaths", color: "#B3261E", style: "solid" },
+  { id: "die", label: "Deaths", color: "#F29C93", style: "solid" },
   { id: "lvl", label: "Level ups and quests", color: "#A8761C", style: "dotted" },
   { id: "in", label: "Dungeon entrances", color: "#6B4FA0", style: "solid" },
   { id: "shot", label: "Screenshots and notes", color: "#7A3FB0", style: "solid" },
@@ -96,7 +96,7 @@ export function drawMap(
   const cont = continentMap(c);
   const contArt = cont && art(cont.id);
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = contArt ? "#12151A" : "#16211C";
+  ctx.fillStyle = contArt ? "#120D0D" : "#1A1414";
   ctx.fillRect(0, 0, w, h);
 
   // Where a map's art goes: its world rectangle on screen.
@@ -133,7 +133,7 @@ export function drawMap(
   const prevArt = prevZone && t < 1 ? art(prevZone.id, true) : undefined;
   const dim = Math.max(curArt ? shownAt(target) * t : 0, prevArt ? shownAt(prevZone) * (1 - t) : 0);
   if (contArt && dim > 0) {
-    ctx.fillStyle = `rgba(18, 21, 26, ${0.35 * dim})`;
+    ctx.fillStyle = `rgba(18, 13, 13, ${0.35 * dim})`;
     ctx.fillRect(0, 0, w, h);
   }
   for (const [z, img, alpha] of [
@@ -155,8 +155,8 @@ export function drawMap(
       const r = rect(z);
       if (r.left + r.width < 0 || r.left > w || r.top + r.height < 0 || r.top > h) continue;
       const been = visited.has(z.id);
-      ctx.fillStyle = been ? "rgba(43, 58, 51, 0.75)" : "rgba(36, 52, 44, 0.35)";
-      ctx.strokeStyle = been ? "rgba(94, 122, 106, 0.9)" : "rgba(62, 82, 71, 0.6)";
+      ctx.fillStyle = been ? "rgba(58, 43, 43, 0.75)" : "rgba(37, 27, 27, 0.45)";
+      ctx.strokeStyle = been ? "rgba(122, 98, 94, 0.9)" : "rgba(78, 60, 58, 0.6)";
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.roundRect(r.left, r.top, r.width, r.height, 6);
@@ -168,14 +168,14 @@ export function drawMap(
     for (const z of zones) {
       const r = rect(z);
       if (r.width < 70) continue;
-      ctx.fillStyle = visited.has(z.id) ? "#9DB3A6" : "#5F7468";
+      ctx.fillStyle = visited.has(z.id) ? "#B39F9B" : "#6E5E5B";
       ctx.fillText(z.name, r.left + r.width / 2, r.top + r.height / 2);
     }
   }
   if (!zones.length) {
     // No zone data for this continent: a faint yard grid for scale.
     const step = view.scale > 0.25 ? 500 : view.scale > 0.05 ? 1000 : 5000;
-    ctx.strokeStyle = "rgba(62, 82, 71, 0.35)";
+    ctx.strokeStyle = "rgba(78, 60, 58, 0.35)";
     ctx.beginPath();
     const y0 = view.cx + (w / 2) / view.scale, y1 = view.cx - (w / 2) / view.scale;
     for (let y = Math.floor(y1 / step) * step; y <= y0; y += step) {
@@ -265,7 +265,7 @@ function drawPaths(
     if (px < -20 || py < -20 || px > w + 20 || py > h + 20) continue;
     if (e.k === "die" && layers.has("die")) {
       ctx.lineCap = "round";
-      for (const [color, width] of [["rgba(255, 248, 230, 0.9)", 6], ["#B3261E", 3.5]] as const) {
+      for (const [color, width] of [["rgba(18, 13, 13, 0.85)", 6.5], ["#F29C93", 3.5]] as const) {
         ctx.strokeStyle = color;
         ctx.lineWidth = width;
         ctx.beginPath();
@@ -310,12 +310,12 @@ function drawPaths(
   const here = whereAt(tracks, now);
   if (here && here.c === c) {
     const px = sx(here.y), py = sy(here.x);
-    ctx.fillStyle = "rgba(224, 178, 82, 0.35)";
+    ctx.fillStyle = "rgba(229, 103, 92, 0.35)";
     ctx.beginPath();
     ctx.arc(px, py, 16, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#E0B252";
-    ctx.strokeStyle = "#12151A";
+    ctx.fillStyle = "#E5675C";
+    ctx.strokeStyle = "#120D0D";
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.arc(px, py, 8, 0, Math.PI * 2);
@@ -333,7 +333,7 @@ function Player({ j, base }: { j: Journey; base: string }) {
     () =>
       j.events
         .filter((e) => e.k === "lvl" || e.k === "die")
-        .map((e) => ({ at: clock.total ? toReplay(clock, e.t) / clock.total : 0, color: e.k === "die" ? "#E07A6A" : "#ECE6D8", key: `${e.t}${e.k}` })),
+        .map((e) => ({ at: clock.total ? toReplay(clock, e.t) / clock.total : 0, color: e.k === "die" ? "#F29C93" : "#F0E6E2", key: `${e.t}${e.k}` })),
     [j, clock],
   );
   const sessionStarts = useMemo(() => j.sessions.map((s) => s.start), [j]);
@@ -516,12 +516,12 @@ function Player({ j, base }: { j: Journey; base: string }) {
               }}
             >
               {playing ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="#12151A" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <rect x="6" y="5" width="4" height="14" />
                   <rect x="14" y="5" width="4" height="14" />
                 </svg>
               ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="#12151A" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M7 4l13 8-13 8z" />
                 </svg>
               )}
