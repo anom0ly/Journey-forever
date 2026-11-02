@@ -292,3 +292,28 @@ label.btn:focus-within { outline: 2px solid var(--gold); outline-offset: 2px; }
 .lane-ticks > span { flex: 1; text-align: center; }
 .prof-grid { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 16px 20px; align-items: center; }
 @media (max-width: 520px) { .prof-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+
+/* Compare replay */
+.duo-replay { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+@media (max-width: 980px) { .duo-replay { grid-template-columns: minmax(0, 1fr); } .duo-replay > aside { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); } }
+.duo-stage { position: relative; }
+.duo-maps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.duo-maps.split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.duo-map { cursor: default; aspect-ratio: 16 / 10; }
+.duo-maps.split .duo-map { aspect-ratio: 4 / 5; }
+@media (max-width: 640px) { .duo-maps.split { grid-template-columns: minmax(0, 1fr); } .duo-maps.split .duo-map, .duo-map { aspect-ratio: 4 / 5; } }
+.duo-map-label { position: absolute; left: 10px; bottom: 8px; font-size: 12px; padding: 3px 8px; border-radius: 6px; background: rgba(18, 21, 26, 0.85); color: var(--text); pointer-events: none; }
+.duo-hud { position: absolute; left: 12px; top: 12px; display: flex; flex-direction: column; gap: 1px; padding: 10px 14px; border-radius: 12px; background: rgba(18, 21, 26, 0.88); max-width: calc(100% - 24px); pointer-events: none; }
+.duo-headline { font-family: var(--serif); font-size: 20px; font-weight: 700; }
+@media (max-width: 640px) { .duo-map-label { bottom: 36px; } .duo-headline { font-size: 17px; } }
+.duo-card { padding: 16px; gap: 10px; }
+.duo-name { font-family: var(--serif); font-size: 18px; }
+.duo-doing { font-weight: 600; }
+.lvlbar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.lvlbar i { display: block; height: 100%; }
+.duo-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; }
+.duo-facts dd { margin: 0; text-align: right; }
+.duo-feed { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 13px; }
+.duo-feed > div { display: grid; grid-template-columns: 64px 1fr; gap: 8px; }
+.duo-chart { cursor: pointer; touch-action: none; user-select: none; }
+.duo-chart text { font-size: 11px; }

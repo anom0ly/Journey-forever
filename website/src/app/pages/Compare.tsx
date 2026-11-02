@@ -13,6 +13,7 @@ import { api, type PublicHit, type StoredCharacter } from "../api";
 import { classColor, describeCharacter, plural } from "../format";
 import { navigate } from "../router";
 import { loadDemoJourneys } from "../source";
+import { ReplayDuo } from "./CompareReplay";
 import { labelEvery, LineChart, levelTicks, niceMax } from "./JourneyTabs";
 
 const COLOR = { a: "var(--gold)", b: "var(--lilac)" } as const;
@@ -22,7 +23,7 @@ interface Side {
   slug?: string; // undefined for the samples
 }
 
-const TABS = ["Overview", "Route", "Levels", "Deaths", "Gold", "Professions", "PvP"] as const;
+const TABS = ["Overview", "Route", "Replay", "Levels", "Deaths", "Gold", "Professions", "PvP"] as const;
 type Tab = (typeof TABS)[number];
 
 // ---------------------------------------------------------------- loading
@@ -266,7 +267,12 @@ function Who({ side, other, right, demo }: { side: Side; other: Side; right?: bo
 function CompareView({ a, b, demo }: { a: Side; b: Side; demo?: boolean }) {
   const level = sharedLevel(a.j, b.j);
   const [mode, setMode] = useState<"level" | "all">("level");
-  const [tab, setTab] = useState<Tab>("Overview");
+  // The tab is in the link (#replay), so a shared link opens on it.
+  const [tab, setTabState] = useState<Tab>(() => TABS.find((t) => `#${t.toLowerCase()}` === location.hash) ?? "Overview");
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    history.replaceState(history.state, "", t === "Overview" ? location.pathname + location.search : `#${t.toLowerCase()}`);
+  };
   const cut = mode === "level" && level ? level : undefined;
   const ja = useMemo(() => (cut ? cutAtLevel(a.j, cut) : a.j), [a, cut]);
   const jb = useMemo(() => (cut ? cutAtLevel(b.j, cut) : b.j), [b, cut]);
@@ -309,7 +315,7 @@ function CompareView({ a, b, demo }: { a: Side; b: Side; demo?: boolean }) {
         {TABS.map((t) => (
           <a
             key={t}
-            href="#"
+            href={`#${t.toLowerCase()}`}
             class={t === tab ? "active" : undefined}
             aria-current={t === tab ? "page" : undefined}
             onClick={(e) => {
@@ -325,6 +331,8 @@ function CompareView({ a, b, demo }: { a: Side; b: Side; demo?: boolean }) {
         <OverviewTab {...props} />
       ) : tab === "Route" ? (
         <RouteTab {...props} />
+      ) : tab === "Replay" ? (
+        <ReplayDuo ja={ja} jb={jb} />
       ) : tab === "Levels" ? (
         <LevelsTab {...props} />
       ) : tab === "Deaths" ? (

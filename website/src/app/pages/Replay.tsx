@@ -30,7 +30,7 @@ export interface Fade {
 }
 const CROSSFADE_MS = 300;
 
-interface View {
+export interface View {
   cx: number; // world y at the canvas centre (screen x)
   cy: number; // world x at the canvas centre (screen y)
   scale: number; // pixels per yard
@@ -52,6 +52,14 @@ export function fitView(tracks: Track[], c: number, w: number, h: number): View 
   return { cx: (minY + maxY) / 2, cy: (minX + maxX) / 2, scale: Math.min((w * 0.88) / spanY, (h * 0.88) / spanX) };
 }
 
+// North up: screen x runs east (world y falls), screen y runs south (world x falls).
+export function screen(view: View, w: number, h: number) {
+  return {
+    sx: (y: number) => w / 2 - (y - view.cx) * view.scale,
+    sy: (x: number) => h / 2 - (x - view.cy) * view.scale,
+  };
+}
+
 export function draw(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -66,9 +74,24 @@ export function draw(
   art: (mapID: number, feathered?: boolean) => HTMLCanvasElement | undefined,
   fade: Fade,
 ) {
-  // North up: screen x runs east (world y falls), screen y runs south (world x falls).
-  const sx = (y: number) => w / 2 - (y - view.cx) * view.scale;
-  const sy = (x: number) => h / 2 - (x - view.cy) * view.scale;
+  drawMap(ctx, w, h, view, c, visited, art, fade);
+  const { sx, sy } = screen(view, w, h);
+  drawPaths(ctx, w, h, j, tracks, c, now, layers, sx, sy);
+}
+
+// The map under the paths: the continent's art, the zone under the centre
+// fading in over it, or zone outlines while the art loads.
+export function drawMap(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  view: View,
+  c: number,
+  visited: Set<number>,
+  art: (mapID: number, feathered?: boolean) => HTMLCanvasElement | undefined,
+  fade: Fade,
+) {
+  const { sx, sy } = screen(view, w, h);
   const zones = zonesOn(c);
   const cont = continentMap(c);
   const contArt = cont && art(cont.id);
@@ -166,7 +189,20 @@ export function draw(
     }
     ctx.stroke();
   }
+}
 
+function drawPaths(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  j: Journey,
+  tracks: Track[],
+  c: number,
+  now: number,
+  layers: Set<LayerId>,
+  sx: (y: number) => number,
+  sy: (x: number) => number,
+) {
   // Dark lines with a pale edge read on light parchment and dark
   // mountains alike; the ghost run is white, so its edge is dark.
   const styles: Record<string, { color: string; halo: string; dash: number[]; width: number }> = {
