@@ -140,7 +140,7 @@ function GoldCard({ j }: { j: Journey }) {
     return (
       <div class="card">
         <h2>Gold in and out</h2>
-        <p class="muted small">The gold breakdown comes from Journey Tracker. Install it and upload again to see where your gold came from and went.</p>
+        <p class="muted small">Where your gold came from and went comes from Journey Tracker, which is optional. Install it if you want this breakdown.</p>
       </div>
     );
   }
@@ -327,7 +327,8 @@ function Gallery({ j, shots }: { j: Journey; shots: Screenshot[] }) {
 }
 
 function Sources({ j }: { j: Journey }) {
-  const notes = j.sources.filter((s) => s.status !== "ok");
+  // Journey Tracker is optional, so a missing one isn't worth a warning.
+  const notes = j.sources.filter((s) => s.status !== "ok" && !(s.addon === "jt" && s.status === "missing"));
   if (!notes.length) return null;
   const names: Record<string, string> = { rts: "Road to Sixty", jt: "Journey Tracker", jf: "Journey Forever" };
   return (

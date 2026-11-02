@@ -492,7 +492,7 @@ export function GoldTab({ j }: { j: Journey }) {
       <section class="card">
         <div class="row between" style={{ alignItems: "baseline" }}>
           <h2>Gold in and out</h2>
-          <span class="tiny muted">From Journey Tracker</span>
+          <span class="tiny muted">From Journey Tracker (optional)</span>
         </div>
         {flows.earned !== undefined || flows.incoming.length ? (
           <>
@@ -538,7 +538,7 @@ export function GoldTab({ j }: { j: Journey }) {
             </div>
           </>
         ) : (
-          <Empty>Where your gold came from and went comes from Journey Tracker. Install it and upload again to see it.</Empty>
+          <Empty>Where your gold came from and went comes from Journey Tracker, which is optional. Install it if you want this breakdown.</Empty>
         )}
       </section>
     </>
