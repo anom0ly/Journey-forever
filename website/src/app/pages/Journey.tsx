@@ -124,7 +124,7 @@ function LevelChart({ j }: { j: Journey }) {
           </div>
           <p class="small muted">
             {slowest ? `Slowest level so far: ${slowest.level} (${duration(slowest.seconds)})${slowest.zone ? `, mostly in ${slowest.zone}` : ""}. ` : ""}
-            Gold bars mark levels that included a death.
+            Red bars mark levels that included a death.
           </p>
         </>
       ) : (
@@ -194,7 +194,7 @@ function Deaths({ j }: { j: Journey }) {
         <div class="rows stack-lg">
           {rows.slice(0, 8).map((d) => (
             <div key={d.t}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E07A6A" stroke-width="2" stroke-linecap="round" aria-hidden="true" style={{ flex: "none", marginTop: "2px" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F29C93" stroke-width="2" stroke-linecap="round" aria-hidden="true" style={{ flex: "none", marginTop: "2px" }}>
                 <path d="M6 6l12 12M18 6L6 18" />
               </svg>
               <div class="stack" style={{ gap: "2px" }}>
@@ -297,7 +297,7 @@ function Gallery({ j, shots }: { j: Journey; shots: Screenshot[] }) {
             ) : (
               <div class="shot" key={`n${it.t}`}>
                 <div class="img" style={{ display: "flex", alignItems: "center", padding: "12px", background: "var(--surface-2)", borderColor: "var(--line)" }}>
-                  <span class="small" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>“{it.label}”</span>
+                  <span class="small" style={{ fontStyle: "italic" }}>“{it.label}”</span>
                 </div>
                 <span class="what">Note{it.note?.zone ? ` · ${it.note.zone}` : ""}</span>
                 <span class="tiny muted">{dateTime(it.t)}</span>
@@ -372,7 +372,7 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
             </a>
           )}
           <a class="btn primary" href={`${base}/replay`}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="#12151A" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M7 4l13 8-13 8z" />
             </svg>
             Replay journey

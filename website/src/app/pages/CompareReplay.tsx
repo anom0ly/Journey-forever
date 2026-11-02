@@ -130,7 +130,7 @@ function drawSide(ctx: CanvasRenderingContext2D, n: Now, c: number, sx: (y: numb
   for (const part of ["halo", "line"] as const) {
     for (const tr of tracks) {
       if (tr.t[0] > n.t || n.before) continue;
-      ctx.strokeStyle = part === "halo" ? "rgba(18, 21, 26, 0.8)" : n.p.ink;
+      ctx.strokeStyle = part === "halo" ? "rgba(18, 13, 13, 0.8)" : n.p.ink;
       ctx.lineWidth = part === "halo" ? 7 : 3.2;
       ctx.setLineDash(dash[tr.m] ?? []);
       trace(tr, n.t);
@@ -142,7 +142,7 @@ function drawSide(ctx: CanvasRenderingContext2D, n: Now, c: number, sx: (y: numb
     if (e.t > n.t || n.before) break;
     if (e.k !== "die" || e.c !== c || e.x === undefined || e.y === undefined) continue;
     const px = sx(e.y as number), py = sy(e.x as number);
-    for (const [color, width] of [["rgba(18, 21, 26, 0.85)", 6], ["#E07A6A", 3]] as const) {
+    for (const [color, width] of [["rgba(18, 13, 13, 0.85)", 6], ["#F29C93", 3]] as const) {
       ctx.strokeStyle = color;
       ctx.lineWidth = width;
       ctx.beginPath();
@@ -159,7 +159,7 @@ function drawDot(ctx: CanvasRenderingContext2D, n: Now, x: number, y: number) {
   const name = n.p.j.character.name;
   const hollow = !!n.inside && !n.over;
   ctx.globalAlpha = n.over ? 0.55 : 1;
-  ctx.fillStyle = "rgba(18, 21, 26, 0.6)";
+  ctx.fillStyle = "rgba(18, 13, 13, 0.6)";
   ctx.beginPath();
   ctx.arc(x, y, 14, 0, Math.PI * 2);
   ctx.fill();
@@ -173,7 +173,7 @@ function drawDot(ctx: CanvasRenderingContext2D, n: Now, x: number, y: number) {
     ctx.fillStyle = n.p.ink;
     ctx.fill();
   }
-  ctx.fillStyle = hollow ? n.p.ink : "#12151A";
+  ctx.fillStyle = hollow ? n.p.ink : "#120D0D";
   ctx.font = "700 12px Spectral, Georgia, serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -182,7 +182,7 @@ function drawDot(ctx: CanvasRenderingContext2D, n: Now, x: number, y: number) {
   ctx.font = "600 12px Inter, system-ui, sans-serif";
   const tw = ctx.measureText(tag).width;
   const tx = n.p.key === "a" ? x - 18 - tw - 12 : x + 18;
-  ctx.fillStyle = "rgba(18, 21, 26, 0.85)";
+  ctx.fillStyle = "rgba(18, 13, 13, 0.85)";
   ctx.beginPath();
   ctx.roundRect(tx, y - 11, tw + 12, 22, 6);
   ctx.fill();
@@ -454,7 +454,7 @@ function Race({ a, b, mode, u, maxP, maxL, onSeek }: { a: Prep; b: Prep; mode: M
         <path key={l.p.key} d={l.d} fill="none" stroke={l.p.ink} stroke-width={2.4} stroke-linejoin="round" />
       ))}
       {drawn.deaths.map((d) => (
-        <circle key={d!.key} cx={d!.x} cy={d!.y} r={3.5} fill="#E07A6A" stroke="#12151A" />
+        <circle key={d!.key} cx={d!.x} cy={d!.y} r={3.5} fill="#F29C93" stroke="#120D0D" />
       ))}
       <line x1={cx} x2={cx} y1={padT - 6} y2={h - padB} stroke="var(--text)" stroke-width={1.5} />
       <circle cx={cx} cy={padT - 4} r={5} fill="var(--text)" />
@@ -612,12 +612,12 @@ export function ReplayDuo({ ja, jb }: { ja: Journey; jb: Journey }) {
                   }}
                 >
                   {playing ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#12151A" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <rect x="6" y="5" width="4" height="14" />
                       <rect x="14" y="5" width="4" height="14" />
                     </svg>
                   ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#12151A" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <path d="M7 4l13 8-13 8z" />
                     </svg>
                   )}
@@ -633,7 +633,7 @@ export function ReplayDuo({ ja, jb }: { ja: Journey; jb: Journey }) {
               <span class="tiny muted">
                 <span class="key" style={{ background: INK.a }} /> {ja.character.name}
                 <span class="key" style={{ background: INK.b, marginLeft: "12px" }} /> {jb.character.name}
-                <span class="key" style={{ background: "#E07A6A", marginLeft: "12px", borderRadius: "50%" }} /> Death
+                <span class="key" style={{ background: "#F29C93", marginLeft: "12px", borderRadius: "50%" }} /> Death
                 <span class="key" style={{ background: "#7A5FAE", marginLeft: "12px" }} /> Dungeon
               </span>
             </div>

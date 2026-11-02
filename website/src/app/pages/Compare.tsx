@@ -183,7 +183,7 @@ function Picker({ keep, signedIn }: { keep: Side; signedIn: boolean }) {
                         Level {h.level} {describeCharacter(h)} · {h.realm}
                       </span>
                     </span>
-                    <span class="small" style={{ color: "var(--gold)" }}>
+                    <span class="small" style={{ color: "var(--accent)" }}>
                       Compare
                     </span>
                   </a>
