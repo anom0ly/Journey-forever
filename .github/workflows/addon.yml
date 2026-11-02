@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths: ["addon/**", ".github/workflows/addon.yml"]
     tags: ["addon-v*"]
+  workflow_dispatch: # run from the Actions tab to tag and release the version in the .toc
   pull_request:
     paths: ["addon/**", ".github/workflows/addon.yml"]
 
@@ -31,22 +32,27 @@ jobs:
 
   release:
     needs: test
-    if: startsWith(github.ref, 'refs/tags/addon-v')
+    if: startsWith(github.ref, 'refs/tags/addon-v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Check the version matches the tag
+      - name: Work out the version and tag
         id: version
         run: |
-          tag="${GITHUB_REF_NAME#addon-v}"
           toc=$(sed -n 's/^## Version: *//p' addon/JourneyForever/JourneyForever.toc | tr -d '\r')
-          if [ "$tag" != "$toc" ]; then
-            echo "Tag says $tag but JourneyForever.toc says $toc" >&2
-            exit 1
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="addon-v$toc"
+          else
+            tag="$GITHUB_REF_NAME"
+            if [ "${tag#addon-v}" != "$toc" ]; then
+              echo "Tag says ${tag#addon-v} but JourneyForever.toc says $toc" >&2
+              exit 1
+            fi
           fi
           echo "version=$toc" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Zip the addon
         run: |
           cd addon
@@ -54,7 +60,13 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ZIP: JourneyForever-${{ steps.version.outputs.version }}.zip
         run: |
-          gh release create "$GITHUB_REF_NAME" "JourneyForever-${{ steps.version.outputs.version }}.zip" \
-            --title "Journey Forever addon ${{ steps.version.outputs.version }}" \
-            --notes "Unzip into World of Warcraft\\_forever_\\Interface\\AddOns\\. See addon/README.md."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            gh release create "$TAG" "$ZIP" --target "$GITHUB_SHA" \
+              --title "Journey Forever addon ${{ steps.version.outputs.version }}" \
+              --notes "Download $ZIP below (not the Source code zips, which hold the whole repo). Unzip it into World of Warcraft\\_forever_\\Interface\\AddOns\\ so you get AddOns\\JourneyForever\\JourneyForever.toc. See addon/README.md."
+          fi
