@@ -137,7 +137,7 @@ export function DataPage({ signedIn }: { signedIn: boolean }) {
             <li>Your saved files are read in your browser. Only the finished journey and your screenshots are sent to the site.</li>
             <li>Other players are never stored: group members become a count, and names in trades and enchants are dropped.</li>
             <li>No chat, no combat log. Close calls aren't possible: health is hidden from addons on Forever.</li>
-            <li>Each character is private until you switch on its public link.</li>
+            <li>Each character is private until you make it public. Public characters can be found by name, viewed by anyone, and compared with other public characters.</li>
           </ul>
         </div>
       </section>

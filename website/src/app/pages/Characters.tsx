@@ -24,7 +24,7 @@ export function PublicToggle({ c, onChange }: { c: StoredCharacter; onChange: (c
         <span class="track">
           <span class="knob" />
         </span>
-        <span>{c.isPublic ? "Public journey" : "Private (only you)"}</span>
+        <span>{c.isPublic ? "Public: anyone can find and view it" : "Private (only you)"}</span>
       </button>
       {error && <span class="tiny tone-red">{error}</span>}
     </div>

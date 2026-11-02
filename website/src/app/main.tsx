@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api, type Me } from "./api";
 import { AccountPage } from "./pages/Account";
 import { CharactersPage } from "./pages/Characters";
+import { ComparePage, DemoComparePage } from "./pages/Compare";
 import { DataPage } from "./pages/Data";
 import { JourneyPage } from "./pages/Journey";
 import { isTab } from "./pages/JourneyTabs";
@@ -100,6 +101,7 @@ function App() {
   else if (path === "/account") page = needsUser(<AccountPage onDeleted={accountDeleted} />);
   else if (path === "/data") page = <DataPage signedIn={signedIn} />;
   else if (path === "/demo") page = <JourneyPage source={{ kind: "demo" }} />;
+  else if (path === "/demo/compare") page = <DemoComparePage />;
   else if (path === "/demo/replay") page = <ReplayPage source={{ kind: "demo" }} />;
   else if ((m = match("/demo/:tab", path)) && isTab(m.tab)) page = <JourneyPage source={{ kind: "demo" }} tab={m.tab} />;
   else if ((m = match("/c/:key", path))) page = needsUser(<JourneyPage source={{ kind: "owner", key: m.key }} />);
@@ -108,6 +110,8 @@ function App() {
   else if ((m = match("/j/:slug", path))) page = <JourneyPage source={{ kind: "public", slug: m.slug }} />;
   else if ((m = match("/j/:slug/replay", path))) page = <ReplayPage source={{ kind: "public", slug: m.slug }} />;
   else if ((m = match("/j/:slug/:tab", path)) && isTab(m.tab)) page = <JourneyPage source={{ kind: "public", slug: m.slug }} tab={m.tab} />;
+  else if ((m = match("/compare/:a", path))) page = loaded ? <ComparePage a={m.a} signedIn={signedIn} /> : null;
+  else if ((m = match("/compare/:a/:b", path))) page = <ComparePage a={m.a} b={m.b} signedIn={signedIn} />;
   else page = <NotFound />;
 
   return (

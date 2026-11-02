@@ -4,6 +4,7 @@
 // small summary (checked and kept in D1). Raw saved files are never sent:
 // they hold other players' names.
 
+import { searchPattern } from "../lib/search";
 import type { CharacterSummary } from "../lib/journey";
 import { clearSessionCookie, requireUser } from "./auth";
 import type { Env, User } from "./env";
@@ -154,6 +155,22 @@ async function accountSummary(env: Env, user: User) {
   };
 }
 
+// Public characters whose name starts with q (any realm), for the compare
+// picker. Only what the picker shows goes out: never the owner or the key.
+async function searchPublic(env: Env, q: string) {
+  const pattern = searchPattern(q);
+  if (!pattern) return [];
+  const { results } = await env.DB.prepare(
+    "SELECT name, realm, slug, summary FROM characters WHERE is_public = 1 AND slug IS NOT NULL AND name LIKE ? ESCAPE '\\' ORDER BY name COLLATE NOCASE, realm LIMIT 10",
+  )
+    .bind(pattern)
+    .all<{ name: string; realm: string; slug: string; summary: string }>();
+  return results.map((r) => {
+    const s = JSON.parse(r.summary) as CharacterSummary;
+    return { name: r.name, realm: r.realm, slug: r.slug, level: s.level, className: s.className, race: s.race };
+  });
+}
+
 async function listShots(env: Env, userId: string, key: string) {
   const { results } = await env.DB.prepare(
     "SELECT id, char_key, t, kind, label, file, width, height FROM screenshots WHERE user_id = ? AND char_key = ? ORDER BY t",
@@ -168,7 +185,9 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
   const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
   const m = req.method;
 
-  // Public journeys need no sign-in.
+  // Public journeys need no sign-in. "Public" means anyone can find a
+  // character by name here, and open its journey.
+  if (parts[0] === "public" && parts.length === 1 && m === "GET") return json({ results: await searchPublic(env, url.searchParams.get("q") ?? "") });
   if (parts[0] === "public" && parts[1] && m === "GET") {
     const row = await env.DB.prepare("SELECT * FROM characters WHERE slug = ? AND is_public = 1").bind(parts[1]).first<
       CharacterRow & { user_id: string }

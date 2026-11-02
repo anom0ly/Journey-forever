@@ -15,5 +15,5 @@
     "tsBuildInfoFile": "node_modules/.tmp/worker.tsbuildinfo",
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/worker", "src/lib/journey.ts", "src/lib/map-data.json"]
+  "include": ["src/worker", "src/lib/journey.ts", "src/lib/search.ts", "src/lib/map-data.json"]
 }
