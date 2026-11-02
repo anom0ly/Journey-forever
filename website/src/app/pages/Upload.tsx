@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { duration } from "../../lib/insights";
 import type { Journey, SourceInfo } from "../../lib/journey";
 import { mergeJourneys, summarize, uploadDelta, type UploadDelta } from "../../lib/merge";
-import { readUpload, type FileNote } from "../../lib/parse/upload";
+import { readUpload, type FileNote, type Unnamed } from "../../lib/parse/upload";
 import { km } from "../../lib/path";
 import { matchShots, shotTime, type Matched, type ShotMatch } from "../../lib/shots";
 import { api, type StoredCharacter } from "../api";
@@ -57,6 +57,7 @@ interface ShotFile {
 interface Preview {
   journeys: Journey[];
   notes: FileNote[];
+  unnamed: Unnamed[];
   stored: Map<string, StoredCharacter>;
   deltas: Map<string, UploadDelta>;
   shots: ShotMatch<ShotFile>;
@@ -76,8 +77,8 @@ function deltaText(d: UploadDelta): string {
 }
 
 async function buildPreview(picked: Picked): Promise<Preview> {
-  const texts = await Promise.all(picked.saved.map(async ({ path, file }) => ({ path, text: await file.text() })));
-  const { journeys, notes } = readUpload(texts);
+  const texts = await Promise.all(picked.saved.map(async ({ path, file, group }) => ({ path, group, text: await file.text() })));
+  const { journeys, notes, unnamed } = readUpload(texts);
   const { characters } = await api.characters();
   const stored = new Map(characters.map((c) => [c.key, c]));
   const deltas = new Map(journeys.map((j) => [j.character.key, uploadDelta(stored.get(j.character.key)?.summary, j)]));
@@ -109,7 +110,7 @@ async function buildPreview(picked: Picked): Promise<Preview> {
   shots.matched = await fresh(shots.matched);
   shots.manual = await fresh(shots.manual);
   for (const m of [...shots.matched, ...shots.manual].slice(0, 60)) m.file.preview = await previewUrl(m.file.file).catch(() => undefined);
-  return { journeys, notes, stored, deltas, shots, already, skipped: picked.skipped };
+  return { journeys, notes, unnamed, stored, deltas, shots, already, skipped: picked.skipped };
 }
 
 export function UploadPage() {
@@ -134,8 +135,8 @@ export function UploadPage() {
       setPreview(undefined);
       setError(
         all.images.length
-          ? "Got the screenshots. Now add the WTF account folder too, so we know which character and moment each one belongs to."
-          : "No Road to Sixty, Journey Tracker or Journey Forever files in what you dropped. Drop the WTF\\Account\\<account> folder.",
+          ? "Got the screenshots. Now add your saved files too, so we know which character and moment each one belongs to."
+          : "No Road to Sixty, Journey Tracker or Journey Forever files in what you added. Choose RoadToSixty.lua, JourneyTracker.lua and JourneyForever.lua from a character's SavedVariables folder, or the whole WTF\\Account\\<account> folder.",
       );
       return;
     }
@@ -190,8 +191,8 @@ export function UploadPage() {
       <div class="stack">
         <h1>Upload today's session</h1>
         <p class="lead">
-          Log out of WoW, then drop your account's WTF folder here, plus any screenshots from this session. We pick out the Road to Sixty,
-          Journey Tracker and Journey Forever files for every character at once.
+          Log out of WoW first. Then give us your saved files, either the whole account folder or just the files themselves, plus any
+          screenshots from this session.
         </p>
       </div>
 
@@ -213,33 +214,49 @@ export function UploadPage() {
           <path d="M7 9l5-5 5 5" />
           <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
         </svg>
-        <span class="big">Drop your WTF account folder and screenshots here</span>
-        <span class="muted">or choose them · screenshots are optional (.jpg, .png, .tga)</span>
+        <span class="big">Drop your account folder, saved files or screenshots here</span>
+        <span class="muted">Or choose them. You can add more in a second round before saving.</span>
         <div class="row" style={{ justifyContent: "center" }}>
-          <label class="btn">
-            Choose account folder
-            <input
-              type="file"
-              // @ts-expect-error: not in Preact's types, supported by every current browser
-              webkitdirectory
-              multiple
-              style={{ display: "none" }}
-              onChange={(e) => take(fromInput((e.target as HTMLInputElement).files))}
-            />
-          </label>
-          <label class="btn">
-            Add screenshots
-            <input type="file" accept=".jpg,.jpeg,.png,.tga" multiple style={{ display: "none" }} onChange={(e) => take(fromInput((e.target as HTMLInputElement).files))} />
-          </label>
+          <PickFiles primary label="Choose saved files" onPick={take} />
+          <PickFiles folder label="Choose whole account folder" onPick={take} />
+          <PickFiles images label="Add screenshots" onPick={take} />
         </div>
       </div>
 
-      <div class="notice stack" style={{ gap: "6px" }}>
-        <span style={{ color: "var(--text)", fontWeight: 600 }}>Where to find them</span>
-        <code style={{ color: "var(--text)" }}>World of Warcraft\_forever_\WTF\Account\[ACCOUNT]\</code>
-        <span>Each character's saved files live inside it under [Realm]\[Character]\SavedVariables\. Nothing else in the folder is read or sent.</span>
-        <code style={{ color: "var(--text)" }}>World of Warcraft\_forever_\Screenshots\</code>
-        <span>Tip: you can drop the whole Screenshots folder. Only shots taken during a recorded session, and not uploaded before, are added.</span>
+      <div class="two-col">
+        <div class="card flat stack" style={{ gap: "10px" }}>
+          <span style={{ fontWeight: 600 }}>Just the files</span>
+          <span class="small muted">
+            Open one character's SavedVariables folder and pick the three files below. Repeat for each character you played.
+          </span>
+          <code class="small" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>WTF\Account\[ACCOUNT]\[Realm]\[Character]\SavedVariables\</code>
+          <div class="stack mono small" style={{ gap: "4px", color: "var(--gold-hi)" }}>
+            <span>RoadToSixty.lua</span>
+            <span>JourneyTracker.lua</span>
+            <span>JourneyForever.lua</span>
+          </div>
+          <span class="small muted">Tip: hold Ctrl (Cmd on a Mac) to pick all three at once. Leave out the .lua.bak copies.</span>
+        </div>
+        <div class="card flat stack" style={{ gap: "10px" }}>
+          <span style={{ fontWeight: 600 }}>The whole account folder</span>
+          <span class="small muted">Fastest if you played several characters. One drop covers all of them.</span>
+          <code class="small" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>World of Warcraft\_forever_\WTF\Account\[ACCOUNT]\</code>
+          <span class="small muted">
+            Your browser may ask to "upload" every file in it. That's the browser's wording: we only open the three files named on the
+            left and skip the rest unread.
+          </span>
+        </div>
+      </div>
+
+      <div class="notice">
+        Whichever way you choose, the files are read here in your browser. Only your journey (path, events, stats) and the screenshots you
+        keep are sent. The raw files never leave your computer.
+      </div>
+
+      <div class="stack" style={{ gap: "6px" }}>
+        <span style={{ fontWeight: 600 }}>Screenshots</span>
+        <code class="small" style={{ color: "var(--text)" }}>World of Warcraft\_forever_\Screenshots\</code>
+        <span class="small muted">You can drop the whole folder. Only shots from a recorded session that weren't uploaded before are added.</span>
       </div>
 
       {busy && <div class="notice" role="status">{busy}</div>}
@@ -254,9 +271,13 @@ export function UploadPage() {
         <section class="stack-lg">
           <div class="row between">
             <h2>What we found</h2>
-            <button type="button" class="btn chip" onClick={() => { setPicked(undefined); setPreview(undefined); }}>
-              Start over
-            </button>
+            <div class="row">
+              <PickFiles chip label="Add another character's files" onPick={take} />
+              <PickFiles chip images label="Add screenshots" onPick={take} />
+              <button type="button" class="btn chip" onClick={() => { setPicked(undefined); setPreview(undefined); }}>
+                Start over
+              </button>
+            </div>
           </div>
           {preview.notes.map((n) => (
             <div class="notice err" key={n.path}>
@@ -294,7 +315,23 @@ export function UploadPage() {
                 </div>
               );
             })}
+            {preview.unnamed.map((u, i) => (
+              <div class="item" key={`unnamed-${i}`}>
+                <div class="avatar sm" style={{ background: "var(--line-2)" }} aria-hidden="true">
+                  ?
+                </div>
+                <div class="stack" style={{ flex: "1 1 220px", gap: "4px" }}>
+                  <span style={{ fontWeight: 600 }}>A character we can't name yet</span>
+                  <span class="small" style={{ color: "var(--amber)" }}>
+                    Only {u.files.join(", ")} was picked, and it doesn't hold the character's name. Add that character's JourneyTracker.lua or
+                    JourneyForever.lua too, or the account-wide RoadToSixty.lua from WTF\Account\[ACCOUNT]\SavedVariables\.
+                  </span>
+                </div>
+                <span class="pill">Not saved</span>
+              </div>
+            ))}
           </div>
+          {preview.skipped > 0 && <p class="tiny muted">{plural(preview.skipped, "other file was", "other files were")} skipped unread.</p>}
 
           {(shots.length > 0 || preview.shots.manual.length > 0) && (
             <div class="card flat">
@@ -354,5 +391,27 @@ export function UploadPage() {
         </section>
       )}
     </main>
+  );
+}
+
+function PickFiles(props: { label: string; onPick: (p: Picked) => void; folder?: boolean; images?: boolean; primary?: boolean; chip?: boolean }) {
+  const cls = `btn${props.primary ? " primary" : ""}${props.chip ? " chip" : ""}`;
+  return (
+    <label class={cls}>
+      {props.label}
+      <input
+        type="file"
+        multiple
+        // @ts-expect-error: not in Preact's types, supported by every current browser
+        webkitdirectory={props.folder || undefined}
+        accept={props.folder ? undefined : props.images ? ".jpg,.jpeg,.png,.tga" : ".lua"}
+        class="visually-hidden"
+        onChange={(e) => {
+          const input = e.target as HTMLInputElement;
+          props.onPick(fromInput(input.files));
+          input.value = ""; // so picking the same files again still fires
+        }}
+      />
+    </label>
   );
 }

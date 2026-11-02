@@ -13,6 +13,9 @@ import type { Contribution, FileContext } from "./types";
 export interface InputFile {
   path: string; // as the browser gives it (webkitRelativePath), or just the name
   text: string;
+  // Files picked or dropped together without their folders (a file picker
+  // hides the path) share a group: one pick is one character's folder.
+  group?: string;
 }
 
 export const SAVED_FILES = ["RoadToSixty.lua", "JourneyTracker.lua", "JourneyForever.lua"];
@@ -22,9 +25,15 @@ export interface FileNote {
   message: string;
 }
 
+export interface Unnamed {
+  files: string[]; // file names picked together
+  sources: Journey["sources"];
+}
+
 export interface UploadResult {
   journeys: Journey[];
   notes: FileNote[]; // files that couldn't be read, and why
+  unnamed: Unnamed[]; // loose files that don't say whose they are
 }
 
 // Whether a dropped file is one this site reads, by name.
@@ -58,6 +67,7 @@ function read(file: InputFile): Record<string, LuaValue> | string {
 export function readUpload(files: InputFile[], now?: number): UploadResult {
   const notes: FileNote[] = [];
   const byFolder = new Map<string, Contribution[]>();
+  const filesOf = new Map<string, string[]>();
   const roster: RosterEntry[] = [];
 
   for (const file of files) {
@@ -80,13 +90,22 @@ export function readUpload(files: InputFile[], now?: number): UploadResult {
     for (const p of parts) {
       if (p.source.status === "error") notes.push({ path: file.path, message: p.source.message ?? "Couldn't read it." });
     }
-    // Files of one character share a folder; a loose file goes by what it says.
-    const folder = ctx.character ? `${ctx.realm}/${ctx.character}` : characterKey(parts[0].character);
+    // Files of one character share a folder; loose files picked together are
+    // one character (Road to Sixty's file doesn't name its character); any
+    // other loose file goes by what it says.
+    let folder = ctx.character ? `${ctx.realm}/${ctx.character}` : file.group ? `pick:${file.group}` : characterKey(parts[0].character);
+    const have = byFolder.get(folder) ?? [];
+    // Two files of the same addon can't be one character's: keep them apart.
+    if (!ctx.character && file.group && parts.some((p) => have.some((h) => h.source.addon === p.source.addon))) {
+      folder = `${folder}:${characterKey(parts[0].character)}`;
+    }
     byFolder.set(folder, [...(byFolder.get(folder) ?? []), ...parts]);
+    filesOf.set(folder, [...(filesOf.get(folder) ?? []), file.path.split(/[\\/]/).pop() ?? file.path]);
   }
 
   const journeys: Journey[] = [];
-  for (const parts of byFolder.values()) {
+  const unnamed: Unnamed[] = [];
+  for (const [folder, parts] of byFolder) {
     const j = buildJourney(parts, now);
     const r = roster.find((x) => (j.character.guid && x.guid === j.character.guid) || (x.name === j.character.name && x.realm === j.character.realm));
     if (r) {
@@ -96,8 +115,12 @@ export function readUpload(files: InputFile[], now?: number): UploadResult {
       j.character.className ??= r.className;
       j.character.key = characterKey(j.character);
     }
+    if (!j.character.name || j.character.name === "Unknown") {
+      unnamed.push({ files: filesOf.get(folder) ?? [], sources: j.sources });
+      continue;
+    }
     journeys.push(j);
   }
   journeys.sort((a, b) => b.character.level - a.character.level || a.character.name.localeCompare(b.character.name));
-  return { journeys, notes };
+  return { journeys, notes, unnamed };
 }
