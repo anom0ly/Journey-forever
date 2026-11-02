@@ -167,3 +167,37 @@ describe("zone bounds from the Forever client", () => {
     expect(mapToWorld(999999, 0.5, 0.5)).toBeUndefined();
   });
 });
+
+describe("files picked without their folders", () => {
+  const loose = (prefix: string, group: string) =>
+    sampleFiles()
+      .filter((f) => f.path.includes(prefix))
+      .map((f) => ({ ...f, path: f.path.split("/").pop()!, group }));
+
+  it("treats files picked together as one character", () => {
+    const { journeys, unnamed } = readUpload(loose("SampleRealm/Brannoc/", "a"));
+    expect(unnamed).toEqual([]);
+    expect(journeys).toHaveLength(1);
+    expect(journeys[0].character.name).toBe("Brannoc");
+    expect(journeys[0].sources.map((s) => s.status)).toEqual(["ok", "ok", "ok"]);
+    expect(journeys[0].segments.length).toBeGreaterThan(0);
+  });
+
+  it("asks for a name when only Road to Sixty's file is picked", () => {
+    const { journeys, unnamed } = readUpload(loose("SampleRealm/Lyssira/", "b"));
+    expect(journeys).toEqual([]);
+    expect(unnamed).toEqual([expect.objectContaining({ files: ["RoadToSixty.lua"] })]);
+  });
+
+  it("names it from the account-wide file", () => {
+    const files = [...loose("SampleRealm/Lyssira/", "b"), ...loose("SAMPLEACCOUNT/SavedVariables/", "c")];
+    const { journeys, unnamed } = readUpload(files);
+    expect(unnamed).toEqual([]);
+    expect(journeys.map((j) => j.character.name)).toEqual(["Lyssira"]);
+  });
+
+  it("keeps two characters apart across rounds", () => {
+    const files = [...loose("SampleRealm/Brannoc/", "a"), ...loose("SampleRealm/Lyssira/", "b"), ...loose("SAMPLEACCOUNT/SavedVariables/", "c")];
+    expect(readUpload(files).journeys.map((j) => j.character.name).sort()).toEqual(["Brannoc", "Lyssira"]);
+  });
+});

@@ -1,19 +1,25 @@
 // Collects what was dropped or picked: the three addons' saved files (read as
 // text) and screenshots. Every other file in the folder is skipped unread.
+// Saved files that come without their folder (picked one by one, or dropped
+// loose) are tagged with the round they came in: one round is one character.
 
 import { isSavedFile } from "../lib/parse/upload";
 
 export const IMAGE_RE = /\.(jpe?g|png|tga)$/i;
 
 export interface Picked {
-  saved: { path: string; file: File }[];
+  saved: { path: string; file: File; group?: string }[];
   images: File[];
   skipped: number;
 }
 
+let rounds = 0;
+
 function sort(files: { path: string; file: File }[], out: Picked): void {
+  const group = `round${++rounds}`;
   for (const { path, file } of files) {
-    if (isSavedFile(path)) out.saved.push({ path, file });
+    const loose = !/[\\/]/.test(path);
+    if (isSavedFile(path)) out.saved.push({ path, file, ...(loose ? { group } : {}) });
     else if (IMAGE_RE.test(file.name)) out.images.push(file);
     else out.skipped++;
   }
