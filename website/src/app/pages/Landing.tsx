@@ -8,8 +8,8 @@ export function Landing({ me }: { me: Me | null }) {
       <div class="stack-lg" style={{ maxWidth: "720px" }}>
         <h1>Your WoW Forever journey, level 1 to 60</h1>
         <p class="lead">
-          After each session, drop your WTF folder here. Journey Forever reads the saved files of Road to Sixty, Journey Tracker and our
-          own small addon, and turns them into a recap for every character: the road you walked, replayed on the map, with every level,
+          After each session, drop your WTF folder here. Journey Forever reads the saved files of Road to Sixty, our own small addon and,
+          if you use it, Journey Tracker, and turns them into a recap for every character: the road you walked, replayed on the map, with every level,
           death, dungeon, quest and gold piece along the way.
         </p>
         {params.has("deleted") && (
@@ -37,7 +37,8 @@ export function Landing({ me }: { me: Me | null }) {
         <div class="card">
           <h2>1. Play</h2>
           <p class="muted">
-            Install Road to Sixty, Journey Tracker and Journey Forever. They record as you play and write their files when you log out.
+            Install Road to Sixty and Journey Forever. Journey Tracker is optional and adds a gold breakdown. They record as you play and
+            write their files when you log out.
           </p>
         </div>
         <div class="card">

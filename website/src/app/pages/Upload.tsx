@@ -14,9 +14,11 @@ import { navigate } from "../router";
 const ADDON_NAMES: Record<string, string> = { rts: "Road to Sixty", jt: "Journey Tracker", jf: "Journey Forever" };
 const MISSING_MEANS: Record<string, string> = {
   rts: "no map path or timeline",
-  jt: "gold breakdown unavailable",
+  jt: "optional, adds the gold breakdown",
   jf: "no screenshots or notes",
 };
+// Addons whose file can be left out without the upload counting as incomplete.
+const OPTIONAL = new Set(["jt"]);
 const KIND_TAG: Record<string, { tag: string; cls: string }> = {
   dungeon: { tag: "Dungeon", cls: "teal" },
   epic: { tag: "Epic loot", cls: "lilac" },
@@ -35,7 +37,9 @@ export function sourcesLine(sources: SourceInfo[]): { text: string; ok: boolean 
   for (const s of sources) {
     const name = ADDON_NAMES[s.addon];
     if (s.status === "ok") parts.push(s.version ? `${name} v${s.version}` : name);
-    else if (s.status === "missing") {
+    else if (s.status === "missing" && OPTIONAL.has(s.addon)) {
+      parts.push(`${name} not found (${MISSING_MEANS[s.addon]})`);
+    } else if (s.status === "missing") {
       parts.push(`${name} missing: ${MISSING_MEANS[s.addon]}`);
       ok = false;
     } else {
@@ -227,15 +231,15 @@ export function UploadPage() {
         <div class="card flat stack" style={{ gap: "10px" }}>
           <span style={{ fontWeight: 600 }}>Just the files</span>
           <span class="small muted">
-            Open one character's SavedVariables folder and pick the three files below. Repeat for each character you played.
+            Open one character's SavedVariables folder and pick the files below (JourneyTracker.lua only if you use it). Repeat for each character you played.
           </span>
           <code class="small" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>WTF\Account\[ACCOUNT]\[Realm]\[Character]\SavedVariables\</code>
           <div class="stack mono small" style={{ gap: "4px", color: "var(--gold-hi)" }}>
             <span>RoadToSixty.lua</span>
-            <span>JourneyTracker.lua</span>
+            <span>JourneyTracker.lua <span class="muted">(optional)</span></span>
             <span>JourneyForever.lua</span>
           </div>
-          <span class="small muted">Tip: hold Ctrl (Cmd on a Mac) to pick all three at once. Leave out the .lua.bak copies.</span>
+          <span class="small muted">Tip: hold Ctrl (Cmd on a Mac) to pick them all at once. Leave out the .lua.bak copies.</span>
         </div>
         <div class="card flat stack" style={{ gap: "10px" }}>
           <span style={{ fontWeight: 600 }}>The whole account folder</span>
@@ -323,8 +327,8 @@ export function UploadPage() {
                 <div class="stack" style={{ flex: "1 1 220px", gap: "4px" }}>
                   <span style={{ fontWeight: 600 }}>A character we can't name yet</span>
                   <span class="small" style={{ color: "var(--amber)" }}>
-                    Only {u.files.join(", ")} was picked, and it doesn't hold the character's name. Add that character's JourneyTracker.lua or
-                    JourneyForever.lua too, or the account-wide RoadToSixty.lua from WTF\Account\[ACCOUNT]\SavedVariables\.
+                    Only {u.files.join(", ")} was picked, and it doesn't hold the character's name. Add that character's JourneyForever.lua (or
+                    JourneyTracker.lua) too, or the account-wide RoadToSixty.lua from WTF\Account\[ACCOUNT]\SavedVariables\.
                   </span>
                 </div>
                 <span class="pill">Not saved</span>

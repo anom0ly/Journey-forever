@@ -15,9 +15,9 @@ const PARTS = [
     reads: `layout ${RTS_KNOWN_VERSION} (v1.15)`,
   },
   {
-    key: "Journey Tracker",
-    title: "The stats",
-    body: "Gold earned and spent by category, time by activity, XP by source, kills and loot by type, professions and habits.",
+    key: "Journey Tracker (optional)",
+    title: "The gold breakdown",
+    body: "Optional. Adds gold earned and spent by category, an exact count of everything looted, elite kills, abandoned quests, and played time from before Road to Sixty was installed. Everything else works without it.",
     color: "var(--gold)",
     file: "JourneyTracker.lua",
     reads: `schema ${JT_KNOWN_VERSION} (v0.6)`,
@@ -36,8 +36,8 @@ const EVENTS: [string, string, string, string][] = [
   ["Position trail", "Road to Sixty", "path points every 3 to 20 yards, with travel mode and why it jumped", "Outdoors only; dungeons show as in and out"],
   ["Level up", "Road to Sixty + Journey Tracker", "time, place, played time, gold on hand", "Both agree; Road to Sixty gives the place"],
   ["Quests", "Road to Sixty", "accepted and turned in, XP, money, title, place", ""],
-  ["Gold in / out", "Journey Tracker", "earned and spent by category: loot, vendor, training, repairs, flights, auction house, mail", "Totals, not a per-coin timeline"],
-  ["Loot", "Road to Sixty + Journey Tracker", "green and better one by one (Road to Sixty), counts of everything by quality (Journey Tracker)", ""],
+  ["Gold in / out", "Journey Tracker (optional)", "earned and spent by category: loot, vendor, training, repairs, flights, auction house, mail", "Totals, not a per-coin timeline. Without it: gold on hand at login, logout and each level only"],
+  ["Loot", "Road to Sixty + Journey Tracker", "green and better one by one (Road to Sixty), counts of everything by quality (Journey Tracker)", "Without Journey Tracker: green and better only"],
   ["Deaths", "Road to Sixty + Journey Tracker", "place, level, likely killer, in a group or dungeon", "Matched by time"],
   ["Mob kills", "Road to Sixty", "every kill with time, XP and mob name", "Only kills that give XP"],
   ["Dungeon runs", "Road to Sixty", "in and out, time, kills, XP, deaths, gold, items, group size", ""],
@@ -56,8 +56,8 @@ export function DataPage({ signedIn }: { signedIn: boolean }) {
       <div class="stack">
         <h1>Where the data comes from</h1>
         <p class="lead">
-          Three addons, each writing one saved file per character when you log out. The site reads all three as they are and merges them
-          into one journey.
+          Two addons, plus Journey Tracker if you want it, each writing one saved file per character when you log out. The site reads
+          them as they are and merges them into one journey.
         </p>
       </div>
 
