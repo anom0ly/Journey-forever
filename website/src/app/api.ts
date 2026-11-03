@@ -92,6 +92,7 @@ export interface ReviewReport {
   sent: number;
   cleared: number;
   ignored: boolean;
+  established: boolean; // counts toward a hold (account 3+ days old, 1+ hour played)
   counts: boolean;
 }
 

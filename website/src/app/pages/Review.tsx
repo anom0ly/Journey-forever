@@ -53,8 +53,9 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
         <div class="stack">
           <h1>Review</h1>
           <p class="lead">
-            Every reported character, from the first report. It stays on the leaderboards until you hide it, unless 10 different accounts have
-            reported it: then it's held off until you clear or hide it. The automatic checks are here to help you decide; they never act on
+            Every reported character, from the first report. It stays on the leaderboards until you hide it, unless 10 different established accounts
+            (3 or more days old, with a character that has an hour played) have reported it: then it's held off until you clear or
+            hide it. The automatic checks are here to help you decide; they never act on
             their own.
           </p>
         </div>
@@ -123,7 +124,7 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
                       </div>
                       <div class="tiny muted">
                         {r.battletag ?? "Unknown account"} · {date(r.createdAt)} · {plural(r.sent, "report")} sent, {r.cleared} on characters you cleared
-                        {r.ignored ? " · ignored" : !r.counts ? " · before you last cleared" : ""}
+                        {r.ignored ? " · ignored" : !r.counts ? " · before you last cleared" : !r.established ? " · new account, doesn't count toward a hold" : ""}
                         {" · "}
                         <button
                           type="button"
