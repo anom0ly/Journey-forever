@@ -60,3 +60,27 @@ export async function readBody(req: Request, limit: number): Promise<ArrayBuffer
   if (buf.byteLength > limit) throw new HttpError(413, `Too large (limit ${Math.round(limit / 1e6)} MB)`);
   return buf;
 }
+
+// The pages' security headers live in public/_headers. What the Worker
+// answers itself is JSON, images and redirects, so it gets a stricter
+// policy: nothing in it may run or be framed.
+const SECURITY_HEADERS: Record<string, string> = {
+  "content-security-policy": "default-src 'none'; frame-ancestors 'none'; sandbox",
+  "x-frame-options": "DENY",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "cross-origin-resource-policy": "same-origin",
+};
+
+export function withSecurityHeaders(res: Response): Response {
+  // Response.redirect() gives immutable headers; copy those first. (Other
+  // responses are changed in place, which keeps a manually gzipped body as it is.)
+  let out = res;
+  try {
+    out.headers.set("x-content-type-options", "nosniff");
+  } catch {
+    out = new Response(res.body, res);
+  }
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!out.headers.has(k)) out.headers.set(k, v);
+  return out;
+}

@@ -1,5 +1,5 @@
 :root {
-  /* WoWHub brand kit (https://wowhub.net/brand.css, loaded in index.html).
+  /* WoWHub brand kit (our copy in public/wowhub/brand.css, from https://wowhub.net/brand.css).
      Fallbacks keep the site styled if wowhub.net can't be reached. */
   --bg: var(--wh-bg, #120d0d);
   --surface: var(--wh-surface, #1c1515);

@@ -124,7 +124,13 @@ export class ApiError extends Error {
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.method && init.method !== "GET") headers.set("x-journey-forever", "1");
-  const res = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  let res = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  // The site limits how fast one person can send requests; a big upload can
+  // reach that, so wait and send again (10, 20, then 30 seconds).
+  for (let wait = 1; res.status === 429 && wait <= 3; wait++) {
+    await new Promise((r) => setTimeout(r, wait * 10_000));
+    res = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  }
   if (!res.ok) {
     let message = res.statusText;
     try {
@@ -208,16 +214,18 @@ export const api = {
     const gz = await new Response(
       new Blob([JSON.stringify(journey)]).stream().pipeThrough(new CompressionStream("gzip")),
     ).arrayBuffer();
+    // The summary first: it creates the character, which the journey needs.
+    await call<StoredCharacter>(`/api/characters/${key}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(summary),
+    });
     await call(`/api/characters/${key}/journey`, {
       method: "PUT",
       headers: { "content-type": "application/octet-stream", "x-content-encoding": "gzip" },
       body: gz,
     });
-    return call<StoredCharacter>(`/api/characters/${key}`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(summary),
-    });
+    return call<StoredCharacter>(`/api/characters/${key}`);
   },
 
   async saveScreenshot(

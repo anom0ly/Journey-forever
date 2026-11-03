@@ -31,6 +31,23 @@ and everything else still loads.
   screenshots, characters (and so public links), sessions and user row in D1.
   Shared map tiles under `maps/` are left alone.
 
+## Security
+
+- **Everything runs from this site.** The WoWHub bar and styles are our own
+  copies in `public/wowhub/` (see the note at the top of `nav.js` for
+  updating them), so nothing from another site runs on these pages.
+- **Headers.** `public/_headers` sets the pages' Content-Security-Policy
+  (scripts from this site only, no framing) and the usual hardening headers;
+  the Worker adds stricter ones to its own answers (`src/worker/http.ts`).
+- **Limits.** Per IP, 600 Worker requests a minute; per account, 240 changes a
+  minute (`ratelimits` in `wrangler.jsonc`, `src/worker/limits.ts`). An account
+  keeps at most 50 characters, 2,000 screenshots and 2 GB (`src/worker/api.ts`).
+- **What's shown to others is checked** (`src/lib/checks.ts`): names, realms,
+  classes and numbers must look like the game's, and a leaderboard zone,
+  dungeon or profession nobody knows yet only shows once 3 accounts have it.
+- **Screenshot links** are `/media/<pid>`, a hash of the account and the
+  image, so one account can't serve an image under another's link.
+
 Positions are world yards. The replay draws them on the Forever client's own
 map art: zone bounds and art tile lists are in `src/lib/map-data.json`
 (written by `node --experimental-strip-types scripts/fetch-map-data.ts` from
