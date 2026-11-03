@@ -26,7 +26,7 @@ Road to Sixty and Journey Tracker can also take a screenshot at every level up. 
 
 ## Install
 
-Download `JourneyForever-<version>.zip` from the repository's Releases and unzip it into `World of Warcraft\_forever_\Interface\AddOns\`, so you get `AddOns\JourneyForever\JourneyForever.toc`.
+Search for "Journey Forever" in the CurseForge or Wago app with your game set to WoW Forever. Or download `JourneyForever-<version>.zip` from the repository's Releases and unzip it into `World of Warcraft\_forever_\Interface\AddOns\`, so you get `AddOns\JourneyForever\JourneyForever.toc`.
 
 ## Uploading
 
@@ -49,4 +49,13 @@ lua5.1 addon/tests/run.lua                               # offline tests against
 TZ=America/Los_Angeles lua5.1 addon/tests/sample.lua     # regenerate samples/JourneyForever.lua
 ```
 
-To release, set `## Version` in `JourneyForever/JourneyForever.toc`, then push a tag `addon-v<version>` (e.g. `addon-v1.0.0`). The release workflow zips `addon/JourneyForever` and attaches it to a GitHub release.
+To release, set `## Version` in `JourneyForever/JourneyForever.toc`, then run the Addon workflow on `main` from the Actions tab (pushing a tag `addon-v<version>` also works). The workflow zips `addon/JourneyForever`, attaches it to a GitHub release tagged `addon-v<version>`, and uploads it to CurseForge and Wago as a stable release for the Forever game version that matches `## Interface` (16001 is 1.60.1).
+
+The store uploads use these repository settings (Settings → Secrets and variables → Actions). A store is skipped, with a notice, while its secret or variable is missing.
+
+| Store | Secret (API token) | Variable (project ID) |
+| --- | --- | --- |
+| CurseForge | `CF_API_KEY` (authors.curseforge.com → API Tokens) | `CF_PROJECT_ID` |
+| Wago | `WAGO_API_TOKEN` (addons.wago.io account → API keys) | `WAGO_PROJECT_ID` |
+
+Running the workflow again for the same version replaces the GitHub zip but uploads a second copy to CurseForge and Wago, so bump the version first.
