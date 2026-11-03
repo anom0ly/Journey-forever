@@ -70,3 +70,63 @@ jobs:
               --title "Journey Forever addon ${{ steps.version.outputs.version }}" \
               --notes "Download $ZIP below (not the Source code zips, which hold the whole repo). Unzip it into World of Warcraft\\_forever_\\Interface\\AddOns\\ so you get AddOns\\JourneyForever\\JourneyForever.toc. See addon/README.md."
           fi
+      - name: Work out the Forever game version
+        id: game
+        run: |
+          # Interface 16001 is game version 1.60.1 (major, minor, patch)
+          iface=$(sed -n 's/^## Interface: *//p' addon/JourneyForever/JourneyForever.toc | tr -d '\r' | cut -d, -f1 | tr -d ' ')
+          patch="$((iface / 10000)).$((iface / 100 % 100)).$((iface % 100))"
+          echo "patch=$patch" >> "$GITHUB_OUTPUT"
+          echo "Forever game version $patch (interface $iface)"
+      - name: Upload to CurseForge
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          CF_PROJECT_ID: ${{ vars.CF_PROJECT_ID }}
+          PATCH: ${{ steps.game.outputs.patch }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ZIP: JourneyForever-${{ steps.version.outputs.version }}.zip
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}
+        run: |
+          if [ -z "$CF_API_KEY" ] || [ -z "$CF_PROJECT_ID" ]; then
+            echo "::notice::CF_API_KEY secret or CF_PROJECT_ID variable not set, skipping CurseForge"
+            exit 0
+          fi
+          versions=$(curl -sSf --retry 3 -H "X-Api-Token: $CF_API_KEY" https://wow.curseforge.com/api/game/versions)
+          # 88568 is CurseForge's "Forever" version type. Use the exact patch, or else the newest Forever patch.
+          id=$(jq -r --arg v "$PATCH" '[.[] | select(.gameVersionTypeID == 88568 and .name == $v)][0].id // empty' <<< "$versions")
+          if [ -z "$id" ]; then
+            id=$(jq -r '[.[] | select(.gameVersionTypeID == 88568)] | max_by(.id).id // empty' <<< "$versions")
+            echo "::warning::CurseForge has no Forever $PATCH, using its newest Forever version (id $id)"
+          fi
+          [ -n "$id" ] || { echo "No Forever game version on CurseForge" >&2; exit 1; }
+          metadata=$(jq -n --arg name "$VERSION" --argjson id "$id" --arg url "$RELEASE_URL" \
+            '{displayName: $name, gameVersions: [$id], releaseType: "release", changelogType: "markdown",
+              changelog: "Journey Forever addon \($name). Release notes: \($url)"}')
+          code=$(curl -sS --retry 3 -o cf-result.json -w '%{http_code}' -H "X-Api-Token: $CF_API_KEY" \
+            -F "metadata=<-" -F "file=@$ZIP" <<< "$metadata" \
+            "https://wow.curseforge.com/api/projects/$CF_PROJECT_ID/upload-file")
+          cat cf-result.json; echo
+          [ "$code" = 200 ] || { echo "CurseForge upload failed (HTTP $code)" >&2; exit 1; }
+      - name: Upload to Wago
+        if: always() && steps.game.outcome == 'success' # still try Wago if CurseForge failed
+        env:
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          WAGO_PROJECT_ID: ${{ vars.WAGO_PROJECT_ID }}
+          PATCH: ${{ steps.game.outputs.patch }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ZIP: JourneyForever-${{ steps.version.outputs.version }}.zip
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}
+        run: |
+          if [ -z "$WAGO_API_TOKEN" ] || [ -z "$WAGO_PROJECT_ID" ]; then
+            echo "::notice::WAGO_API_TOKEN secret or WAGO_PROJECT_ID variable not set, skipping Wago"
+            exit 0
+          fi
+          metadata=$(jq -n --arg name "$VERSION" --arg patch "$PATCH" --arg url "$RELEASE_URL" \
+            '{label: $name, supported_forever_patches: [$patch], stability: "stable",
+              changelog: "Journey Forever addon \($name). Release notes: \($url)"}')
+          code=$(curl -sS --retry 3 -o wago-result.json -w '%{http_code}' \
+            -H "Authorization: Bearer $WAGO_API_TOKEN" -H "Accept: application/json" \
+            -F "metadata=<-" -F "file=@$ZIP" <<< "$metadata" \
+            "https://addons.wago.io/api/projects/$WAGO_PROJECT_ID/version")
+          cat wago-result.json; echo
+          case "$code" in 200|201) ;; *) echo "Wago upload failed (HTTP $code)" >&2; exit 1 ;; esac
