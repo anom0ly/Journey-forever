@@ -34,8 +34,10 @@ and everything else still loads.
 ## Security
 
 - **Everything runs from this site.** The WoWHub bar and styles are our own
-  copies in `public/wowhub/` (see the note at the top of `nav.js` for
-  updating them), so nothing from another site runs on these pages.
+  copies in `public/wowhub/`, so nothing from another site runs on these
+  pages. Every 6 hours the "WoWHub sync" workflow checks wowhub.net and opens
+  a pull request when they've changed (`scripts/sync-wowhub.mjs`, which also
+  puts back our safety changes to `nav.js`).
 - **Headers.** `public/_headers` sets the pages' Content-Security-Policy
   (scripts from this site only, no framing) and the usual hardening headers;
   the Worker adds stricter ones to its own answers (`src/worker/http.ts`).

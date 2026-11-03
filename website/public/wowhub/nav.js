@@ -3,8 +3,8 @@
  * served from this site so a change on wowhub.net can't run code here. Three
  * changes from the original, marked "Journey Forever:": links and apps.json
  * always point at wowhub.net, app icons from apps.json are only drawn when
- * they're plain SVG shapes, and app links must be https. To update, copy the
- * new nav.js over this file and put those three changes back.
+ * they're plain SVG shapes, and app links must be https. To update, run
+ * scripts/sync-wowhub.mjs (the "WoWHub sync" workflow does it every 6 hours).
  *
  * WoWHub brand kit: nav.js (v1)
  * Injects the shared 48px top bar into any page.
