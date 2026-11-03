@@ -13,6 +13,13 @@ const ENTRIES_LIMIT = 1500;
 const CHECKS_LIMIT = 20;
 const PAGE = 50;
 export const HOLD_REPORTS = 10;
+// Only reports from established accounts count toward a hold: the account
+// was at least 3 days old when it reported, and has a character with an hour
+// or more played. Every report still reaches the review page.
+export const ESTABLISHED_AGE = 3 * 86400;
+export const ESTABLISHED_PLAYED = 3600;
+const ESTABLISHED = `EXISTS (SELECT 1 FROM users ru WHERE ru.id = r.reporter_id AND ru.created_at <= r.created_at - ${ESTABLISHED_AGE})
+  AND EXISTS (SELECT 1 FROM characters rc WHERE rc.user_id = r.reporter_id AND COALESCE(json_extract(rc.summary, '$.played'), 0) >= ${ESTABLISHED_PLAYED})`;
 export const DAILY_REPORTS = 5;
 export const REASONS: Record<string, string> = {
   impossible: "The numbers look impossible",
@@ -279,22 +286,23 @@ interface FlagRow {
 }
 
 // Reports that count: made since the flag was last cleared, by accounts
-// that aren't ignored.
-async function activeReports(env: Env, userId: string, key: string, clearedAt: number | null): Promise<number> {
+// that aren't ignored. held is the ones from established accounts.
+async function activeReports(env: Env, userId: string, key: string, clearedAt: number | null): Promise<{ active: number; held: number }> {
   const r = await env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM reports r WHERE r.user_id = ? AND r.char_key = ? AND r.created_at > ?
+    `SELECT COUNT(*) AS n, COALESCE(SUM(CASE WHEN ${ESTABLISHED} THEN 1 ELSE 0 END), 0) AS held
+     FROM reports r WHERE r.user_id = ? AND r.char_key = ? AND r.created_at > ?
        AND r.reporter_id NOT IN (SELECT reporter_id FROM ignored_reporters)`,
   )
     .bind(userId, key, clearedAt ?? 0)
-    .first<{ n: number }>();
-  return r?.n ?? 0;
+    .first<{ n: number; held: number }>();
+  return { active: r?.n ?? 0, held: r?.held ?? 0 };
 }
 
 // Brings a character's flag and board state up to date with its reports.
 export async function refreshFlag(env: Env, userId: string, key: string): Promise<void> {
   const time = now();
   let flag = await env.DB.prepare("SELECT status, cleared_at FROM flags WHERE user_id = ? AND char_key = ?").bind(userId, key).first<FlagRow>();
-  const active = await activeReports(env, userId, key, flag?.cleared_at ?? null);
+  const { active, held } = await activeReports(env, userId, key, flag?.cleared_at ?? null);
   if (!flag && active > 0) {
     await env.DB.prepare("INSERT INTO flags (user_id, char_key, status, opened_at, updated_at) VALUES (?, ?, 'open', ?, ?)").bind(userId, key, time, time).run();
     flag = { status: "open", cleared_at: null };
@@ -302,7 +310,7 @@ export async function refreshFlag(env: Env, userId: string, key: string): Promis
     await env.DB.prepare("UPDATE flags SET status = 'open', opened_at = ?, updated_at = ? WHERE user_id = ? AND char_key = ?").bind(time, time, userId, key).run();
     flag = { ...flag, status: "open" };
   }
-  const state = flag?.status === "hidden" ? 2 : flag?.status === "open" && active >= HOLD_REPORTS ? 1 : 0;
+  const state = flag?.status === "hidden" ? 2 : flag?.status === "open" && held >= HOLD_REPORTS ? 1 : 0;
   await env.DB.prepare("UPDATE characters SET board_state = ? WHERE user_id = ? AND key = ?").bind(state, userId, key).run();
 }
 
@@ -360,12 +368,13 @@ export async function reviewList(env: Env, url: URL): Promise<Response> {
          (SELECT COUNT(*) FROM reports x WHERE x.reporter_id = r.reporter_id) AS sent,
          (SELECT COUNT(*) FROM reports x JOIN flags g ON g.user_id = x.user_id AND g.char_key = x.char_key
            WHERE x.reporter_id = r.reporter_id AND g.cleared_at IS NOT NULL AND x.created_at <= g.cleared_at) AS cleared,
-         EXISTS (SELECT 1 FROM ignored_reporters i WHERE i.reporter_id = r.reporter_id) AS ignored
+         EXISTS (SELECT 1 FROM ignored_reporters i WHERE i.reporter_id = r.reporter_id) AS ignored,
+         (${ESTABLISHED}) AS established
        FROM reports r JOIN users u ON u.id = r.reporter_id
        WHERE r.user_id = ? AND r.char_key = ? ORDER BY r.created_at DESC LIMIT 200`,
     )
       .bind(f.user_id, f.char_key)
-      .all<{ reporter_id: string; reason: string; note: string | null; created_at: number; battletag: string | null; sent: number; cleared: number; ignored: number }>();
+      .all<{ reporter_id: string; reason: string; note: string | null; created_at: number; battletag: string | null; sent: number; cleared: number; ignored: number; established: number }>();
     const s = JSON.parse(f.summary) as CharacterSummary;
     const counted = reports.results.filter((r) => !r.ignored && r.created_at > (f.cleared_at ?? 0));
     if (status === "open" && !counted.length) continue;
@@ -398,6 +407,7 @@ export async function reviewList(env: Env, url: URL): Promise<Response> {
         sent: r.sent,
         cleared: r.cleared,
         ignored: !!r.ignored,
+        established: !!r.established,
         counts: !r.ignored && r.created_at > (f.cleared_at ?? 0),
       })),
     });
