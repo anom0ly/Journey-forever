@@ -34,7 +34,12 @@ Early development, targeting the WoW: Forever launch on 4 November 2026.
 
 ## Credits
 
-The website reads the saved-file formats of [Road to Sixty](https://www.curseforge.com/wow/addons/road-to-sixty) and [Journey Tracker](https://journeytracker.dev). Those addons belong to their authors; no code from them is included here.
+Journey Forever builds on the data recorded by two other addons. Thanks to their authors:
+
+- **Road to Sixty** by Jordan Burch records your path and event timeline. [GitHub](https://github.com/Jordanburch101/road-to-sixty) · [CurseForge](https://www.curseforge.com/wow/addons/road-to-sixty) · MIT licensed.
+- **Journey Tracker** records stats and gold. [journeytracker.dev](https://journeytracker.dev)
+
+The website reads these addons' saved-file formats. The addons belong to their authors, no code from them is included here, and Journey Forever is not affiliated with them.
 
 ## License
 
