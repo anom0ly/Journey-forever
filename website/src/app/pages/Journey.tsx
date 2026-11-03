@@ -15,7 +15,11 @@ import { firstSeen } from "../../lib/merge";
 import { distanceByMode, km } from "../../lib/path";
 import { tracksOf } from "../../lib/replay";
 import { QUALITY_COLORS } from "../../lib/wow";
-import type { Screenshot, StoredCharacter } from "../api";
+import { BOARD_BY_ID, boardTitle } from "../../lib/boardDefs";
+import { api, type Rank, type Screenshot, type StoredCharacter } from "../api";
+import { useMe } from "../me";
+import { boardHref } from "./Leaderboards";
+import { ReportDialog } from "./Report";
 import { classColor, date, dateTime, day, describeCharacter, plural } from "../format";
 import { useJourney, type JourneySource } from "../source";
 import { mapArt } from "../mapArt";
@@ -343,10 +347,42 @@ function Sources({ j }: { j: Journey }) {
   );
 }
 
+// The character's best places on the leaderboards (top 10 on any board).
+function Ranks({ stored, owner }: { stored: StoredCharacter; owner: boolean }) {
+  const [ranks, setRanks] = useState<Rank[]>([]);
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    if (!stored.isPublic || !stored.slug) return setRanks([]);
+    (owner ? api.ownRanks(stored.key) : api.publicRanks(stored.slug))
+      .then((r) => setRanks(r.ranks.filter((x) => BOARD_BY_ID.has(x.board))))
+      .catch(() => setRanks([]));
+  }, [stored.key, stored.slug, stored.isPublic, owner]);
+  if (!ranks.length) return null;
+  const shown = all ? ranks : ranks.slice(0, 5);
+  return (
+    <div class="lb-ranks" aria-label="Leaderboard places">
+      {shown.map((r) => (
+        <a key={`${r.board}-${r.param}`} class="lb-rchip" href={boardHref(r.board, r.param || undefined)}>
+          <b>#{r.rank}</b> {boardTitle(BOARD_BY_ID.get(r.board)!, r.param)}
+        </a>
+      ))}
+      {ranks.length > 5 && (
+        <button type="button" class="lb-rchip more" onClick={() => setAll(!all)}>
+          {all ? "Fewer" : `+${ranks.length - 5} more`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j: Journey; stored?: StoredCharacter; shots: Screenshot[]; base: string; onStored?: (c: StoredCharacter) => void; tab?: TabId }) {
   const c = j.character;
   const start = firstSeen(j);
   const p = played(j);
+  const me = useMe();
+  const [reporting, setReporting] = useState(false);
+  const owner = !!onStored;
+  const canReport = !!me?.user && !owner && base.startsWith("/j/") && !!stored?.slug;
   return (
     <main class="page">
       <section class="row between" style={{ gap: "24px" }}>
@@ -371,6 +407,14 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
               Compare
             </a>
           )}
+          {canReport && (
+            <button type="button" class="btn" onClick={() => setReporting(true)} title="Report this character">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 21V4M5 4h11l-2 4 2 4H5" />
+              </svg>
+              Report
+            </button>
+          )}
           <a class="btn primary" href={`${base}/replay`}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M7 4l13 8-13 8z" />
@@ -384,6 +428,14 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
           Share link: <a href={`/j/${stored.slug}`}>{shareUrl(stored.slug)}</a>
         </p>
       )}
+      {stored && <Ranks stored={stored} owner={owner} />}
+      {owner && stored?.isPublic && !!stored.boardState && (
+        <div class="notice small">
+          {stored.boardState === 2 ? "Hidden from leaderboards after review." : "Hidden from leaderboards while it's reviewed."} The journey is still public. If you think
+          this is a mistake, upload your saved files again and it will be looked at once more.
+        </div>
+      )}
+      {reporting && stored?.slug && <ReportDialog slug={stored.slug} name={c.name} onClose={() => setReporting(false)} />}
       {base === "/demo" && <div class="notice small">This is a made-up sample journey, built from the sample saved files that ship with the site. Nothing here is saved.</div>}
       <Sources j={j} />
       <TabNav base={base} tab={tab} />

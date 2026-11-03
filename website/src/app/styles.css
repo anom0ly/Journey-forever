@@ -325,3 +325,73 @@ label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; 
 .duo-feed > div { display: grid; grid-template-columns: 64px 1fr; gap: 8px; }
 .duo-chart { cursor: pointer; touch-action: none; user-select: none; }
 .duo-chart text { font-size: 11px; }
+
+/* Leaderboards */
+.push { margin-left: auto; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.nav-count { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.lb-head { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-end; justify-content: space-between; }
+.lb-head .stack { min-width: 0; }
+.lb-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.lb-select { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 4px 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 14px; max-width: 100%; }
+.lb-select span { color: var(--muted); }
+.lb-select select { background: transparent; color: var(--text); border: none; font: inherit; font-weight: 500; padding: 8px 4px; max-width: 220px; min-width: 0; }
+.lb-select select option { background: var(--surface); color: var(--text); }
+.lb-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
+.lb-seg button { background: transparent; border: none; border-right: 1px solid var(--line); color: var(--muted); padding: 9px 12px; font-size: 14px; cursor: pointer; min-height: 40px; }
+.lb-seg button:last-child { border-right: none; }
+.lb-seg button[aria-pressed="true"] { background: var(--raised); color: var(--text); }
+.lb-seg.small button { padding: 5px 10px; font-size: 13px; min-height: 32px; }
+.lb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.lb-card { padding: 18px; gap: 10px; }
+.lb-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.lb-card-head h3 { font-size: 17px; font-weight: 600; }
+.lb-card-pickers { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.lb-card-pickers .lb-select { min-height: 32px; font-size: 13px; }
+.lb-card-pickers .lb-select select { padding: 4px; max-width: 170px; }
+.lb-card-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.lb-rank { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.lb-rank li { display: grid; grid-template-columns: 26px 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 8px; font-size: 14px; }
+.lb-rank li.mine, .lb-table tr.mine { background: rgba(229, 103, 92, 0.12); }
+.lb-rank .n, .lb-n { font-variant-numeric: tabular-nums; color: var(--muted); text-align: right; font-weight: 600; }
+.lb-rank .n.first, .lb-n.first { color: var(--gold); }
+.lb-rank .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); text-decoration: none; }
+.lb-rank .nm:hover { color: var(--accent-hi); }
+.lb-rank .val { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.lb-rank li.lb-gap { display: block; color: var(--muted); font-size: 12px; padding: 0 8px 0 46px; }
+.lb-dot { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-family: var(--serif); font-weight: 700; font-size: 11px; flex: none; }
+.lb-dot.lg { width: 32px; height: 32px; font-size: 14px; }
+.lb-you { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px; }
+.lb-jt { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; text-decoration: none; white-space: nowrap; }
+table.data.lb-table td { vertical-align: middle; }
+.lb-table .lb-n { width: 48px; }
+.lb-table tr.pinned td { border-top: 2px dashed var(--line-2); }
+.lb-char { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.lb-name { color: var(--text); font-weight: 600; text-decoration: none; }
+.lb-name:hover { color: var(--accent-hi); }
+.lb-val { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lb-actions { text-align: right; white-space: nowrap; }
+.lb-flag { margin-left: 12px; background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; vertical-align: middle; border-radius: 6px; }
+.lb-flag:hover { color: var(--accent); background: var(--raised); }
+.lb-ranks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -12px; }
+.lb-rchip { display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; color: var(--text); text-decoration: none; cursor: pointer; }
+.lb-rchip b { color: var(--gold); font-variant-numeric: tabular-nums; }
+.lb-rchip:hover { border-color: var(--accent); color: var(--text); }
+.lb-rchip.more { color: var(--muted); font: inherit; font-size: 13px; }
+.lb-reasons { border: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lb-reasons label { display: flex; gap: 10px; align-items: center; font-size: 14px; }
+dialog textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: inherit; font-size: 14px; resize: vertical; }
+.rv-card { gap: 14px; }
+.rv-state { font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 6px; background: var(--raised); color: var(--muted); }
+.rv-state.hi { background: rgba(242, 156, 147, 0.15); color: var(--red); }
+.rv-label { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.rv-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.rv-reports { list-style: none; padding-left: 0; }
+.rv-reports li { padding-left: 12px; border-left: 2px solid var(--line); }
+@media (max-width: 640px) {
+  .lb-actions a { display: none; }
+  .lb-table th:nth-child(4) { width: 40px; }
+  .lb-table .lb-dot { display: none; }
+  table.data.lb-table th, table.data.lb-table td { padding: 10px 8px; }
+  .lb-table .lb-n { width: 32px; }
+}

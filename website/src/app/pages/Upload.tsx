@@ -1,4 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
+import { saveBoards } from "../boardsSync";
 import { duration } from "../../lib/insights";
 import type { Journey, SourceInfo } from "../../lib/journey";
 import { mergeJourneys, summarize, uploadDelta, type UploadDelta } from "../../lib/merge";
@@ -166,6 +167,7 @@ export function UploadPage() {
         const old = before?.hasJourney ? await api.journey(j.character.key).catch(() => undefined) : undefined;
         const merged = mergeJourneys(old, j);
         await api.saveJourney(merged, summarize(merged));
+        await saveBoards(merged, old);
       }
       const shots = [...preview.shots.matched, ...(includeManual ? preview.shots.manual : [])];
       let i = 0;

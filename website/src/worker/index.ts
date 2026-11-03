@@ -1,5 +1,6 @@
 import { handleApi, handleMedia } from "./api";
 import { authMode, currentUser, handleAuth } from "./auth";
+import { isAdmin, reviewCount } from "./boards";
 import type { Env } from "./env";
 import { checkSameOrigin, HttpError, json } from "./http";
 import { handleMapTile } from "./maps";
@@ -11,8 +12,10 @@ export default {
       checkSameOrigin(req, url);
       if (url.pathname === "/api/me") {
         const user = await currentUser(req, env);
+        const admin = isAdmin(env, user);
         return json({
-          user: user && { id: user.id, battletag: user.battletag, lastUploadAt: user.last_upload_at },
+          user: user && { id: user.id, battletag: user.battletag, lastUploadAt: user.last_upload_at, isAdmin: admin },
+          reviewCount: admin ? await reviewCount(env) : undefined,
           authMode: authMode(env, url),
         });
       }

@@ -9,10 +9,14 @@ export interface Env {
   BNET_CLIENT_SECRET?: string;
   // Where Battle.net sends people back; defaults to <origin>/auth/callback.
   BNET_REDIRECT_URI?: string;
+  // Battle.net account IDs (comma-separated) that can open the review page.
+  // Set it as a secret. "dev" is the local dev sign-in.
+  ADMIN_BNET_IDS?: string;
 }
 
 export interface User {
   id: string;
+  bnet_id: string | null;
   battletag: string | null;
   last_upload_at: number | null;
 }

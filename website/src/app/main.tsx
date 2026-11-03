@@ -8,6 +8,9 @@ import { DataPage } from "./pages/Data";
 import { JourneyPage } from "./pages/Journey";
 import { isTab } from "./pages/JourneyTabs";
 import { Landing } from "./pages/Landing";
+import { BoardPageView, isGroup, LeaderboardsPage } from "./pages/Leaderboards";
+import { ReviewPage } from "./pages/Review";
+import { MeContext } from "./me";
 import { ReplayPage } from "./pages/Replay";
 import { UploadPage } from "./pages/Upload";
 import { installLinkHandler, match, navigate, usePath } from "./router";
@@ -26,7 +29,13 @@ function Header({ me, path, onSignOut }: { me: Me | null; path: string; onSignOu
         {!signedIn && link("/", "Home", path === "/")}
         {signedIn && link("/upload", "Upload", path === "/upload")}
         {signedIn && link("/characters", "Characters", path === "/characters" || path.startsWith("/c/"))}
+        {link("/leaderboards", "Leaderboards", path.startsWith("/leaderboards"))}
         {link("/data", "Data sources", path === "/data")}
+        {me?.user?.isAdmin && (
+          <a href="/review" class={path === "/review" ? "active" : undefined} aria-current={path === "/review" ? "page" : undefined}>
+            Review{me.reviewCount ? <span class="nav-count">{me.reviewCount}</span> : null}
+          </a>
+        )}
         <span class="push" />
         {signedIn && link("/account", me?.user?.battletag ?? "Account", path === "/account")}
         {signedIn ? (
@@ -109,15 +118,20 @@ function App() {
   else if ((m = match("/j/:slug", path))) page = <JourneyPage source={{ kind: "public", slug: m.slug }} />;
   else if ((m = match("/j/:slug/replay", path))) page = <ReplayPage source={{ kind: "public", slug: m.slug }} />;
   else if ((m = match("/j/:slug/:tab", path)) && isTab(m.tab)) page = <JourneyPage source={{ kind: "public", slug: m.slug }} tab={m.tab} />;
+  else if (path === "/leaderboards") page = <LeaderboardsPage />;
+  else if ((m = match("/leaderboards/:group", path)) && isGroup(m.group)) page = <LeaderboardsPage group={m.group} />;
+  else if ((m = match("/leaderboards/board/:board", path))) page = <BoardPageView id={m.board} />;
+  else if ((m = match("/leaderboards/board/:board/:param", path))) page = <BoardPageView id={m.board} param={m.param} />;
+  else if (path === "/review") page = !loaded ? null : me?.user?.isAdmin ? <ReviewPage onCount={(n) => setMe((x) => (x ? { ...x, reviewCount: n } : x))} /> : <NotFound />;
   else if ((m = match("/compare/:a", path))) page = loaded ? <ComparePage a={m.a} signedIn={signedIn} /> : null;
   else if ((m = match("/compare/:a/:b", path))) page = <ComparePage a={m.a} b={m.b} signedIn={signedIn} />;
   else page = <NotFound />;
 
   return (
-    <>
+    <MeContext.Provider value={me}>
       <Header me={me} path={path} onSignOut={signOut} />
       {page}
-    </>
+    </MeContext.Provider>
   );
 }
 

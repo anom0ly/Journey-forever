@@ -6,7 +6,8 @@
 
 import { searchPattern } from "../lib/search";
 import type { CharacterSummary } from "../lib/journey";
-import { clearSessionCookie, requireUser } from "./auth";
+import { clearSessionCookie, currentUser, requireUser } from "./auth";
+import { board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, ranksOf, refreshFlag, report, reportedBy, reviewAction, reviewList, saveBoards } from "./boards";
 import type { Env, User } from "./env";
 import { HttpError, json, now, readBody, sha256 } from "./http";
 
@@ -25,6 +26,8 @@ interface CharacterRow {
   slug: string | null;
   journey_size: number | null;
   updated_at: number;
+  board_state?: number;
+  boards_version?: number | null;
 }
 
 interface ShotRow {
@@ -46,6 +49,8 @@ function characterOut(r: CharacterRow) {
     slug: r.slug,
     updatedAt: r.updated_at,
     hasJourney: !!r.journey_size,
+    boardState: r.board_state ?? 0,
+    boardsVersion: r.boards_version ?? null,
   };
 }
 
@@ -188,6 +193,17 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
   // Public journeys need no sign-in. "Public" means anyone can find a
   // character by name here, and open its journey.
   if (parts[0] === "public" && parts.length === 1 && m === "GET") return json({ results: await searchPublic(env, url.searchParams.get("q") ?? "") });
+  // Leaderboards are public too; signed in, your own characters are marked.
+  if (parts[0] === "boards" && m === "GET") {
+    if (parts.length === 1) return boardsMeta(env);
+    if (parts.length === 2) return board(env, url, parts[1], await currentUser(req, env));
+  }
+  if (parts[0] === "public" && parts[1] && parts[2] === "ranks" && m === "GET") return publicRanks(env, parts[1]);
+  if (parts[0] === "public" && parts[1] && parts[2] === "report") {
+    const reporter = await requireUser(req, env);
+    if (m === "GET") return myReport(env, reporter, parts[1]);
+    if (m === "POST") return report(env, reporter, parts[1], await req.json().catch(() => null));
+  }
   if (parts[0] === "public" && parts[1] && m === "GET") {
     const row = await env.DB.prepare("SELECT * FROM characters WHERE slug = ? AND is_public = 1").bind(parts[1]).first<
       CharacterRow & { user_id: string }
@@ -198,6 +214,16 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
   }
 
   const user = await requireUser(req, env);
+
+  // The review page: only for the accounts in ADMIN_BNET_IDS. Anyone else
+  // gets the same "Not found" as a page that doesn't exist.
+  if (parts[0] === "review") {
+    if (!isAdmin(env, user)) throw new HttpError(404, "Not found");
+    if (parts.length === 1 && m === "GET") return reviewList(env, url);
+    if (parts.length === 3 && parts[1] === "reporters" && m === "POST") return ignoreReporter(env, parts[2], await req.json().catch(() => null));
+    if (parts.length === 2 && m === "POST") return reviewAction(env, parts[1], await req.json().catch(() => null));
+    throw new HttpError(404, "Not found");
+  }
 
   if (parts[0] === "account" && parts.length === 1) {
     if (m === "GET") return json(await accountSummary(env, user));
@@ -211,12 +237,19 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
       // shared map tiles live under maps/.
       await deletePrefix(env, `journeys/${user.id}/`);
       await deletePrefix(env, `shots/${user.id}/`);
+      const reported = await reportedBy(env, user.id);
       await env.DB.batch([
+        env.DB.prepare("DELETE FROM board_entries WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM reports WHERE reporter_id = ? OR user_id = ?").bind(user.id, user.id),
+        env.DB.prepare("DELETE FROM flags WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM ignored_reporters WHERE reporter_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM screenshots WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM characters WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id),
       ]);
+      // Characters this account reported may no longer have enough reports.
+      for (const t of reported) if (t.user_id !== user.id) await refreshFlag(env, t.user_id, t.key);
       return json({ ok: true }, { headers: { "set-cookie": clearSessionCookie(url) } });
     }
   }
@@ -266,10 +299,29 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         for (let i = 0; i < objects.length; i += 1000) await env.FILES.delete(objects.slice(i, i + 1000));
         await env.DB.batch([
           env.DB.prepare("DELETE FROM screenshots WHERE user_id = ? AND char_key = ?").bind(user.id, key),
+          env.DB.prepare("DELETE FROM board_entries WHERE user_id = ? AND char_key = ?").bind(user.id, key),
+          env.DB.prepare("DELETE FROM reports WHERE user_id = ? AND char_key = ?").bind(user.id, key),
+          env.DB.prepare("DELETE FROM flags WHERE user_id = ? AND char_key = ?").bind(user.id, key),
           env.DB.prepare("DELETE FROM characters WHERE user_id = ? AND key = ?").bind(user.id, key),
         ]);
         return json({ ok: true });
       }
+    }
+
+    if (parts[2] === "boards" && parts.length === 3 && m === "PUT") {
+      const text = new TextDecoder().decode(await readBody(req, 256e3));
+      let body: unknown;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new HttpError(400, "Boards aren't JSON");
+      }
+      return saveBoards(env, user, key, body);
+    }
+    if (parts[2] === "ranks" && parts.length === 3 && m === "GET") {
+      const row = await ownCharacter(env, user, key);
+      const listed = row.is_public && row.slug && !row.board_state;
+      return json({ ranks: listed ? await ranksOf(env, user.id, key) : [] });
     }
 
     if (parts[2] === "journey" && parts.length === 3) {
