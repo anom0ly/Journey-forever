@@ -2,6 +2,7 @@
 // per character. Only the three addons' saved files are read; everything
 // else in the folder is ignored and never leaves the browser.
 
+import { addFriends, type FriendLists } from "../friends";
 import type { Journey } from "../journey";
 import { LuaParseError, parseSavedVariables, type LuaValue } from "../lua";
 import { buildJourney, characterKey } from "../merge";
@@ -34,6 +35,7 @@ export interface UploadResult {
   journeys: Journey[];
   notes: FileNote[]; // files that couldn't be read, and why
   unnamed: Unnamed[]; // loose files that don't say whose they are
+  friends: FriendLists; // Battle.net friends' BattleTags; never sent as they are (lib/friends.ts)
 }
 
 // Whether a dropped file is one this site reads, by name.
@@ -69,6 +71,7 @@ export function readUpload(files: InputFile[], now?: number): UploadResult {
   const byFolder = new Map<string, Contribution[]>();
   const filesOf = new Map<string, string[]>();
   const roster: RosterEntry[] = [];
+  const friends: FriendLists = {};
 
   for (const file of files) {
     if (!isSavedFile(file.path)) continue;
@@ -78,6 +81,7 @@ export function readUpload(files: InputFile[], now?: number): UploadResult {
       continue;
     }
     const ctx = contextOf(file.path);
+    addFriends(friends, globals);
     if ("RoadToSixtyDB" in globals) roster.push(...parseRoadToSixtyAccount(globals.RoadToSixtyDB));
     const parts: Contribution[] = [];
     if ("RoadToSixtyCharDB" in globals) parts.push(parseRoadToSixtyChar(globals.RoadToSixtyCharDB, ctx));
@@ -122,5 +126,5 @@ export function readUpload(files: InputFile[], now?: number): UploadResult {
     journeys.push(j);
   }
   journeys.sort((a, b) => b.character.level - a.character.level || a.character.name.localeCompare(b.character.name));
-  return { journeys, notes, unnamed };
+  return { journeys, notes, unnamed, friends };
 }

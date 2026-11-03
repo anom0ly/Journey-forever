@@ -353,6 +353,13 @@ label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; 
 .lb-rank { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .lb-rank li { display: grid; grid-template-columns: 26px 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 8px; font-size: 14px; }
 .lb-rank li.mine, .lb-table tr.mine { background: rgba(229, 103, 92, 0.12); }
+/* Battle.net friends: a teal name on a faint teal row, no tag. */
+.lb-rank li.friend, .lb-table tr.friend { background: rgba(95, 184, 180, 0.09); }
+.lb-rank li.friend .nm, .lb-table tr.friend .lb-name { color: var(--teal-hi); }
+.lb-overall { margin-left: 6px; font-size: 11px; font-weight: 400; color: var(--muted); }
+.lb-key { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.lb-key i { width: 10px; height: 10px; border-radius: 2px; background: var(--teal); }
+.chip-link.friend { border-color: rgba(95, 184, 180, 0.5); background: rgba(95, 184, 180, 0.08); }
 .lb-rank .n, .lb-n { font-variant-numeric: tabular-nums; color: var(--muted); text-align: right; font-weight: 600; }
 .lb-rank .n.first, .lb-n.first { color: var(--gold); }
 .lb-rank .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); text-decoration: none; }

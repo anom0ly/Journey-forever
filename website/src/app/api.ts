@@ -59,6 +59,8 @@ export interface BoardRow {
   className?: string;
   race?: string;
   mine: boolean;
+  friend?: boolean; // a Battle.net friend's (signed in only)
+  overall?: number; // place on the whole board, when ranked among friends
 }
 
 export interface BoardPage {
@@ -68,12 +70,30 @@ export interface BoardPage {
   total: number;
   rows: BoardRow[];
   me?: BoardRow;
+  friends?: BoardRow[]; // friends further down, nearest your own place
 }
 
 export interface BoardFilters {
   realm?: string;
   cls?: string;
-  show?: "" | "mine";
+  show?: "" | "mine" | "friends";
+}
+
+export interface FriendCharacter {
+  name: string;
+  realm: string;
+  slug: string;
+  level: number;
+  className?: string;
+  race?: string;
+}
+
+export interface FriendsInfo {
+  visible: boolean; // "Show me to my Battle.net friends"
+  updatedAt: number | null;
+  counts: { jf: number; rts: number; total: number };
+  friends: { characters: FriendCharacter[]; sources: ("jf" | "rts")[] }[];
+  notOnSite: number;
 }
 
 export interface Rank {
@@ -168,6 +188,13 @@ export const api = {
   publicJourney: (slug: string) => call<{ character: StoredCharacter; screenshots: Screenshot[] }>(`/api/public/${encodeURIComponent(slug)}`),
   searchPublic: (q: string) => call<{ results: PublicHit[] }>(`/api/public?q=${encodeURIComponent(q)}`),
   publicJourneyData: (slug: string) => call<Journey>(`/api/public/${encodeURIComponent(slug)}/journey`),
+
+  friends: () => call<FriendsInfo>("/api/friends"),
+  saveFriends: (lists: Partial<Record<"jf" | "rts", string[]>>) =>
+    call<FriendsInfo>("/api/friends", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(lists) }),
+  setFriendsVisible: (visible: boolean) =>
+    call<FriendsInfo>("/api/friends", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ visible }) }),
+  forgetFriends: () => call<FriendsInfo>("/api/friends", { method: "DELETE" }),
 
   boardsMeta: () => call<{ realms: string[]; classes: string[] }>("/api/boards"),
   board: (id: string, o: BoardFilters & { param?: string; limit?: number; offset?: number } = {}) => {

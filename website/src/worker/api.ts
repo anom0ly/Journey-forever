@@ -7,6 +7,7 @@
 import { searchPattern } from "../lib/search";
 import type { CharacterSummary } from "../lib/journey";
 import { clearSessionCookie, currentUser, requireUser } from "./auth";
+import { forgetFriends, friendsOf, saveFriends, setFriendsVisible } from "./friends";
 import { board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, ranksOf, refreshFlag, report, reportedBy, reviewAction, reviewList, saveBoards } from "./boards";
 import type { Env, User } from "./env";
 import { summaryProblem } from "../lib/checks";
@@ -271,6 +272,13 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
     throw new HttpError(404, "Not found");
   }
 
+  if (parts[0] === "friends" && parts.length === 1) {
+    if (m === "GET") return friendsOf(env, user);
+    if (m === "PUT") return saveFriends(env, user, await req.json().catch(() => null));
+    if (m === "PATCH") return setFriendsVisible(env, user, await req.json().catch(() => null));
+    if (m === "DELETE") return forgetFriends(env, user);
+  }
+
   if (parts[0] === "account" && parts.length === 1) {
     if (m === "GET") return json(await accountSummary(env, user));
     if (m === "DELETE") {
@@ -289,6 +297,7 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         env.DB.prepare("DELETE FROM reports WHERE reporter_id = ? OR user_id = ?").bind(user.id, user.id),
         env.DB.prepare("DELETE FROM flags WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM ignored_reporters WHERE reporter_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM friend_tags WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM screenshots WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM characters WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),

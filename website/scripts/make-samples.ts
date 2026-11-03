@@ -308,6 +308,7 @@ function brannocJF(rtsEnd: number, dingAt: Record<number, number>) {
       shot(rtsEnd - 145, "dungeon", { instance: "Gnomeregan", instanceID: 90, boss: "Sample Boss", via: "encounter" }, { mapID: 226, zone: "Gnomeregan", level: 8 }),
     ],
     notes: [{ t: START + 1500, text: "Made it out of Coldridge Valley!", mapID: 1426, x: 0.46, y: 0.5, zone: "Dun Morogh", level: 2 }],
+    friends: { t: rtsEnd, tags: ["Thess#1187", "Ros#2210", "Hollin#3301"] },
     paused: false,
   } as V;
 }
@@ -366,6 +367,11 @@ write("SavedVariables/RoadToSixty.lua", {
     roster: {
       "Player-0000-00SAMPLE": { name: "Brannoc", realm: "Sample Realm", guid: "Player-0000-00SAMPLE", class: "PALADIN", level: b.level },
       "Player-0000-00SAMPL2": { name: "Lyssira", realm: "Sample Realm", guid: "Player-0000-00SAMPL2", class: "MAGE", level: 5 },
+    },
+    // Road to Sixty 1.19's synced friends: only battleTag is read.
+    friends: {
+      thessaly: { name: "Thessaly", realm: "Sample Realm", battleTag: "Thess#1187", level: 12, journey: { version: 4 } },
+      ashka: { name: "Ashka", realm: "Sample Realm", battleTag: "Ashka#4410", level: 9, journey: { version: 4 } },
     },
   },
 });

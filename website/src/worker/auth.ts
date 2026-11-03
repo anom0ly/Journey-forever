@@ -3,6 +3,7 @@
 // localhost, /auth/login signs in a local "Dev" account instead, so the site
 // can be tried before a Battle.net client exists.
 
+import { hashTag } from "../lib/friendTags";
 import type { Env, User } from "./env";
 import { cookie, HttpError, isLocal, json, now, parseCookies, randomToken, sha256 } from "./http";
 
@@ -58,12 +59,12 @@ async function startSession(env: Env, url: URL, userId: string, to: string): Pro
 async function upsertUser(env: Env, bnetId: string, battletag: string | null): Promise<string> {
   const existing = await env.DB.prepare("SELECT id FROM users WHERE bnet_id = ?").bind(bnetId).first<{ id: string }>();
   if (existing) {
-    await env.DB.prepare("UPDATE users SET battletag = ? WHERE id = ?").bind(battletag, existing.id).run();
+    await env.DB.prepare("UPDATE users SET battletag = ?, tag_hash = ? WHERE id = ?").bind(battletag, battletag ? await hashTag(battletag) : null, existing.id).run();
     return existing.id;
   }
   const id = crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO users (id, bnet_id, battletag, created_at) VALUES (?, ?, ?, ?)")
-    .bind(id, bnetId, battletag, now())
+  await env.DB.prepare("INSERT INTO users (id, bnet_id, battletag, tag_hash, created_at) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, bnetId, battletag, battletag ? await hashTag(battletag) : null, now())
     .run();
   return id;
 }

@@ -17,6 +17,7 @@ import { tracksOf } from "../../lib/replay";
 import { QUALITY_COLORS } from "../../lib/wow";
 import { BOARD_BY_ID, boardTitle } from "../../lib/boardDefs";
 import { api, type Rank, type Screenshot, type StoredCharacter } from "../api";
+import { friendSlugs, useFriends } from "../friends";
 import { useMe } from "../me";
 import { boardHref } from "./Leaderboards";
 import { ReportDialog } from "./Report";
@@ -383,6 +384,7 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
   const [reporting, setReporting] = useState(false);
   const owner = !!onStored;
   const canReport = !!me?.user && !owner && base.startsWith("/j/") && !!stored?.slug;
+  const friend = !owner && !!stored?.slug && friendSlugs(useFriends()).has(stored.slug);
   return (
     <main class="page">
       <section class="row between" style={{ gap: "24px" }}>
@@ -392,6 +394,11 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
           </div>
           <div class="stack" style={{ gap: "4px", minWidth: 0 }}>
             <h1>{c.name}</h1>
+            {friend && (
+              <span class="small" style={{ color: "var(--teal-hi)" }}>
+                Your Battle.net friend
+              </span>
+            )}
             <span class="muted">
               {[`Level ${c.level} ${describeCharacter(c)}`, c.realm, start && `Started ${date(start)}`, p && `${duration(p)} played`].filter(Boolean).join(" · ")}
             </span>

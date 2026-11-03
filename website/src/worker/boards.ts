@@ -7,6 +7,7 @@ import { BOARD_BY_ID, BOARDS_VERSION, fixedParams, type BoardEntry } from "../li
 import type { CharacterSummary } from "../lib/journey";
 import { isFreeParam, knownParam, NEW_PARAM_ACCOUNTS, paramLooksRight, paramsPerCharacter, valueInRange } from "../lib/checks";
 import type { Env, User } from "./env";
+import { friendIds } from "./friends";
 import { HttpError, json, now } from "./http";
 
 const ENTRIES_LIMIT = 1500;
@@ -102,13 +103,17 @@ interface RankRow {
   user_id: string;
 }
 
-function rowOut(r: RankRow, rank: number, viewer: User | null) {
+function rowOut(r: RankRow, rank: number, viewer: User | null, friends?: Set<string>) {
   const s = JSON.parse(r.summary) as CharacterSummary;
-  return { rank, value: r.value, name: r.name, realm: r.realm, slug: r.slug, level: s.level, className: s.className, race: s.race, mine: !!viewer && r.user_id === viewer.id };
+  const mine = !!viewer && r.user_id === viewer.id;
+  return {
+    rank, value: r.value, name: r.name, realm: r.realm, slug: r.slug, level: s.level, className: s.className, race: s.race,
+    mine, friend: !mine && !!friends?.has(r.user_id),
+  };
 }
 
 // The filters a board can be narrowed by.
-function filters(url: URL, viewer: User | null): { sql: string; args: unknown[] } {
+function filters(url: URL, viewer: User | null, friends: string[] = [], withShow = true): { sql: string; args: unknown[] } {
   const parts: string[] = [];
   const args: unknown[] = [];
   const realm = url.searchParams.get("realm");
@@ -121,9 +126,14 @@ function filters(url: URL, viewer: User | null): { sql: string; args: unknown[] 
     parts.push("json_extract(c.summary, '$.className') = ?");
     args.push(cls);
   }
-  if (url.searchParams.get("show") === "mine") {
+  const show = withShow ? url.searchParams.get("show") : null;
+  if (show === "mine") {
     parts.push("c.user_id = ?");
     args.push(viewer?.id ?? "");
+  } else if (show === "friends") {
+    // You and your friends.
+    parts.push("c.user_id IN (SELECT value FROM json_each(?))");
+    args.push(JSON.stringify(viewer ? [viewer.id, ...friends] : []));
   }
   return { sql: parts.map((p) => ` AND ${p}`).join(""), args };
 }
@@ -147,7 +157,10 @@ export async function boardsMeta(env: Env): Promise<Response> {
 export async function board(env: Env, url: URL, id: string, viewer: User | null): Promise<Response> {
   const def = BOARD_BY_ID.get(id);
   if (!def) throw new HttpError(404, "No such board");
-  const f = filters(url, viewer);
+  const friendList = await friendIds(env, viewer);
+  const friends = new Set(friendList);
+  const show = url.searchParams.get("show");
+  const f = filters(url, viewer, friendList);
 
   // Boards by zone, dungeon or profession offer the ones anybody has.
   let params: string[] | undefined = fixedParams(def.param);
@@ -180,24 +193,52 @@ export async function board(env: Env, url: URL, id: string, viewer: User | null)
   const total = (count.results[0] as { n: number }).n;
 
   // Ranks share a number on a tie.
-  const out = [];
+  const out: ReturnType<typeof rowOut>[] = [];
   let rank = 0;
   for (let i = 0; i < rows.length; i++) {
     if (i === 0) {
       rank = offset === 0 ? 1 : await rankOf(env, id, param, rows[0].score, f);
     } else if (rows[i].score !== rows[i - 1].score) rank = offset + i + 1;
-    out.push(rowOut(rows[i], rank, viewer));
+    out.push(rowOut(rows[i], rank, viewer, friends));
   }
 
   // The viewer's best character on this board, when it isn't on the page.
   let me;
+  let best: RankRow | null = null;
   if (viewer && !out.some((r) => r.mine)) {
-    const best = await env.DB.prepare(`SELECT e.value, e.score, c.name, c.realm, c.slug, c.summary, c.user_id ${from} AND c.user_id = ? ORDER BY e.score LIMIT 1`)
+    best = await env.DB.prepare(`SELECT e.value, e.score, c.name, c.realm, c.slug, c.summary, c.user_id ${from} AND c.user_id = ? ORDER BY e.score LIMIT 1`)
       .bind(id, param, ...f.args, viewer.id)
       .first<RankRow>();
-    if (best) me = rowOut(best, await rankOf(env, id, param, best.score, f), viewer);
+    if (best) me = rowOut(best, await rankOf(env, id, param, best.score, f), viewer, friends);
   }
-  return json({ board: id, param, params, total, rows: out, me });
+
+  // Ranked among you and your friends, each row also gets its place on the
+  // whole board (with the realm and class filters).
+  if (show === "friends") {
+    const all = filters(url, viewer, friendList, false);
+    const scored: [ReturnType<typeof rowOut>, number][] = out.map((r, i) => [r, rows[i].score]);
+    if (me && best) scored.push([me, best.score]);
+    await Promise.all(scored.map(async ([r, sc]) => Object.assign(r, { overall: await rankOf(env, id, param, sc, all) })));
+  }
+
+  // On the whole board, up to two friends further down are added under the
+  // page: the ones nearest your own place, or the best two.
+  const near: ReturnType<typeof rowOut>[] = [];
+  if (friendList.length && !show && offset === 0) {
+    const onPage = new Set(out.map((r) => r.slug));
+    const { results } = await env.DB.prepare(
+      `SELECT e.value, e.score, c.name, c.realm, c.slug, c.summary, c.user_id ${from} AND c.user_id IN (SELECT value FROM json_each(?))
+       ORDER BY e.score LIMIT 200`,
+    )
+      .bind(id, param, ...f.args, JSON.stringify(friendList))
+      .all<RankRow>();
+    const lower = results.filter((r) => !onPage.has(r.slug));
+    const target = best?.score ?? rows.find((_, i) => out[i].mine)?.score;
+    const picked = target === undefined ? lower.slice(0, 2) : [...lower].sort((x, y) => Math.abs(x.score - target) - Math.abs(y.score - target)).slice(0, 2);
+    picked.sort((x, y) => x.score - y.score);
+    for (const r of picked) near.push(rowOut(r, await rankOf(env, id, param, r.score, f), viewer, friends));
+  }
+  return json({ board: id, param, params, total, rows: out, me, friends: near });
 }
 
 async function rankOf(env: Env, id: string, param: string, s: number, f: { sql: string; args: unknown[] }): Promise<number> {

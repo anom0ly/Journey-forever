@@ -20,6 +20,7 @@ Readers should refuse a `schemaVersion` they don't know, accept unknown `kind` v
 | `char` | table | The character: `guid` (`"Player-..."`), `name`, `realm` (normalised, no spaces), `class` and `race` (tokens such as `"WARRIOR"`, `"Human"`), `faction`, `level`. Merge key with the other addons: `guid`, or `name-realm`. |
 | `screenshots` | array | One entry per screenshot logged, oldest first (below). Capped at 5000. |
 | `notes` | array | One entry per note, oldest first (below). Capped at 5000. |
+| `friends` | table | The account's Battle.net friends (since 1.1.0): `t` (`time()` when read) and `tags`, the friends' BattleTags (`"Name#1234"`), sorted, unique. Refreshed a few seconds after login and when the list changes; kept as it was if Battle.net answers with nothing. Missing until first read. |
 | `paused`, `settings`, `zones`, `run` | | The addon's own state. Ignore. |
 
 ## Place fields (screenshots and notes)
@@ -65,4 +66,4 @@ Place fields, plus `text` (up to 500 characters), `subzone` and `instance` (name
 
 ## Privacy
 
-The addon never stores other players' names, chat or the combat log. `char` is the player's own character; boss, rare and item names are game data.
+The addon never stores other players' character names, chat or the combat log. The one exception is `friends`: the BattleTags of the player's own Battle.net friends, so the website can highlight friends' public characters. The website hashes them in the browser before upload; the tags never leave the player's computer. `char` is the player's own character; boss, rare and item names are game data.

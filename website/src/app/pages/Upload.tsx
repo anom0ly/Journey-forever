@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { saveBoards } from "../boardsSync";
+import { friendCount, friendHashes, type FriendLists } from "../../lib/friends";
 import { duration } from "../../lib/insights";
 import type { Journey, SourceInfo } from "../../lib/journey";
 import { mergeJourneys, summarize, uploadDelta, type UploadDelta } from "../../lib/merge";
@@ -9,6 +10,7 @@ import { matchShots, shotTime, type Matched, type ShotMatch } from "../../lib/sh
 import { api, type StoredCharacter } from "../api";
 import { fromDrop, fromInput, merge, type Picked } from "../files";
 import { classColor, describeCharacter, plural } from "../format";
+import { setFriends } from "../friends";
 import { prepareImage, previewUrl, sha256Hex } from "../images";
 import { navigate } from "../router";
 
@@ -68,6 +70,7 @@ interface Preview {
   shots: ShotMatch<ShotFile>;
   already: number; // screenshots uploaded before
   skipped: number;
+  friends: FriendLists;
 }
 
 function deltaText(d: UploadDelta): string {
@@ -83,7 +86,7 @@ function deltaText(d: UploadDelta): string {
 
 async function buildPreview(picked: Picked): Promise<Preview> {
   const texts = await Promise.all(picked.saved.map(async ({ path, file, group }) => ({ path, group, text: await file.text() })));
-  const { journeys, notes, unnamed } = readUpload(texts);
+  const { journeys, notes, unnamed, friends } = readUpload(texts);
   const { characters } = await api.characters();
   const stored = new Map(characters.map((c) => [c.key, c]));
   const deltas = new Map(journeys.map((j) => [j.character.key, uploadDelta(stored.get(j.character.key)?.summary, j)]));
@@ -115,7 +118,7 @@ async function buildPreview(picked: Picked): Promise<Preview> {
   shots.matched = await fresh(shots.matched);
   shots.manual = await fresh(shots.manual);
   for (const m of [...shots.matched, ...shots.manual].slice(0, 60)) m.file.preview = await previewUrl(m.file.file).catch(() => undefined);
-  return { journeys, notes, unnamed, stored, deltas, shots, already, skipped: picked.skipped };
+  return { journeys, notes, unnamed, stored, deltas, shots, already, skipped: picked.skipped, friends };
 }
 
 export function UploadPage() {
@@ -179,7 +182,16 @@ export function UploadPage() {
           t: s.t, kind: s.kind, label: s.label, file: s.file.name, width: img.width, height: img.height,
         });
       }
-      setDone(`Saved ${plural(toSave.length, "character")} and ${plural(shots.length, "screenshot")}.`);
+      let friendsLine = "";
+      if (hasFriends(preview.friends)) {
+        setBusy("Saving your friends list…");
+        // Only hashes of the BattleTags leave the browser.
+        const info = await api.saveFriends(await friendHashes(preview.friends));
+        setFriends(info);
+        const onSite = info.friends.length;
+        friendsLine = ` Friends list saved: ${plural(info.counts.total, "Battle.net friend")}, ${onSite} with public characters here.`;
+      }
+      setDone(`Saved ${plural(toSave.length, "character")} and ${plural(shots.length, "screenshot")}.${friendsLine}`);
       setPreview(undefined);
       setPicked(undefined);
     } catch (e) {
@@ -190,6 +202,7 @@ export function UploadPage() {
   };
 
   const shots = preview ? [...preview.shots.matched, ...(includeManual ? preview.shots.manual : [])] : [];
+  const friends = preview && hasFriends(preview.friends) ? friendCount(preview.friends) : undefined;
   const sessions = preview ? preview.journeys.filter((j) => !preview.deltas.get(j.character.key)?.upToDate).length : 0;
 
   return (
@@ -337,6 +350,21 @@ export function UploadPage() {
               </div>
             ))}
           </div>
+          {friends && (
+            <div class="item">
+              <div class="stack" style={{ flex: "1 1 220px", gap: "2px" }}>
+                <span style={{ fontWeight: 600 }}>Friends list: {plural(friends.total, "Battle.net friend")}</span>
+                <span class="small muted">
+                  {[friends.jf ? `${friends.jf} from Journey Forever` : "", friends.rts ? `${friends.rts} from Road to Sixty` : "", friends.both ? `${friends.both} in both` : ""]
+                    .filter(Boolean)
+                    .join(", ") || "Nobody on the list yet"}
+                  . Their public characters are highlighted for you on the leaderboards and in Compare. Only scrambled copies of the BattleTags
+                  are sent.
+                </span>
+              </div>
+              <span class="pill">Friends</span>
+            </div>
+          )}
           {preview.skipped > 0 && <p class="tiny muted">{plural(preview.skipped, "other file was", "other files were")} skipped unread.</p>}
 
           {(shots.length > 0 || preview.shots.manual.length > 0) && (
@@ -390,14 +418,22 @@ export function UploadPage() {
             <button type="button" class="btn" onClick={() => navigate("/characters")}>
               Cancel
             </button>
-            <button type="button" class="btn primary" disabled={!!busy || (!sessions && !shots.length)} onClick={save}>
-              {sessions || shots.length ? `Save ${plural(sessions, "session")} and ${plural(shots.length, "screenshot")}` : "Nothing new to save"}
+            <button type="button" class="btn primary" disabled={!!busy || (!sessions && !shots.length && !friends)} onClick={save}>
+              {sessions || shots.length
+                ? `Save ${plural(sessions, "session")} and ${plural(shots.length, "screenshot")}`
+                : friends
+                  ? "Save friends list"
+                  : "Nothing new to save"}
             </button>
           </div>
         </section>
       )}
     </main>
   );
+}
+
+function hasFriends(f: FriendLists): boolean {
+  return !!(f.jf || f.rts);
 }
 
 function PickFiles(props: { label: string; onPick: (p: Picked) => void; folder?: boolean; images?: boolean; primary?: boolean; chip?: boolean }) {
