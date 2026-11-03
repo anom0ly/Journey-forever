@@ -360,6 +360,23 @@ test("the window builds and refreshes", function()
     assert(JourneyForeverMinimapButton, "minimap button")
 end)
 
+test("Battle.net friends' BattleTags are saved", function()
+    W.bnet = { { battleTag = "Zed#1111" }, { battleTag = "amy#2222" }, { battleTag = "Zed#1111" },
+        { battleTag = W.SECRET }, { battleTag = "not a tag" }, {} }
+    W.Fire("BN_FRIEND_LIST_SIZE_CHANGED")
+    W.Fire("BN_FRIEND_LIST_SIZE_CHANGED")
+    W.Advance(4)
+    eq(type(db.friends), "table", "saved")
+    eq(#db.friends.tags, 2, "unique, valid tags only")
+    eq(db.friends.tags[1], "amy#2222", "sorted")
+    eq(db.friends.tags[2], "Zed#1111", "second")
+    eq(type(db.friends.t), "number", "time")
+    W.bnet = {}
+    W.Fire("BN_CONNECTED")
+    W.Advance(4)
+    eq(#db.friends.tags, 2, "an empty answer keeps the last list")
+end)
+
 test("data from a newer version is left alone", function()
     local ns2 = {}
     JourneyForeverDB = { schemaVersion = 99, screenshots = { { t = 1 } } }

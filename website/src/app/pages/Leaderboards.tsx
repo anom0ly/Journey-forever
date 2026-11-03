@@ -7,6 +7,7 @@ import { BOARD_BY_ID, boardTitle, CARDS, formatValue, GROUPS, type BoardDef, typ
 import { className as classLabel } from "../../lib/wow";
 import { api, type BoardFilters, type BoardPage, type BoardRow } from "../api";
 import { classColor, describeCharacter, plural } from "../format";
+import { useFriends } from "../friends";
 import { useMe } from "../me";
 import { navigate } from "../router";
 import { ReportDialog } from "./Report";
@@ -29,6 +30,8 @@ export function boardHref(id: string, param?: string): string {
 
 function Filters({ f, onChange, extra }: { f: BoardFilters; onChange: (f: BoardFilters) => void; extra?: preact.ComponentChildren }) {
   const me = useMe();
+  // The Friends filter and the key appear once a friend has a public character.
+  const hasFriends = (useFriends()?.friends.length ?? 0) > 0;
   const [meta, setMeta] = useState<{ realms: string[]; classes: string[] }>({ realms: [], classes: [] });
   useEffect(() => {
     api.boardsMeta().then(setMeta).catch(() => undefined);
@@ -60,16 +63,40 @@ function Filters({ f, onChange, extra }: { f: BoardFilters; onChange: (f: BoardF
       </label>
       {me?.user && (
         <div class="lb-seg" role="group" aria-label="Show">
-          <button type="button" aria-pressed={f.show !== "mine"} onClick={() => onChange({ ...f, show: undefined })}>
+          <button type="button" aria-pressed={!f.show} onClick={() => onChange({ ...f, show: undefined })}>
             Everyone
           </button>
+          {(hasFriends || f.show === "friends") && (
+            <button type="button" aria-pressed={f.show === "friends"} onClick={() => onChange({ ...f, show: "friends" })}>
+              Friends
+            </button>
+          )}
           <button type="button" aria-pressed={f.show === "mine"} onClick={() => onChange({ ...f, show: "mine" })}>
             Mine
           </button>
         </div>
       )}
+      {me?.user && hasFriends && (
+        <span class="lb-key">
+          <i aria-hidden="true" />
+          Your Battle.net friends
+        </span>
+      )}
     </div>
   );
+}
+
+function emptyText(f: BoardFilters): string {
+  if (f.show === "mine") return "None of your public characters are on this board yet.";
+  if (f.show === "friends") return "Neither you nor your friends have a public character on this board yet.";
+  return "No public characters on this board yet.";
+}
+
+// Your best row and friends further down, in board order, for under the gap.
+function below(page: BoardPage, shown: BoardRow[]): BoardRow[] {
+  const have = new Set(shown.map((r) => r.slug));
+  const extra = [...(page.me ? [page.me] : []), ...(page.friends ?? [])].filter((r) => !have.has(r.slug));
+  return extra.sort((a, b) => a.rank - b.rank);
 }
 
 function Dot({ r, size }: { r: Pick<BoardRow, "name" | "className">; size?: "lg" }) {
@@ -163,18 +190,20 @@ function BoardCard({ title, boards, f, index }: { title: string; boards: { id: s
       ) : !shown ? (
         <p class="small muted">Loading…</p>
       ) : !shown.rows.length ? (
-        <p class="small muted">{f.show === "mine" ? "None of your public characters are on this board yet." : "No public characters on this board yet."}</p>
+        <p class="small muted">{emptyText(f)}</p>
       ) : (
         <ol class="lb-rank">
           {shown.rows.map((r) => (
             <RankLi key={r.slug} r={r} def={def} />
           ))}
-          {shown.me && (
+          {below(shown, shown.rows).length > 0 && (
             <>
               <li class="lb-gap" aria-hidden="true">
                 ⋮
               </li>
-              <RankLi r={shown.me} def={def} />
+              {below(shown, shown.rows).map((r) => (
+                <RankLi key={r.slug} r={r} def={def} />
+              ))}
             </>
           )}
         </ol>
@@ -191,12 +220,13 @@ function BoardCard({ title, boards, f, index }: { title: string; boards: { id: s
 
 function RankLi({ r, def }: { r: BoardRow; def: BoardDef }) {
   return (
-    <li class={r.mine ? "mine" : undefined}>
+    <li class={r.mine ? "mine" : r.friend ? "friend" : undefined} title={r.friend ? "Your Battle.net friend" : undefined}>
       <span class={`n${r.rank === 1 ? " first" : ""}`}>{r.rank}</span>
       <Dot r={r} />
       <a class="nm" href={`/j/${encodeURIComponent(r.slug)}`}>
         {r.name}
         {r.mine && <span class="lb-you">You</span>}
+        {r.overall !== undefined && <span class="lb-overall">#{r.overall} overall</span>}
       </a>
       <span class="val">{formatValue(def.fmt, r.value)}</span>
     </li>
@@ -290,7 +320,11 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
   };
 
   const row = (r: BoardRow, pinned = false) => (
-    <tr key={`${r.slug}${pinned ? "-me" : ""}`} class={[r.mine && "mine", pinned && "pinned"].filter(Boolean).join(" ") || undefined}>
+    <tr
+      key={`${r.slug}${pinned ? "-below" : ""}`}
+      class={[r.mine ? "mine" : r.friend && "friend", pinned && "pinned"].filter(Boolean).join(" ") || undefined}
+      title={r.friend ? "Your Battle.net friend" : undefined}
+    >
       <td class={`lb-n${r.rank === 1 ? " first" : ""}`}>{r.rank}</td>
       <td>
         <div class="lb-char">
@@ -301,6 +335,7 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
                 {r.name}
               </a>
               {r.mine && <span class="lb-you">You</span>}
+              {r.overall !== undefined && <span class="lb-overall">#{r.overall} overall</span>}
             </span>
             <span class="tiny muted">
               Level {r.level} {describeCharacter(r)} · {r.realm}
@@ -353,7 +388,7 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
       {error && <div class="notice err">{error}</div>}
       {data && !rows.length && (
         <div class="card flat">
-          <p class="muted">{f.show === "mine" ? "None of your public characters are on this board yet." : "No public characters on this board yet."}</p>
+          <p class="muted">{emptyText(f)}</p>
         </div>
       )}
       {rows.length > 0 && (
@@ -371,7 +406,7 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
             </thead>
             <tbody>
               {rows.map((r) => row(r))}
-              {data?.me && !rows.some((r) => r.mine) && row(data.me, true)}
+              {data && below(data, rows).map((r, i) => row(r, i === 0))}
             </tbody>
           </table>
         </div>

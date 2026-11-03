@@ -147,7 +147,7 @@ describe("the addon's own sample file", () => {
     expect(notes).toEqual([]);
     const j = journeys[0];
     expect(j.character).toMatchObject({ name: "Testchar", className: "WARRIOR", race: "Human", level: 24 });
-    expect(j.sources.find((s) => s.addon === "jf")).toMatchObject({ status: "ok", version: "1.0.0" });
+    expect(j.sources.find((s) => s.addon === "jf")).toMatchObject({ status: "ok", version: "1.1.0" });
     const shots = j.events.filter((e) => e.k === "shot");
     expect(shots.length).toBeGreaterThan(2);
     expect(shots[0]).toMatchObject({ kind: "level", c: 0, x: -11015, y: 854, shot: "WoWScrnShot_110426_195506" });

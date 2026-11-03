@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { api, type AccountSummary } from "../api";
+import { api, type AccountSummary, type FriendsInfo } from "../api";
 import { date, dateTime, plural } from "../format";
+import { setFriends, useFriends } from "../friends";
 
 function megabytes(bytes: number): string {
   return bytes < 1e6 ? "under 1 MB" : `${Math.round(bytes / 1e6).toLocaleString("en-US")} MB`;
@@ -65,6 +66,7 @@ function DeleteAccount({ a, onDeleted }: { a: AccountSummary; onDeleted: () => v
               <span class="tiny muted">{a.publicLinks.map((s) => `/j/${s}`).join(" · ")}</span>
             </li>
           )}
+          <li>Your friends list, if you uploaded one</li>
           <li>Your BattleTag, Battle.net account number and every sign-in session</li>
         </ul>
         <p class="tiny muted">Your saved files in WoW aren't touched. Signing in again later starts a fresh, empty account.</p>
@@ -91,6 +93,84 @@ function DeleteAccount({ a, onDeleted }: { a: AccountSummary; onDeleted: () => v
           </button>
         </div>
       </dialog>
+    </section>
+  );
+}
+
+const SOURCE_NAMES: Record<string, string> = { jf: "Journey Forever", rts: "Road to Sixty" };
+
+// The friends we matched, the "show me" switch, and forgetting the list.
+function FriendsSection() {
+  const info = useFriends();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const run = async (fn: () => Promise<FriendsInfo>) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      setFriends(await fn());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!info) return null;
+  return (
+    <section class="card flat">
+      <div class="row between">
+        <h2>Friends</h2>
+        <span class="tiny muted">{info.updatedAt ? `Updated from your upload, ${date(info.updatedAt)}` : "No friends list uploaded yet"}</span>
+      </div>
+      {info.friends.length ? (
+        <div class="list">
+          {info.friends.map((f, i) => (
+            <div class="item" key={i}>
+              <span style={{ flex: "1 1 220px" }}>
+                {f.characters.map((c, k) => (
+                  <span key={c.slug}>
+                    {k > 0 && ", "}
+                    <a href={`/j/${encodeURIComponent(c.slug)}`} style={{ color: "var(--teal-hi)", fontWeight: 600, textDecoration: "none" }}>
+                      {c.name}
+                    </a>
+                  </span>
+                ))}
+                {f.characters.length > 1 && <span class="tiny muted"> · one friend's {f.characters.length} characters</span>}
+              </span>
+              <span class="tiny muted">{f.sources.length ? f.sources.map((s) => SOURCE_NAMES[s] ?? s).join(" + ") : "Their friends list"}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p class="small muted">
+          {info.updatedAt
+            ? "None of your friends have a public character here yet."
+            : "Upload with Journey Forever 1.1 or later (or Road to Sixty's friend sync) and your Battle.net friends' public characters are highlighted on the leaderboards and in Compare."}
+        </p>
+      )}
+      {info.notOnSite > 0 && <p class="small muted">{plural(info.notOnSite, "more friend doesn't", "more friends don't")} use the site yet, or have no public characters.</p>}
+      {error && <div class="notice err">{error}</div>}
+      <div class="row between" style={{ borderTop: "1px solid var(--line)", paddingTop: "14px" }}>
+        <label class="row" style={{ gap: "10px", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={info.visible}
+            disabled={busy}
+            onChange={(e) => run(() => api.setFriendsVisible((e.target as HTMLInputElement).checked))}
+            style={{ width: "18px", height: "18px", accentColor: "var(--accent)" }}
+          />
+          <span class="small">Show me to my Battle.net friends</span>
+        </label>
+        {info.updatedAt && (
+          <button type="button" class="btn" disabled={busy} onClick={() => run(() => api.forgetFriends())}>
+            Forget my friends list
+          </button>
+        )}
+      </div>
+      <p class="tiny muted">
+        Friends are matched by scrambled BattleTags; we never see or show the tags themselves. Turning the switch off takes your public
+        characters out of your friends' highlights without making them private. Forget removes your list until your next upload.
+      </p>
     </section>
   );
 }
@@ -134,10 +214,11 @@ export function AccountPage({ onDeleted }: { onDeleted: () => void }) {
               <span>{a.lastUploadAt ? dateTime(a.lastUploadAt) : "Never"}</span>
             </div>
             <p class="tiny muted">
-              We store your BattleTag and Battle.net account number, the journeys and screenshots you upload, and your sign-in sessions.
-              Nothing else.
+              We store your BattleTag and Battle.net account number, the journeys and screenshots you upload, scrambled copies of your
+              Battle.net friends' BattleTags if your upload has a friends list, and your sign-in sessions. Nothing else.
             </p>
           </section>
+          <FriendsSection />
           <DeleteAccount a={a} onDeleted={onDeleted} />
         </>
       )}

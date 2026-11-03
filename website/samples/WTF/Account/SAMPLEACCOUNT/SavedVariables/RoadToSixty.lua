@@ -18,4 +18,24 @@ RoadToSixtyDB = {
 			["level"] = 5,
 		},
 	},
+	["friends"] = {
+		["thessaly"] = {
+			["name"] = "Thessaly",
+			["realm"] = "Sample Realm",
+			["battleTag"] = "Thess#1187",
+			["level"] = 12,
+			["journey"] = {
+				["version"] = 4,
+			},
+		},
+		["ashka"] = {
+			["name"] = "Ashka",
+			["realm"] = "Sample Realm",
+			["battleTag"] = "Ashka#4410",
+			["level"] = 9,
+			["journey"] = {
+				["version"] = 4,
+			},
+		},
+	},
 }

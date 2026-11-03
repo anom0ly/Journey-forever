@@ -71,7 +71,7 @@ InCombatLockdown = function() return W.combat == true end
 
 C_Timer = { After = function(seconds, fn) table.insert(W.timers, { at = W.clock + seconds, fn = fn }) end }
 C_AddOns = {
-    GetAddOnMetadata = function() return "1.0.0" end,
+    GetAddOnMetadata = function() return "1.1.0" end,
     IsAddOnLoaded = function(name) return W.loaded[name] == true end,
 }
 W.loaded = { RoadToSixty = true }
@@ -137,6 +137,11 @@ C_Item = {
     GetItemInfo = function() return nil end,
 }
 GetInventoryItemLink = function(_, slot) return W.worn[slot] end
+
+-- Battle.net friends: { battleTag = "Name#1234" } entries, set by tests.
+W.bnet = {}
+BNGetNumFriends = function() return #W.bnet, #W.bnet end
+C_BattleNet = { GetFriendAccountInfo = function(i) return W.bnet[i] end }
 
 -- Fires an event at every frame that registered it.
 function W.Fire(event, ...)

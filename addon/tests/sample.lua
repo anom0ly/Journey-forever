@@ -6,6 +6,7 @@ package.path = "addon/tests/?.lua;" .. package.path
 local W = require("wow")
 local ns = {}
 W.Load("addon/JourneyForever", ns)
+W.bnet = { { battleTag = "Thess#1187" }, { battleTag = "Ros#2210" } }
 
 W.Fire("ADDON_LOADED", "JourneyForever")
 W.Fire("PLAYER_LOGIN")

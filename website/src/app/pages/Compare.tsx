@@ -11,6 +11,7 @@ import { km } from "../../lib/path";
 import { deathStats, goldStats, levelStats, professionStats, pvpStats, SKILL_CAPS } from "../../lib/stats";
 import { api, type PublicHit, type StoredCharacter } from "../api";
 import { classColor, describeCharacter, plural } from "../format";
+import { friendCharacters, friendSlugs, useFriends } from "../friends";
 import { navigate } from "../router";
 import { loadDemoJourneys } from "../source";
 import { ReplayDuo } from "./CompareReplay";
@@ -103,6 +104,10 @@ function Picker({ keep, signedIn }: { keep: Side; signedIn: boolean }) {
   const [mine, setMine] = useState<StoredCharacter[]>();
   const [link, setLink] = useState("");
   const [linkError, setLinkError] = useState<string>();
+  const friendInfo = useFriends();
+  const friendSet = friendSlugs(friendInfo);
+  // Friends' public characters, closest in level first.
+  const friends = friendCharacters(friendInfo, c.level).filter((f) => f.slug !== keep.slug).slice(0, 12);
 
   useEffect(() => {
     if (signedIn) api.characters().then((r) => setMine(r.characters)).catch(() => setMine([]));
@@ -178,7 +183,9 @@ function Picker({ keep, signedIn }: { keep: Side; signedIn: boolean }) {
                   <a key={h.slug} role="listitem" class="item pick" href={`/compare/${encodeURIComponent(keep.slug!)}/${encodeURIComponent(h.slug)}`}>
                     <Avatar name={h.name} className={h.className} size="sm" />
                     <span class="stack" style={{ gap: "0", flex: 1, minWidth: 0 }}>
-                      <strong>{h.name}</strong>
+                      <strong style={friendSet.has(h.slug) ? { color: "var(--teal-hi)" } : undefined} title={friendSet.has(h.slug) ? "Your Battle.net friend" : undefined}>
+                        {h.name}
+                      </strong>
                       <span class="small muted">
                         Level {h.level} {describeCharacter(h)} · {h.realm}
                       </span>
@@ -191,6 +198,21 @@ function Picker({ keep, signedIn }: { keep: Side; signedIn: boolean }) {
               ) : (
                 <div class="item small muted">No public character's name starts with "{q.trim()}".</div>
               )}
+            </div>
+          )}
+          {friends.length > 0 && (
+            <div class="stack">
+              <span class="eyebrow" style={{ color: "var(--teal-hi)" }}>
+                Your friends
+              </span>
+              <div class="row" style={{ gap: "8px" }}>
+                {friends.map((f) => (
+                  <a key={f.slug} class="chip-link friend" href={`/compare/${encodeURIComponent(keep.slug!)}/${encodeURIComponent(f.slug)}`}>
+                    <Avatar name={f.name} className={f.className} size="xs" />
+                    {f.name} {f.level}
+                  </a>
+                ))}
+              </div>
             </div>
           )}
           {signedIn && others.length > 0 && (

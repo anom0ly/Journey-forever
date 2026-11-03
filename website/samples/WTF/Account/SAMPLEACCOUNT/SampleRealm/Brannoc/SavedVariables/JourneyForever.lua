@@ -72,5 +72,13 @@ JourneyForeverDB = {
 			["level"] = 2,
 		}, -- [1]
 	},
+	["friends"] = {
+		["t"] = 1793914200,
+		["tags"] = {
+			"Thess#1187", -- [1]
+			"Ros#2210", -- [2]
+			"Hollin#3301", -- [3]
+		},
+	},
 	["paused"] = false,
 }
