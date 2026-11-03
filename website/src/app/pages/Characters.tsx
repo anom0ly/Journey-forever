@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { backfillBoards } from "../boardsSync";
 import { duration } from "../../lib/insights";
 import { km } from "../../lib/path";
 import { api, type StoredCharacter } from "../api";
@@ -145,6 +146,7 @@ export function CharactersPage() {
       .then((r) => {
         setChars(r.characters.sort((a, b) => b.summary.level - a.summary.level));
         setLast(r.lastUploadAt);
+        void backfillBoards(r.characters);
       })
       .catch((e: Error) => setError(e.message));
   }, []);

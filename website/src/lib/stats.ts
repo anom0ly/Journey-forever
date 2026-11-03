@@ -737,6 +737,11 @@ export function levelStats(j: Journey): LevelStats {
 
 // The zone with the most time between two moments, from the zone events.
 function mainZone(j: Journey, from: number, to: number): string | undefined {
+  return [...zoneTimes(j, from, to).entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
+// Played seconds in each zone (or instance) between two moments.
+export function zoneTimes(j: Journey, from: number, to: number): Map<string, number> {
   const spent = new Map<string, number>();
   let zone = zoneAt(j, from), at = from;
   let outdoors: string | undefined;
@@ -755,5 +760,5 @@ function mainZone(j: Journey, from: number, to: number): string | undefined {
     }
   }
   if (zone) spent.set(zone, (spent.get(zone) ?? 0) + (playedBetween(j.sessions, at, to) ?? to - at));
-  return [...spent.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  return spent;
 }

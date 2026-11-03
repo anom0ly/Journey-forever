@@ -68,7 +68,10 @@ is public.
    with redirect URL `https://<your site>/auth/callback`, then
    `npx wrangler secret put BNET_CLIENT_ID` and `npx wrangler secret put BNET_CLIENT_SECRET`.
    Until then the site runs, and sign-in says it isn't set up yet.
-6. `npm run deploy`
+6. Leaderboard review page: `npx wrangler secret put ADMIN_BNET_IDS` with your
+   Battle.net account ID (the `bnet_id` column of your row in `users`). Only
+   those accounts see Review; everyone else gets "Not found".
+7. `npm run deploy`
 
 Dev sign-in (`AUTH_MODE=dev`) only works on localhost, so it can't be switched
 on by accident in production.

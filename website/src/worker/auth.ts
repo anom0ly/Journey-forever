@@ -26,7 +26,7 @@ export async function currentUser(req: Request, env: Env): Promise<User | null> 
   const token = parseCookies(req)[SESSION_COOKIE];
   if (!token) return null;
   const row = await env.DB.prepare(
-    `SELECT u.id, u.battletag, u.last_upload_at FROM sessions s JOIN users u ON u.id = s.user_id
+    `SELECT u.id, u.bnet_id, u.battletag, u.last_upload_at FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.id = ? AND s.expires_at > ?`,
   )
     .bind(await sha256(token), now())

@@ -1,7 +1,9 @@
+import type { BoardEntry } from "../lib/boardDefs";
 import type { CharacterSummary, Journey } from "../lib/journey";
 
 export interface Me {
-  user: { id: string; battletag: string | null; lastUploadAt: number | null } | null;
+  user: { id: string; battletag: string | null; lastUploadAt: number | null; isAdmin?: boolean } | null;
+  reviewCount?: number;
   authMode: "battlenet" | "dev" | "unconfigured";
 }
 
@@ -12,6 +14,8 @@ export interface StoredCharacter {
   slug: string | null;
   updatedAt: number;
   hasJourney: boolean;
+  boardState?: number; // 0 listed, 1 held by reports, 2 hidden after review
+  boardsVersion?: number | null;
 }
 
 export interface Screenshot {
@@ -43,6 +47,72 @@ export interface PublicHit {
   level: number;
   className?: string;
   race?: string;
+}
+
+export interface BoardRow {
+  rank: number;
+  value: number;
+  name: string;
+  realm: string;
+  slug: string;
+  level: number;
+  className?: string;
+  race?: string;
+  mine: boolean;
+}
+
+export interface BoardPage {
+  board: string;
+  param: string;
+  params?: string[];
+  total: number;
+  rows: BoardRow[];
+  me?: BoardRow;
+}
+
+export interface BoardFilters {
+  realm?: string;
+  cls?: string;
+  show?: "" | "mine";
+}
+
+export interface Rank {
+  board: string;
+  param: string;
+  value: number;
+  rank: number;
+}
+
+export interface ReviewReport {
+  reporterId: string;
+  battletag: string | null;
+  reason: string;
+  note: string | null;
+  createdAt: number;
+  sent: number;
+  cleared: number;
+  ignored: boolean;
+  counts: boolean;
+}
+
+export interface ReviewItem {
+  slug: string | null;
+  name: string;
+  realm: string;
+  level: number;
+  className?: string;
+  race?: string;
+  isPublic: boolean;
+  held: boolean;
+  hidden: boolean;
+  status: "open" | "hidden" | "cleared";
+  openedAt: number;
+  clearedAt: number | null;
+  counted: number;
+  boards: number;
+  bestRank?: number;
+  checks: string[];
+  reports: ReviewReport[];
 }
 
 export class ApiError extends Error {
@@ -91,6 +161,47 @@ export const api = {
   publicJourney: (slug: string) => call<{ character: StoredCharacter; screenshots: Screenshot[] }>(`/api/public/${encodeURIComponent(slug)}`),
   searchPublic: (q: string) => call<{ results: PublicHit[] }>(`/api/public?q=${encodeURIComponent(q)}`),
   publicJourneyData: (slug: string) => call<Journey>(`/api/public/${encodeURIComponent(slug)}/journey`),
+
+  boardsMeta: () => call<{ realms: string[]; classes: string[] }>("/api/boards"),
+  board: (id: string, o: BoardFilters & { param?: string; limit?: number; offset?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (o.param) q.set("param", o.param);
+    if (o.realm) q.set("realm", o.realm);
+    if (o.cls) q.set("class", o.cls);
+    if (o.show) q.set("show", o.show);
+    if (o.limit) q.set("limit", String(o.limit));
+    if (o.offset) q.set("offset", String(o.offset));
+    return call<BoardPage>(`/api/boards/${encodeURIComponent(id)}?${q}`);
+  },
+  publicRanks: (slug: string) => call<{ ranks: Rank[] }>(`/api/public/${encodeURIComponent(slug)}/ranks`),
+  ownRanks: (key: string) => call<{ ranks: Rank[] }>(`/api/characters/${encodeURIComponent(key)}/ranks`),
+  saveBoards: (key: string, entries: BoardEntry[], checks: string[], version: number) =>
+    call<{ ok: true }>(`/api/characters/${encodeURIComponent(key)}/boards`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ entries, checks, version }),
+    }),
+  myReport: (slug: string) => call<{ report: { reason: string; note: string | null } | null; own: boolean }>(`/api/public/${encodeURIComponent(slug)}/report`),
+  report: (slug: string, reason: string, note: string) =>
+    call<{ ok: true; updated: boolean }>(`/api/public/${encodeURIComponent(slug)}/report`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason, note }),
+    }),
+  review: (status: "open" | "hidden" | "cleared") =>
+    call<{ items: ReviewItem[]; counts: Record<string, number> }>(`/api/review?status=${status}`),
+  reviewAction: (slug: string, action: "hide" | "clear") =>
+    call<{ ok: true }>(`/api/review/${encodeURIComponent(slug)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    }),
+  ignoreReporter: (id: string, ignore: boolean) =>
+    call<{ ok: true }>(`/api/review/reporters/${encodeURIComponent(id)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ignore }),
+    }),
 
   async saveJourney(journey: Journey, summary: CharacterSummary): Promise<StoredCharacter> {
     const key = encodeURIComponent(journey.character.key);
