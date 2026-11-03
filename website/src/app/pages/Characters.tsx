@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { AddonsPanel, AddonsStrip } from "../Addons";
 import { backfillBoards } from "../boardsSync";
 import { duration } from "../../lib/insights";
 import { km } from "../../lib/path";
@@ -163,6 +164,7 @@ export function CharactersPage() {
         </a>
       </div>
       {error && <div class="notice err">{error}</div>}
+      {!!chars?.length && <AddonsStrip />}
       {chars && !chars.length && (
         <div class="card flat">
           <h2>No characters yet</h2>
@@ -172,6 +174,7 @@ export function CharactersPage() {
           </p>
         </div>
       )}
+      {chars && !chars.length && <AddonsPanel />}
       <div class="grid-cards">{chars?.map((c) => <Card key={c.key} c={c} onChange={update} onDeleted={() => setChars((list) => list?.filter((x) => x.key !== c.key))} />)}</div>
     </main>
   );

@@ -1,3 +1,4 @@
+import { AddonsPanel } from "../Addons";
 import type { Me } from "../api";
 
 export function Landing({ me }: { me: Me | null }) {
@@ -33,12 +34,12 @@ export function Landing({ me }: { me: Me | null }) {
           </a>
         </div>
       </div>
+      <AddonsPanel />
       <div class="split">
         <div class="card">
           <h2>1. Play</h2>
           <p class="muted">
-            Install Road to Sixty and Journey Forever. Journey Tracker is optional and adds a gold breakdown. They record as you play and
-            write their files when you log out.
+            Install <a href="#addons">the addons above</a>. They record as you play and write their files when you log out.
           </p>
         </div>
         <div class="card">
