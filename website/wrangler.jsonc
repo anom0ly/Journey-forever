@@ -23,6 +23,14 @@
     }
   ],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "journey-forever-files" }],
+  // Rate limits (src/worker/limits.ts). namespace_id only has to be unique
+  // in the Cloudflare account. RL_REQUESTS: everything the Worker answers,
+  // per IP (a journey page with many screenshots stays well under it).
+  // RL_CHANGES: uploads and other changes, per account.
+  "ratelimits": [
+    { "name": "RL_REQUESTS", "namespace_id": "4101", "simple": { "limit": 600, "period": 60 } },
+    { "name": "RL_CHANGES", "namespace_id": "4102", "simple": { "limit": 240, "period": 60 } }
+  ],
   // Sign-in: "battlenet" needs the BNET_CLIENT_ID and BNET_CLIENT_SECRET
   // secrets (wrangler secret put, or type "Secret" in the dashboard). For local
   // work, .dev.vars sets AUTH_MODE=dev.

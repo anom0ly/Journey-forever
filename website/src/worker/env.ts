@@ -12,6 +12,9 @@ export interface Env {
   // Battle.net account IDs (comma-separated) that can open the review page.
   // Set it as a secret. "dev" is the local dev sign-in.
   ADMIN_BNET_IDS?: string;
+  // Rate limits (wrangler.jsonc "ratelimits"); see limits.ts.
+  RL_REQUESTS?: RateLimit;
+  RL_CHANGES?: RateLimit;
 }
 
 export interface User {

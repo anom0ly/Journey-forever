@@ -1,0 +1,57 @@
+name: WoWHub sync
+
+# Every 6 hours, checks wowhub.net's nav.js and brand.css against our copies
+# in website/public/wowhub/ and opens (or updates) a pull request when they
+# differ. Nothing reaches the site until that pull request is merged.
+#
+# Needs Settings > Actions > General > "Allow GitHub Actions to create and
+# approve pull requests" switched on.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency: wowhub-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download and re-apply our changes
+        run: node website/scripts/sync-wowhub.mjs
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: wowhub-sync
+        run: |
+          if git diff --quiet -- website/public/wowhub; then
+            echo "Already up to date with wowhub.net"
+            exit 0
+          fi
+          # An open sync PR that already has these files needs nothing.
+          if git fetch -q origin "$BRANCH" 2>/dev/null && git diff --quiet FETCH_HEAD -- website/public/wowhub; then
+            echo "The open sync pull request is already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add website/public/wowhub
+          git commit -m "Update the WoWHub nav and styles from wowhub.net"
+          git push --force origin "$BRANCH"
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --head "$BRANCH" --base main \
+              --title "Update the WoWHub nav and styles from wowhub.net" \
+              --body "wowhub.net's nav.js or brand.css changed. This copies them into website/public/wowhub/ with our three safety changes put back (marked \"Journey Forever:\" in nav.js). Read the diff before merging: merging is what puts it on the site.
+
+          Made by the WoWHub sync workflow (.github/workflows/wowhub-sync.yml)."
+          fi

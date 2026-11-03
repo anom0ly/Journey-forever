@@ -9,12 +9,19 @@ import type { CharacterSummary } from "../lib/journey";
 import { clearSessionCookie, currentUser, requireUser } from "./auth";
 import { board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, ranksOf, refreshFlag, report, reportedBy, reviewAction, reviewList, saveBoards } from "./boards";
 import type { Env, User } from "./env";
+import { summaryProblem } from "../lib/checks";
 import { HttpError, json, now, readBody, sha256 } from "./http";
 
-const JOURNEY_LIMIT = 60e6;
+const JOURNEY_LIMIT = 30e6;
 const IMAGE_LIMIT = 25e6;
 const THUMB_LIMIT = 2e6;
 const SUMMARY_LIMIT = 32e3;
+// What one account can keep. A full account (every character to 60, with
+// screenshots) is far under these; they're here so one account can't fill
+// the bucket.
+export const MAX_CHARACTERS = 50;
+export const MAX_SCREENSHOTS = 2000;
+export const MAX_ACCOUNT_BYTES = 2e9;
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 interface CharacterRow {
@@ -32,6 +39,7 @@ interface CharacterRow {
 
 interface ShotRow {
   id: string;
+  pid: string | null;
   char_key: string;
   t: number;
   kind: string;
@@ -54,11 +62,36 @@ function characterOut(r: CharacterRow) {
   };
 }
 
-function shotOut(r: ShotRow) {
+function shotOut(r: ShotRow & { pid: string }) {
   return {
     id: r.id, t: r.t, kind: r.kind, label: r.label, file: r.file, width: r.width, height: r.height,
-    url: `/media/${r.id}`, thumb: `/media/${r.id}/thumb`,
+    url: `/media/${r.pid}`, thumb: `/media/${r.pid}/thumb`,
   };
+}
+
+// A screenshot's public ID, in its /media link. The browser names a shot by
+// the hash of its bytes, so two accounts can send the same ID; this one is
+// unique to the account, so nobody can put their image under someone else's link.
+export async function shotPublicId(userId: string, id: string): Promise<string> {
+  return (await sha256(`${userId}:${id}`)).slice(0, 32);
+}
+
+// Bytes an account keeps: journeys and screenshots (thumbnails are small and
+// capped per screenshot).
+async function accountBytes(env: Env, userId: string): Promise<number> {
+  const r = await env.DB.prepare(
+    `SELECT (SELECT COALESCE(SUM(journey_size), 0) FROM characters WHERE user_id = ?1)
+          + (SELECT COALESCE(SUM(size), 0) FROM screenshots WHERE user_id = ?1) AS bytes`,
+  )
+    .bind(userId)
+    .first<{ bytes: number }>();
+  return r?.bytes ?? 0;
+}
+
+function checkRoom(used: number, replacing: number, adding: number): void {
+  if (used - replacing + adding > MAX_ACCOUNT_BYTES) {
+    throw new HttpError(413, `Your account is full (${Math.round(MAX_ACCOUNT_BYTES / 1e9)} GB). Delete some screenshots or characters first.`);
+  }
 }
 
 async function journeyObject(userId: string, key: string): Promise<string> {
@@ -86,6 +119,8 @@ function checkSummary(text: string, key: string): CharacterSummary {
   if (!s || s.key !== key || !short(s.name) || !short(s.realm) || typeof s.level !== "number") {
     throw new HttpError(400, "Summary is missing its character");
   }
+  const problem = summaryProblem(s);
+  if (problem) throw new HttpError(400, problem);
   return s;
 }
 
@@ -178,11 +213,22 @@ async function searchPublic(env: Env, q: string) {
 
 async function listShots(env: Env, userId: string, key: string) {
   const { results } = await env.DB.prepare(
-    "SELECT id, char_key, t, kind, label, file, width, height FROM screenshots WHERE user_id = ? AND char_key = ? ORDER BY t",
+    "SELECT id, pid, char_key, t, kind, label, file, width, height FROM screenshots WHERE user_id = ? AND char_key = ? ORDER BY t",
   )
     .bind(userId, key)
     .all<ShotRow>();
-  return results.map(shotOut);
+  // Shots uploaded before public IDs existed get theirs the first time they're listed.
+  const missing = results.filter((r) => !r.pid);
+  if (missing.length) {
+    const update = env.DB.prepare("UPDATE screenshots SET pid = ? WHERE user_id = ? AND id = ?");
+    const stmts = [];
+    for (const r of missing) {
+      r.pid = await shotPublicId(userId, r.id);
+      stmts.push(update.bind(r.pid, userId, r.id));
+    }
+    await env.DB.batch(stmts);
+  }
+  return results.map((r) => shotOut(r as ShotRow & { pid: string }));
 }
 
 export async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
@@ -266,8 +312,13 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
     if (parts.length === 2) {
       if (m === "GET") return json(characterOut(await ownCharacter(env, user, key)));
       if (m === "PUT") {
-        // The summary, sent after the journey itself.
+        // The summary, sent before the journey itself (which needs the row).
         const summary = checkSummary(new TextDecoder().decode(await readBody(req, SUMMARY_LIMIT)), key);
+        const exists = await env.DB.prepare("SELECT 1 FROM characters WHERE user_id = ? AND key = ?").bind(user.id, key).first();
+        if (!exists) {
+          const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM characters WHERE user_id = ?").bind(user.id).first<{ n: number }>();
+          if ((n?.n ?? 0) >= MAX_CHARACTERS) throw new HttpError(413, `You can keep up to ${MAX_CHARACTERS} characters. Delete one first.`);
+        }
         const head = await env.FILES.head(await journeyObject(user.id, key));
         const t = now();
         await env.DB.batch([
@@ -282,7 +333,7 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
       }
       if (m === "PATCH") {
         const row = await ownCharacter(env, user, key);
-        const body = (await req.json()) as { isPublic?: unknown };
+        const body = (await req.json().catch(() => ({}))) as { isPublic?: unknown };
         if (typeof body.isPublic !== "boolean") throw new HttpError(400, "Send isPublic");
         const slug = row.slug ?? (body.isPublic ? await freeSlug(env, row.name, row.realm) : null);
         await env.DB.prepare("UPDATE characters SET is_public = ?, slug = ? WHERE user_id = ? AND key = ?")
@@ -330,10 +381,13 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         if (req.headers.get("content-encoding") !== "gzip" && req.headers.get("x-content-encoding") !== "gzip") {
           throw new HttpError(415, "Send the journey gzipped");
         }
+        const row = await ownCharacter(env, user, key);
         const body = await readBody(req, JOURNEY_LIMIT);
+        checkRoom(await accountBytes(env, user.id), row.journey_size ?? 0, body.byteLength);
         await env.FILES.put(await journeyObject(user.id, key), body, {
           httpMetadata: { contentType: "application/json", contentEncoding: "gzip" },
         });
+        await env.DB.prepare("UPDATE characters SET journey_size = ? WHERE user_id = ? AND key = ?").bind(body.byteLength, user.id, key).run();
         return json({ ok: true, size: body.byteLength });
       }
     }
@@ -355,22 +409,32 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         if (typeof meta.t !== "number" || typeof meta.kind !== "string") throw new HttpError(400, "x-shot needs t and kind");
         await ownCharacter(env, user, key);
         const body = await readBody(req, IMAGE_LIMIT);
+        const old = await env.DB.prepare("SELECT size FROM screenshots WHERE user_id = ? AND id = ?").bind(user.id, id).first<{ size: number | null }>();
+        if (!old) {
+          const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM screenshots WHERE user_id = ?").bind(user.id).first<{ n: number }>();
+          if ((n?.n ?? 0) >= MAX_SCREENSHOTS) throw new HttpError(413, `You can keep up to ${MAX_SCREENSHOTS} screenshots. Delete some first.`);
+        }
+        checkRoom(await accountBytes(env, user.id), old?.size ?? 0, body.byteLength);
         await env.FILES.put(shotObject(user.id, id, false), body, { httpMetadata: { contentType: type } });
         const text = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : null);
         const int = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : null);
         await env.DB.prepare(
-          `INSERT INTO screenshots (user_id, id, char_key, t, kind, label, file, width, height, size, content_type, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT (user_id, id) DO UPDATE SET char_key = excluded.char_key, t = excluded.t, kind = excluded.kind, label = excluded.label`,
+          `INSERT INTO screenshots (user_id, id, char_key, t, kind, label, file, width, height, size, content_type, created_at, pid)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (user_id, id) DO UPDATE SET char_key = excluded.char_key, t = excluded.t, kind = excluded.kind, label = excluded.label,
+             size = excluded.size, content_type = excluded.content_type, pid = excluded.pid`,
         )
           .bind(user.id, id, key, Math.round(meta.t), meta.kind.slice(0, 24), text(meta.label, 200), text(meta.file, 120),
-            int(meta.width), int(meta.height), body.byteLength, type, now())
+            int(meta.width), int(meta.height), body.byteLength, type, now(), await shotPublicId(user.id, id))
           .run();
         return json({ ok: true });
       }
       if (parts.length === 5 && parts[4] === "thumb" && m === "PUT") {
         const type = req.headers.get("content-type") ?? "";
         if (!IMAGE_TYPES.has(type)) throw new HttpError(415, "Thumbnails must be JPEG, PNG or WebP");
+        // Only for a screenshot that's already stored (sent just before it).
+        const shot = await env.DB.prepare("SELECT 1 FROM screenshots WHERE user_id = ? AND id = ? AND char_key = ?").bind(user.id, id, key).first();
+        if (!shot) throw new HttpError(404, "Send the screenshot before its thumbnail");
         const body = await readBody(req, THUMB_LIMIT);
         await env.FILES.put(shotObject(user.id, id, true), body, { httpMetadata: { contentType: type } });
         return json({ ok: true });
@@ -389,23 +453,24 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
 // /media/<id> and /media/<id>/thumb: a screenshot, for its owner or anyone
 // when its character's journey is public.
 export async function handleMedia(req: Request, env: Env, url: URL, userOf: (r: Request) => Promise<User | null>): Promise<Response> {
-  const [, , id, thumb] = url.pathname.split("/");
-  if (!id || !/^[0-9a-f]{16,64}$/.test(id)) throw new HttpError(404, "Not found");
+  const [, , pid, thumb] = url.pathname.split("/");
+  if (!pid || !/^[0-9a-f]{32}$/.test(pid)) throw new HttpError(404, "Not found");
   const user = await userOf(req);
   const row = await env.DB.prepare(
-    `SELECT s.user_id, c.is_public FROM screenshots s JOIN characters c ON c.user_id = s.user_id AND c.key = s.char_key
-     WHERE s.id = ? AND (c.is_public = 1 OR s.user_id = ?) LIMIT 1`,
+    `SELECT s.user_id, s.id, c.is_public FROM screenshots s JOIN characters c ON c.user_id = s.user_id AND c.key = s.char_key
+     WHERE s.pid = ? AND (c.is_public = 1 OR s.user_id = ?)`,
   )
-    .bind(id, user?.id ?? "")
-    .first<{ user_id: string; is_public: number }>();
+    .bind(pid, user?.id ?? "")
+    .first<{ user_id: string; id: string; is_public: number }>();
   if (!row) throw new HttpError(404, "Not found");
-  let obj = await env.FILES.get(shotObject(row.user_id, id, thumb === "thumb"));
-  if (!obj && thumb === "thumb") obj = await env.FILES.get(shotObject(row.user_id, id, false));
+  let obj = await env.FILES.get(shotObject(row.user_id, row.id, thumb === "thumb"));
+  if (!obj && thumb === "thumb") obj = await env.FILES.get(shotObject(row.user_id, row.id, false));
   if (!obj) throw new HttpError(404, "Not found");
   return new Response(obj.body, {
     headers: {
       "content-type": obj.httpMetadata?.contentType ?? "image/jpeg",
-      "cache-control": row.is_public ? "public, max-age=3600" : "private, max-age=3600",
+      // Short for private shots, so making a character private takes effect soon.
+      "cache-control": row.is_public ? "public, max-age=3600" : "private, max-age=300",
     },
   });
 }

@@ -5,6 +5,7 @@
 
 import { BOARD_BY_ID, BOARDS_VERSION, fixedParams, type BoardEntry } from "../lib/boardDefs";
 import type { CharacterSummary } from "../lib/journey";
+import { isFreeParam, knownParam, NEW_PARAM_ACCOUNTS, paramLooksRight, paramsPerCharacter, valueInRange } from "../lib/checks";
 import type { Env, User } from "./env";
 import { HttpError, json, now } from "./http";
 
@@ -44,13 +45,23 @@ export async function saveBoards(env: Env, user: User, key: string, body: unknow
   if (!Array.isArray(b?.entries) || b.entries.length > ENTRIES_LIMIT) throw new HttpError(400, "Send entries");
   const entries: BoardEntry[] = [];
   const seen = new Set<string>();
+  const perKind = new Map<string, Set<string>>();
   for (const e of b.entries as BoardEntry[]) {
     const def = e && typeof e.b === "string" ? BOARD_BY_ID.get(e.b) : undefined;
-    if (!def || typeof e.v !== "number" || !Number.isFinite(e.v) || Math.abs(e.v) > 1e13) continue;
-    const p = typeof e.p === "string" ? e.p.slice(0, 64) : "";
+    if (!def || typeof e.v !== "number" || !valueInRange(def.fmt, e.v)) continue;
+    const p = typeof e.p === "string" ? e.p : "";
     if (def.param ? !p : p) continue;
     const fixed = fixedParams(def.param);
     if (fixed && !fixed.includes(p)) continue;
+    if (isFreeParam(def.param)) {
+      // Zones, dungeons and professions are names from the game: anything
+      // else is dropped, and one character can only have so many.
+      if (!paramLooksRight(p)) continue;
+      const names = perKind.get(def.param) ?? new Set<string>();
+      if (!names.has(p) && names.size >= paramsPerCharacter(def.param)) continue;
+      names.add(p);
+      perKind.set(def.param, names);
+    }
     const id = `${e.b}\u0000${p}`;
     if (seen.has(id)) continue;
     seen.add(id);
@@ -113,9 +124,14 @@ function filters(url: URL, viewer: User | null): { sql: string; args: unknown[] 
 // GET /api/boards: the realms and classes to filter by.
 export async function boardsMeta(env: Env): Promise<Response> {
   const { results } = await env.DB.prepare(
-    `SELECT DISTINCT c.realm AS realm, json_extract(c.summary, '$.className') AS cls FROM characters c WHERE ${LISTED}`,
-  ).all<{ realm: string; cls: string | null }>();
-  const realms = [...new Set(results.map((r) => r.realm))].sort();
+    `SELECT c.realm AS realm, json_extract(c.summary, '$.className') AS cls, COUNT(DISTINCT c.user_id) AS users FROM characters c
+     WHERE ${LISTED} GROUP BY c.realm, cls`,
+  ).all<{ realm: string; cls: string | null; users: number }>();
+  // A realm is offered once characters from several accounts are on it, so
+  // one account can't fill the list with names of its own.
+  const realmUsers = new Map<string, number>();
+  for (const r of results) realmUsers.set(r.realm, (realmUsers.get(r.realm) ?? 0) + r.users);
+  const realms = [...realmUsers].filter(([, n]) => n >= NEW_PARAM_ACCOUNTS).map(([r]) => r).sort();
   const classes = [...new Set(results.map((r) => r.cls).filter((c): c is string => !!c))].sort();
   return json({ realms, classes }, { headers: { "cache-control": "public, max-age=60" } });
 }
@@ -128,16 +144,21 @@ export async function board(env: Env, url: URL, id: string, viewer: User | null)
 
   // Boards by zone, dungeon or profession offer the ones anybody has.
   let params: string[] | undefined = fixedParams(def.param);
-  if (def.param && !params) {
+  const free = isFreeParam(def.param) ? def.param : undefined;
+  if (free) {
+    // Known names, and new ones (Forever's own, other languages) once
+    // several accounts have them.
     const { results } = await env.DB.prepare(
-      `SELECT e.param AS param, COUNT(*) AS n FROM board_entries e JOIN characters c ON c.user_id = e.user_id AND c.key = e.char_key
-       WHERE e.board = ? AND ${LISTED}${f.sql} GROUP BY e.param ORDER BY n DESC, e.param LIMIT 200`,
+      `SELECT e.param AS param, COUNT(*) AS n, COUNT(DISTINCT e.user_id) AS users FROM board_entries e
+       JOIN characters c ON c.user_id = e.user_id AND c.key = e.char_key
+       WHERE e.board = ? AND ${LISTED}${f.sql} GROUP BY e.param ORDER BY n DESC, e.param LIMIT 400`,
     )
       .bind(id, ...f.args)
-      .all<{ param: string }>();
-    params = results.map((r) => r.param);
+      .all<{ param: string; users: number }>();
+    params = results.filter((r) => knownParam(free, r.param) || r.users >= NEW_PARAM_ACCOUNTS).slice(0, 200).map((r) => r.param);
   }
-  const param = def.param ? url.searchParams.get("param") || def.defaultParam || params?.[0] || "" : "";
+  const asked = url.searchParams.get("param");
+  const param = def.param ? (asked && (!free || params!.includes(asked)) ? asked : def.defaultParam || params?.[0] || "") : "";
   const limit = Math.min(PAGE, Math.max(1, Number(url.searchParams.get("limit")) || PAGE));
   const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
 
