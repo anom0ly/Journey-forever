@@ -5,13 +5,21 @@ import type { Env } from "./env";
 import { checkSameOrigin, HttpError, json, withSecurityHeaders } from "./http";
 import { checkRate } from "./limits";
 import { handleMapTile } from "./maps";
+import { handleErrorReport } from "./errors";
 
-async function route(req: Request, env: Env, url: URL): Promise<Response> {
+// What the error log says about a request that failed.
+interface Seen {
+  userId: string | null;
+}
+
+async function route(req: Request, env: Env, url: URL, seen: Seen): Promise<Response> {
   checkSameOrigin(req, url);
   // Changes are limited per account when signed in, so look the account up
   // for those (reads are limited by IP only).
   const user = req.method === "GET" || req.method === "HEAD" ? null : await currentUser(req, env);
-  await checkRate(env, req, user?.id ?? null);
+  seen.userId = user?.id ?? null;
+  await checkRate(env, req, seen.userId);
+  if (url.pathname === "/api/errors" && req.method === "POST") return await handleErrorReport(req, seen.userId);
   if (url.pathname === "/api/me") {
     const me = await currentUser(req, env);
     const admin = isAdmin(env, me);
@@ -32,14 +40,19 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const own = /^\/(api|auth|media|maps)\//.test(url.pathname);
+    const seen: Seen = { userId: null };
     let res: Response;
     try {
-      res = await route(req, env, url);
+      res = await route(req, env, url, seen);
     } catch (err) {
+      // Logged errors are what Workers Issues groups and alerts on: anything
+      // unexpected, and our own 5xx answers (map art not reachable).
+      const where = JSON.stringify({ method: req.method, path: url.pathname.slice(0, 200), userId: seen.userId ?? undefined });
       if (err instanceof HttpError) {
+        if (err.status >= 500) console.error(err, where);
         res = json({ error: err.message }, { status: err.status, headers: err.status === 429 ? { "retry-after": "10" } : {} });
       } else {
-        console.error(err);
+        console.error(err, where);
         res = json({ error: "Something went wrong on our side" }, { status: 500 });
       }
     }

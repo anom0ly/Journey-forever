@@ -5,5 +5,5 @@
     "types": ["node"],
     "tsBuildInfoFile": "node_modules/.tmp/test.tsbuildinfo"
   },
-  "include": ["test", "src/lib", "scripts"]
+  "include": ["test", "src/lib", "scripts", "src/worker/errors.ts", "src/worker/http.ts"]
 }
