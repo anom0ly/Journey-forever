@@ -1,10 +1,9 @@
 /*
  * Journey Forever's own copy of the WoWHub nav (https://wowhub.net/nav.js, v1),
- * served from this site so a change on wowhub.net can't run code here. Three
- * changes from the original, marked "Journey Forever:": links and apps.json
- * always point at wowhub.net, app icons from apps.json are only drawn when
- * they're plain SVG shapes, and app links must be https. To update, run
- * scripts/sync-wowhub.mjs (the "WoWHub sync" workflow does it every 6 hours).
+ * served from this site so a change on wowhub.net can't run code here. One
+ * change from the original, marked "Journey Forever:": links and apps.json
+ * always point at wowhub.net. To update, run scripts/sync-wowhub.mjs (the
+ * "WoWHub sync" workflow does it every 6 hours).
  *
  * WoWHub brand kit: nav.js (v1)
  * Injects the shared 48px top bar into any page.
@@ -13,6 +12,12 @@
  *
  * data-app       the app's id from apps.json. Leave it off on the hub.
  * data-app-name  optional; shows the name before apps.json loads.
+ * data-hub       optional; the hub to read apps.json from and link home to.
+ *                Defaults to the root of the site this file is served from.
+ *                Set it to https://wowhub.net/ when an app serves its own copy.
+ *
+ * Pinned copies live at /kit/v1/nav.js (never changes once released); load
+ * those with an integrity hash. See the README.
  *
  * Everything is scoped under .wh-nav / .wh-navmenu and uses its own styles, so it
  * works with or without brand.css and doesn't touch the app's own layout.
@@ -23,6 +28,7 @@
   window.__whNavLoaded = true;
 
   var script = document.currentScript;
+  var hubAttr = script && script.getAttribute('data-hub');
   // Journey Forever: always the hub, wherever this copy is served from.
   var base = 'https://wowhub.net/';
   var appId = (script && script.getAttribute('data-app')) || '';
@@ -102,12 +108,38 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
-  // Journey Forever: apps.json comes from another site, so an icon is only
-  // used when it's nothing but SVG shapes with plain attributes.
-  var SAFE_ICON = /^(\s*(<(path|circle|rect|line|polyline|polygon|ellipse|g)(\s+(d|cx|cy|r|rx|ry|x|y|x1|y1|x2|y2|width|height|points|transform|fill|stroke|stroke-width|stroke-linecap|stroke-linejoin|opacity)="[^"<>]*")*\s*\/?>|<\/(g|path)>))*\s*$/;
-  function svgIcon(inner, size) {
-    if (!SAFE_ICON.test(inner)) inner = '';
-    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
+
+  // apps.json icons are plain SVG shapes. They are rebuilt element by element
+  // from an allow-list, never inserted as HTML, so a bad entry can't run code.
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var ICON_TAGS = { path: 1, circle: 1, ellipse: 1, line: 1, polyline: 1, polygon: 1, rect: 1 };
+  var ICON_ATTRS = { d: 1, cx: 1, cy: 1, r: 1, rx: 1, ry: 1, x: 1, y: 1, x1: 1, y1: 1, x2: 1, y2: 1, width: 1, height: 1, points: 1 };
+  var ICON_VALUE = /^[0-9eE.,\s+\-MmLlHhVvCcSsQqTtAaZz]*$/;
+  function svgIcon(markup, size) {
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    var attrs = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+      'stroke-width': 1.6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' };
+    for (var k in attrs) svg.setAttribute(k, attrs[k]);
+    try {
+      var root = new DOMParser().parseFromString('<svg xmlns="' + SVG_NS + '">' + (markup || '') + '</svg>', 'image/svg+xml').documentElement;
+      for (var n = root.firstElementChild; n; n = n.nextElementSibling) {
+        if (n.namespaceURI !== SVG_NS || !ICON_TAGS[n.localName]) continue;
+        var shape = document.createElementNS(SVG_NS, n.localName);
+        for (var i = 0; i < n.attributes.length; i++) {
+          var at = n.attributes[i];
+          if (!at.namespaceURI && ICON_ATTRS[at.name] && ICON_VALUE.test(at.value)) shape.setAttribute(at.name, at.value);
+        }
+        svg.appendChild(shape);
+      }
+    } catch (e) { /* leave the icon empty */ }
+    return svg;
+  }
+  // Links from apps.json must be https:// or a path on this site.
+  function safeUrl(u) {
+    if (typeof u !== 'string') return null;
+    if (/^https:\/\/[^\s"'<>]+$/i.test(u)) return u;
+    if (/^\/(?![\/\\])[^\s"'<>]*$/.test(u)) return new URL(u, base).href;
+    return null;
   }
 
   function ensureFonts() {
@@ -160,9 +192,9 @@
     menu.hidden = true;
     menu.setAttribute('role', 'dialog');
     menu.setAttribute('aria-label', 'WoWHub apps');
-    menu.innerHTML = '<ul><li class="wh-navmenu__short" style="padding:12px">Loading apps…</li></ul>';
+    menu.innerHTML = '<ul><li class="wh-navmenu__short" style="padding:12px">Loading apps\u2026</li></ul>';
     var foot = el('div', 'wh-navmenu__foot',
-      '<a class="wh-navmenu__all" href="' + esc(hubUrl) + '">All apps on wowhub.net →</a>' +
+      '<a class="wh-navmenu__all" href="' + esc(hubUrl) + '">All apps on wowhub.net \u2192</a>' +
       '<span class="wh-navmenu__legal">Fan project. Not affiliated with Blizzard Entertainment.</span>');
     menu.appendChild(foot);
     nav.appendChild(menu);
@@ -203,20 +235,22 @@
         var apps = (data && data.apps) || [];
         var ul = el('ul');
         apps.forEach(function (a) {
+          if (!a || typeof a !== 'object') return;
           var current = a.id === appId;
-          var isLive = a.status === 'live' || a.status === 'beta';
+          var url = safeUrl(a.url);
+          var isLive = (a.status === 'live' || a.status === 'beta') && !!url;
           var li = el('li');
           var item = el(isLive ? 'a' : 'div', 'wh-navmenu__item' + (isLive ? '' : ' wh-navmenu__item--wip'));
-          // Journey Forever: only https links.
-          if (isLive && /^https:\/\//.test(String(a.url))) item.href = a.url;
+          if (isLive) item.href = url;
           if (current) item.setAttribute('aria-current', 'page');
           var right = current
             ? '<span class="wh-navmenu__check">' + CHECK + '</span>'
             : '<span class="wh-navmenu__tag wh-navmenu__tag--' + esc(a.status) + '">' + esc(String(a.status).toUpperCase()) + '</span>';
           item.innerHTML =
-            '<span class="wh-navmenu__icon">' + svgIcon(a.icon || '', 20) + '</span>' +
+            '<span class="wh-navmenu__icon"></span>' +
             '<span class="wh-navmenu__text"><span class="wh-navmenu__name">' + esc(a.name) + '</span>' +
             '<span class="wh-navmenu__short">' + esc(current ? 'You are here' : (isLive ? a.short : 'Coming soon')) + '</span></span>' + right;
+          item.firstChild.appendChild(svgIcon(a.icon, 20));
           li.appendChild(item);
           ul.appendChild(li);
           if (current && appLabel) appLabel.textContent = a.name;
@@ -224,7 +258,7 @@
         menu.replaceChild(ul, menu.firstChild);
       })
       .catch(function () {
-        menu.firstChild.innerHTML = '<li class="wh-navmenu__short" style="padding:12px">Couldn’t load the app list.</li>';
+        menu.firstChild.innerHTML = '<li class="wh-navmenu__short" style="padding:12px">Couldn\u2019t load the app list.</li>';
       });
   }
 

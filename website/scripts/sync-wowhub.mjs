@@ -22,34 +22,32 @@ const NAV_CHANGES = [
  * WoWHub brand kit: nav.js (v1)`,
     `/*
  * Journey Forever's own copy of the WoWHub nav (https://wowhub.net/nav.js, v1),
- * served from this site so a change on wowhub.net can't run code here. Three
- * changes from the original, marked "Journey Forever:": links and apps.json
- * always point at wowhub.net, app icons from apps.json are only drawn when
- * they're plain SVG shapes, and app links must be https. To update, run
- * scripts/sync-wowhub.mjs (the "WoWHub sync" workflow does it every 6 hours).
+ * served from this site so a change on wowhub.net can't run code here. One
+ * change from the original, marked "Journey Forever:": links and apps.json
+ * always point at wowhub.net. To update, run scripts/sync-wowhub.mjs (the
+ * "WoWHub sync" workflow does it every 6 hours).
  *
  * WoWHub brand kit: nav.js (v1)`,
   ],
   [
-    `  var base = script && script.src ? new URL('.', script.src).href : '/';`,
+    `  var base = hubAttr ? new URL(hubAttr, location.href).href
+    : (script && script.src ? new URL('/', script.src).href : '/');`,
     `  // Journey Forever: always the hub, wherever this copy is served from.
   var base = 'https://wowhub.net/';`,
   ],
-  [
-    `  function svgIcon(inner, size) {
-    return`,
-    `  // Journey Forever: apps.json comes from another site, so an icon is only
-  // used when it's nothing but SVG shapes with plain attributes.
-  var SAFE_ICON = /^(\\s*(<(path|circle|rect|line|polyline|polygon|ellipse|g)(\\s+(d|cx|cy|r|rx|ry|x|y|x1|y1|x2|y2|width|height|points|transform|fill|stroke|stroke-width|stroke-linecap|stroke-linejoin|opacity)="[^"<>]*")*\\s*\\/?>|<\\/(g|path)>))*\\s*$/;
-  function svgIcon(inner, size) {
-    if (!SAFE_ICON.test(inner)) inner = '';
-    return`,
-  ],
-  [
-    `          if (isLive) item.href = a.url;`,
-    `          // Journey Forever: only https links.
-          if (isLive && /^https:\\/\\//.test(String(a.url))) item.href = a.url;`,
-  ],
+];
+
+// wowhub.net's own protections for what comes from apps.json. If a new
+// nav.js drops any of these, stop so the change is looked at by hand.
+const NAV_MUST_HAVE = [
+  // icons rebuilt shape by shape from an allow-list, never inserted as HTML
+  `var ICON_TAGS = { path: 1, circle: 1, ellipse: 1, line: 1, polyline: 1, polygon: 1, rect: 1 };`,
+  `var shape = document.createElementNS(SVG_NS, n.localName);`,
+  `item.firstChild.appendChild(svgIcon(a.icon, 20));`,
+  // links only https:// or a path on the hub
+  `if (/^https:\\/\\/[^\\s"'<>]+$/i.test(u)) return u;`,
+  `var url = safeUrl(a.url);`,
+  `if (isLive) item.href = url;`,
 ];
 
 async function download(name) {
@@ -59,6 +57,10 @@ async function download(name) {
 }
 
 export function patchNav(src) {
+  for (const line of NAV_MUST_HAVE) {
+    if (!src.includes(line)) throw new Error(`nav.js changed shape: a safety check is missing:\n${line}`);
+  }
+  if (/svgIcon\([^)]*\)\s*\+/.test(src)) throw new Error("nav.js changed shape: an icon is inserted as HTML again");
   let out = src;
   for (const [from, to] of NAV_CHANGES) {
     const n = out.split(from).length - 1;
