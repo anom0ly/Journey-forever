@@ -7,11 +7,12 @@ import { mergeJourneys, summarize, uploadDelta, type UploadDelta } from "../../l
 import { readUpload, type FileNote, type Unnamed } from "../../lib/parse/upload";
 import { km } from "../../lib/path";
 import { matchShots, shotTime, type Matched, type ShotMatch } from "../../lib/shots";
-import { api, type StoredCharacter } from "../api";
+import { api, ApiError, type StoredCharacter } from "../api";
 import { fromDrop, fromInput, merge, type Picked } from "../files";
 import { classColor, describeCharacter, plural } from "../format";
 import { setFriends } from "../friends";
 import { prepareImage, previewUrl, sha256Hex } from "../images";
+import { reportUpload } from "../report";
 import { navigate } from "../router";
 
 const ADDON_NAMES: Record<string, string> = { rts: "Road to Sixty", jt: "Journey Tracker", jf: "Journey Forever" };
@@ -87,6 +88,12 @@ function deltaText(d: UploadDelta): string {
 async function buildPreview(picked: Picked): Promise<Preview> {
   const texts = await Promise.all(picked.saved.map(async ({ path, file, group }) => ({ path, group, text: await file.text() })));
   const { journeys, notes, unnamed, friends } = readUpload(texts);
+  // Files the parsers couldn't read are the thing to know about on launch
+  // night: report which addon's file and why, never what's in it.
+  for (const n of notes) {
+    const f = picked.saved.find((x) => x.path === n.path);
+    reportUpload("read", n.message, { file: n.path, size: f?.file.size });
+  }
   const { characters } = await api.characters();
   const stored = new Map(characters.map((c) => [c.key, c]));
   const deltas = new Map(journeys.map((j) => [j.character.key, uploadDelta(stored.get(j.character.key)?.summary, j)]));
@@ -152,6 +159,7 @@ export function UploadPage() {
     try {
       setPreview(await buildPreview(all));
     } catch (e) {
+      reportUpload("preview", e, { status: e instanceof ApiError ? e.status : undefined });
       setError((e as Error).message);
     } finally {
       setBusy(undefined);
@@ -195,6 +203,7 @@ export function UploadPage() {
       setPreview(undefined);
       setPicked(undefined);
     } catch (e) {
+      reportUpload("save", e, { status: e instanceof ApiError ? e.status : undefined });
       setError(`Saving stopped: ${(e as Error).message}. What was saved so far is kept; try again to finish.`);
     } finally {
       setBusy(undefined);

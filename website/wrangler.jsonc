@@ -7,7 +7,12 @@
   "name": "journey-forever",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-10-01",
-  "observability": { "enabled": true },
+  // Workers Logs, plus Workers Issues: groups errors (crashes, 5xx answers,
+  // console.error, and the pages' reports through /api/errors) and alerts on
+  // them. Issues set in the dashboard is turned off again by a deploy unless
+  // it is on here too. Source maps make its stack traces point at src/.
+  "observability": { "enabled": true, "issues": { "enabled": true } },
+  "upload_source_maps": true,
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

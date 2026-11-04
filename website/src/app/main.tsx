@@ -1,4 +1,4 @@
-import { render } from "preact";
+import { Component, render, type ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { api, type Me } from "./api";
 import { AccountPage } from "./pages/Account";
@@ -13,6 +13,7 @@ import { ReviewPage } from "./pages/Review";
 import { MeContext } from "./me";
 import { ReplayPage } from "./pages/Replay";
 import { UploadPage } from "./pages/Upload";
+import { installErrorReporting, reportError } from "./report";
 import { installLinkHandler, match, navigate, usePath } from "./router";
 import "./styles.css";
 
@@ -59,6 +60,36 @@ function NotFound() {
       </p>
     </main>
   );
+}
+
+// A page that throws while drawing shows this instead of going blank, and
+// the error is reported. Keyed by path in App, so moving to another page
+// tries again.
+class PageBoundary extends Component<{ children: ComponentChildren }, { broken: boolean }> {
+  state = { broken: false };
+
+  componentDidCatch(err: unknown) {
+    reportError("render", err);
+    this.setState({ broken: true });
+  }
+
+  render() {
+    if (!this.state.broken) return this.props.children;
+    return (
+      <main class="page narrow">
+        <h1>Something broke on this page</h1>
+        <p class="lead">It's been reported, so we can fix it. Your journeys are safe.</p>
+        <div class="row">
+          <button type="button" class="btn primary" onClick={() => location.reload()}>
+            Try again
+          </button>
+          <a class="btn" href="/">
+            Go to the start
+          </a>
+        </div>
+      </main>
+    );
+  }
 }
 
 function SignInFirst() {
@@ -130,10 +161,11 @@ function App() {
   return (
     <MeContext.Provider value={me}>
       <Header me={me} path={path} onSignOut={signOut} />
-      {page}
+      <PageBoundary key={path}>{page}</PageBoundary>
     </MeContext.Provider>
   );
 }
 
+installErrorReporting();
 installLinkHandler();
 render(<App />, document.getElementById("app")!);
