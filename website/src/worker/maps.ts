@@ -1,4 +1,5 @@
-// Map art tiles: the Forever client's own BLP textures, listed in
+// Map art tiles (base art and explored-area overlays): the Forever client's
+// own BLP textures, listed in
 // map-data.json. Each one is copied from wago.tools into R2 the first time
 // someone asks for it, then served from R2. Only listed tiles are fetched,
 // so this can't be used to pull arbitrary files through the Worker.
@@ -7,7 +8,12 @@ import data from "../lib/map-data.json";
 import type { Env } from "./env";
 import { HttpError } from "./http";
 
-const TILES = new Set<number>(data.zones.flatMap((z) => z.art?.tiles.map((t) => t[2]) ?? []));
+const TILES = new Set<number>(
+  data.zones.flatMap((z) => [
+    ...(z.art?.tiles.map((t) => t[2]) ?? []),
+    ...(z.art?.overlays?.flatMap((o) => o.tiles.map((t) => t[2])) ?? []),
+  ]),
+);
 const MAX_TILE = 2_000_000;
 
 export async function handleMapTile(env: Env, url: URL): Promise<Response> {

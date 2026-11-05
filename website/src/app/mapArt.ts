@@ -1,4 +1,5 @@
-// Loads a map's art: fetches its BLP tiles from the Worker (/maps/<id>.blp,
+// Loads a map's art, fully explored: fetches its base and explored-area
+// BLP tiles from the Worker (/maps/<id>.blp,
 // copied from the game's files), decodes them and lays them out on one
 // canvas. Each map is loaded once per page.
 
@@ -38,15 +39,40 @@ async function load(art: NonNullable<MapInfo["art"]>): Promise<HTMLCanvasElement
   canvas.width = art.w;
   canvas.height = art.h;
   const ctx = canvas.getContext("2d")!;
-  await Promise.all(
-    art.tiles.map(async ([row, col, file]) => {
-      const res = await fetch(`/maps/${file}.blp`);
-      if (!res.ok) throw new Error(`Map tile ${file}: ${res.status}`);
-      const px = decodeBlp(await res.arrayBuffer());
-      ctx.putImageData(new ImageData(px.data, px.width, px.height), col * art.tileW, row * art.tileH);
-    }),
-  );
+  const overlays = art.overlays ?? [];
+  const size = art.overlayTile ?? 256;
+  // Fetch everything at once, then lay the base down before the explored
+  // areas, which have soft see-through edges and go on top.
+  const [base, explored] = await Promise.all([
+    Promise.all(art.tiles.map(([, , file]) => tile(file))),
+    Promise.all(overlays.map((o) => Promise.all(o.tiles.map(([, , file]) => tile(file))))),
+  ]);
+  art.tiles.forEach(([row, col], i) => ctx.putImageData(base[i], col * art.tileW, row * art.tileH));
+  overlays.forEach((o, i) => {
+    o.tiles.forEach(([row, col], j) => {
+      const img = explored[i][j];
+      const w = Math.min(img.width, o.w - col * size);
+      const h = Math.min(img.height, o.h - row * size);
+      if (w > 0 && h > 0) ctx.drawImage(bitmap(img), 0, 0, w, h, o.x + col * size, o.y + row * size, w, h);
+    });
+  });
   return canvas;
+}
+
+async function tile(file: number): Promise<ImageData> {
+  const res = await fetch(`/maps/${file}.blp`);
+  if (!res.ok) throw new Error(`Map tile ${file}: ${res.status}`);
+  const px = decodeBlp(await res.arrayBuffer());
+  return new ImageData(px.data, px.width, px.height);
+}
+
+// ImageData can't be drawn with blending, so overlays go through a canvas.
+function bitmap(img: ImageData): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = img.width;
+  c.height = img.height;
+  c.getContext("2d")!.putImageData(img, 0, 0);
+  return c;
 }
 
 // A copy whose edges fade out over FEATHER pixels of the art: two passes

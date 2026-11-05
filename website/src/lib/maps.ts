@@ -15,7 +15,13 @@ export interface MapInfo {
   maxY: number;
   // The map's art: w x h pixels laid out from tiles of tileW x tileH,
   // each [row, column, file ID]. Covers exactly the world rectangle above.
-  art?: { w: number; h: number; tileW: number; tileH: number; tiles: number[][] };
+  // The base tiles are the unexplored look; overlays (x, y, w, h on the
+  // art, tiles overlayTile pixels square) fill in every explored area.
+  art?: {
+    w: number; h: number; tileW: number; tileH: number; tiles: number[][];
+    overlays?: { x: number; y: number; w: number; h: number; tiles: number[][] }[];
+    overlayTile?: number;
+  };
 }
 
 export const MAPS: MapInfo[] = data.zones;
