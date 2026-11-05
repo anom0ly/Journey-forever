@@ -52,3 +52,30 @@ export function mapToWorld(mapID: unknown, mx: number, my: number): { c: number;
   if (!m || m.type !== 3) return undefined;
   return { c: m.c, x: Math.round(m.maxX - my * (m.maxX - m.minX)), y: Math.round(m.maxY - mx * (m.maxY - m.minY)) };
 }
+
+// The capital cities, each with the zone it sits in. A city's map is far
+// smaller than its zone's, so the replay keeps the zone's map up and lays
+// the city's over its spot. Hard-coded: the zones' world rectangles overlap
+// (Undercity lies inside Silverpine's and Western Plaguelands' too).
+const CITY_ZONE: Record<number, number> = {
+  1453: 1429, // Stormwind City: Elwynn Forest
+  1454: 1411, // Orgrimmar: Durotar
+  1455: 1426, // Ironforge: Dun Morogh
+  1456: 1412, // Thunder Bluff: Mulgore
+  1457: 1438, // Darnassus: Teldrassil
+  1458: 1420, // Undercity: Tirisfal Glades
+};
+
+export function isCity(id: number | undefined): boolean {
+  return id !== undefined && id in CITY_ZONE;
+}
+
+// The zone a city sits in; any other map is its own zone.
+export function homeZone(id: number): number {
+  return CITY_ZONE[id] ?? id;
+}
+
+// The cities on a continent.
+export function citiesOn(c: number): MapInfo[] {
+  return MAPS.filter((m) => m.c === c && isCity(m.id));
+}
