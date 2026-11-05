@@ -4,12 +4,12 @@ import { mkdtempSync, readFileSync, existsSync, mkdirSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import jpeg from "jpeg-js";
-import { addonFiles, installAddon, isNewer, keepAddonCurrent, pickRelease, tocVersion } from "../src/addon";
+import { addonFiles, installAddon, isNewer, keepAddonCurrent, MAX_ZIP_BYTES, pickRelease, RELEASE_BOT, tocVersion } from "../src/addon";
 import { asciiJson } from "../src/client";
-import { decodeTga, prepareImage, shrink } from "../src/images";
-import { esc, statusPage } from "../src/page";
+import { decodeTga, MAX_TGA_SIDE, prepareImage, shrink } from "../src/images";
+import { esc, scriptJson, statusPage } from "../src/page";
 import { handler, hostOk } from "../src/server";
-import { toastXml } from "../src/windows";
+import { psQuote, toastXml } from "../src/windows";
 import { candidateRoots, foreverIn } from "../src/wow";
 import type { Status, Uploader } from "../src/app";
 
@@ -33,6 +33,11 @@ describe("screenshots", () => {
     head[2] = 10; head[12] = 2; head[14] = 2; head[16] = 24;
     const tga = new Uint8Array([...head, 0x83, 10, 20, 30]);
     const px = decodeTga(tga);
+    const huge = tga.slice();
+    huge[12] = 0xff;
+    huge[13] = 0xff; // 65535 wide
+    expect(() => decodeTga(huge)).toThrow(/too big/);
+    expect(MAX_TGA_SIDE).toBeGreaterThanOrEqual(7680);
     expect([px.width, px.height]).toEqual([2, 2]);
     expect([...px.data.slice(0, 4)]).toEqual([30, 20, 10, 255]);
     const img = await prepareImage("WoWScrnShot_110426_183015.tga", tga);
@@ -60,21 +65,38 @@ describe("the addon", () => {
     expect(isNewer("1.10.0", "1.9.2")).toBe(true);
     expect(isNewer("1.1.0", "1.1.0")).toBe(false);
     expect(isNewer("1.0.0", undefined)).toBe(true);
-    const asset = (v: string) => [{ name: `JourneyForever-${v}.zip`, browser_download_url: `https://x/${v}.zip` }];
+    const bot = { login: RELEASE_BOT };
+    const url = (v: string) => `https://github.com/anom0ly/Journey-forever/releases/download/addon-v${v}/JourneyForever-${v}.zip`;
+    const asset = (v: string) => [{ name: `JourneyForever-${v}.zip`, browser_download_url: url(v), size: 40_000, uploader: bot }];
+    const rel = (tag: string, assets = asset(tag.slice(tag.indexOf("-v") + 2)), more = {}) => ({ tag_name: tag, draft: false, prerelease: false, author: bot, assets, ...more });
     expect(
       pickRelease([
-        { tag_name: "uploader-v2.0.0", draft: false, prerelease: false, assets: [] },
-        { tag_name: "addon-v1.2.0", draft: false, prerelease: true, assets: asset("1.2.0") },
-        { tag_name: "addon-v1.1.0", draft: false, prerelease: false, assets: asset("1.1.0") },
-        { tag_name: "addon-v1.0.0", draft: false, prerelease: false, assets: asset("1.0.0") },
+        rel("uploader-v2.0.0", []),
+        rel("addon-v1.2.0", undefined, { prerelease: true }),
+        rel("addon-v1.1.0"),
+        rel("addon-v1.0.0"),
       ]),
-    ).toEqual({ version: "1.1.0", url: "https://x/1.1.0.zip" });
+    ).toEqual({ version: "1.1.0", url: url("1.1.0") });
+  });
+
+  it("only takes a zip our own release workflow published", () => {
+    const bot = { login: RELEASE_BOT };
+    const good = "https://github.com/anom0ly/Journey-forever/releases/download/addon-v9.0.0/JourneyForever-9.0.0.zip";
+    const asset = (o = {}) => ({ name: "JourneyForever-9.0.0.zip", browser_download_url: good, size: 40_000, uploader: bot, ...o });
+    const rel = (o = {}, a = {}) => [{ tag_name: "addon-v9.0.0", draft: false, prerelease: false, author: bot, assets: [asset(a)], ...o }];
+    expect(pickRelease(rel())?.version).toBe("9.0.0");
+    expect(pickRelease(rel({ author: { login: "someone" } }))).toBeUndefined();
+    expect(pickRelease(rel({}, { uploader: { login: "someone" } }))).toBeUndefined();
+    expect(pickRelease(rel({}, { browser_download_url: "https://evil.example/JourneyForever-9.0.0.zip" }))).toBeUndefined();
+    expect(pickRelease(rel({}, { size: MAX_ZIP_BYTES + 1 }))).toBeUndefined();
   });
 
   it("refuses a zip with files outside the addon folder", () => {
     expect(() => addonFiles(zip({ "JourneyForever/JourneyForever.toc": "x", "JourneyForever/../../evil.lua": "x" }))).toThrow();
     expect(() => addonFiles(zip({ "Other/Other.toc": "x" }))).toThrow();
     expect(() => addonFiles(zip({ "JourneyForever/Core.lua": "x" }))).toThrow(/toc/);
+    // A small zip with huge contents.
+    expect(() => addonFiles(zipSync({ "JourneyForever/JourneyForever.toc": enc("x"), "JourneyForever/big.lua": new Uint8Array(25e6) }))).toThrow(/too big/);
   });
 
   it("installs, updates in place, and waits while WoW is running", async () => {
@@ -85,14 +107,14 @@ describe("the addon", () => {
     let open = false;
     const wowRunning = async () => open;
 
-    expect(await keepAddonCurrent(dir, { wowRunning, latest: async () => release("1.0.0"), download })).toEqual({ status: "installed", version: "1.0.0", from: undefined });
+    expect(await keepAddonCurrent(dir, { wowRunning, latest: async () => release("1.0.0"), download })).toMatchObject({ status: "installed", version: "1.0.0", sha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
     writeFileSync(join(dir, "Stale.lua"), "old");
     expect(await keepAddonCurrent(dir, { wowRunning, latest: async () => release("1.0.0"), download })).toEqual({ status: "current", version: "1.0.0" });
 
     open = true;
     expect((await keepAddonCurrent(dir, { wowRunning, latest: async () => release("1.1.0"), download })).status).toBe("waiting");
     open = false;
-    expect(await keepAddonCurrent(dir, { wowRunning, latest: async () => release("1.1.0"), download })).toEqual({ status: "updated", version: "1.1.0", from: "1.0.0" });
+    expect(await keepAddonCurrent(dir, { wowRunning, latest: async () => release("1.1.0"), download })).toMatchObject({ status: "updated", version: "1.1.0", from: "1.0.0" });
     expect(readFileSync(join(dir, "JourneyForever.toc"), "utf8")).toContain("1.1.0");
     expect(existsSync(join(dir, "Stale.lua"))).toBe(false);
     expect(existsSync(`${dir}.old`) || existsSync(`${dir}.new`)).toBe(false);
@@ -140,13 +162,23 @@ describe("the status page and notifications", () => {
     expect(esc(`<a href="x">'`)).toBe("&lt;a href=&quot;x&quot;&gt;&#39;");
     expect(statusPage(status, "page")).toContain("&lt;b&gt;Adom&lt;/b&gt; uploaded");
     expect(toastXml("A & B", "<x>", "https://s/c?a=1&b=2")).toContain('launch="https://s/c?a=1&amp;b=2"');
+    // A name can't end the page's script.
+    const page = statusPage({ ...status, account: "</script><script>alert(1)</script>" }, "page");
+    expect(page.match(/<\/script>/g)).toHaveLength(1);
+    expect(JSON.parse(scriptJson("</script>\u2028"))).toBe("</script>\u2028");
+    // PowerShell ends a string at curly quotes too.
+    expect(psQuote("a\u2019b")).toBe("'a\u2019\u2019b'");
+    expect(psQuote("a'b")).toBe(`'a''b'`);
   });
 
   it("answers only this PC's addresses, and buttons need the page's token", async () => {
     expect(hostOk("127.0.0.1:47213", 47213)).toBe(true);
     expect(hostOk("evil.example:47213", 47213)).toBe(false);
-    expect((await req("/", { host: "evil.example:47213" })).status).toBe(404);
-    expect((await req("/")).status).toBe(200);
+    expect((await req("/?t=inst", { host: "evil.example:47213" })).status).toBe(404);
+    // Only with the token from this Windows user's own folder.
+    expect((await req("/")).status).toBe(403);
+    expect((await req("/?t=page")).status).toBe(403);
+    expect((await req("/?t=inst")).status).toBe(200);
     expect(await (await req("/ping")).json()).toEqual({ app: "journey-forever-uploader", version: "1.0.0" });
     expect((await req("/action", { method: "POST", body: JSON.stringify({ action: "sync" }) })).status).toBe(403);
     expect((await req("/action", { method: "POST", headers: { "x-token": "page" }, body: JSON.stringify({ action: "sync" }) })).status).toBe(200);

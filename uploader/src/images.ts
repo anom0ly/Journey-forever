@@ -25,12 +25,16 @@ export async function shotId(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
 }
 
+export const MAX_TGA_SIDE = 8192;
+
 // Uncompressed and RLE true-colour TGA (what the game writes).
 export function decodeTga(b: Uint8Array): Pixels {
   const idLength = b[0], type = b[2];
   const width = b[12] | (b[13] << 8), height = b[14] | (b[15] << 8);
   const bpp = b[16] / 8, desc = b[17];
   if ((type !== 2 && type !== 10) || (bpp !== 3 && bpp !== 4) || !width || !height) throw new Error("Unsupported TGA");
+  // Bigger than any screen (8K is 7680 wide): not a game screenshot.
+  if (width > MAX_TGA_SIDE || height > MAX_TGA_SIDE) throw new Error("TGA too big");
   const topDown = (desc & 0x20) !== 0;
   const px = new Uint8Array(width * height * 4);
   let p = 18 + idLength;

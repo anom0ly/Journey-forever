@@ -14,7 +14,7 @@ export function homeDir(): string {
 
 export interface Config {
   site: string;
-  key?: string;
+  key?: string; // "dpapi:…", encrypted for this Windows user (see windows.ts protect)
   account?: string | null; // the BattleTag it was connected as
   forever?: string; // ...\World of Warcraft\_forever_
   paused?: boolean;

@@ -43,15 +43,25 @@ export function bearerKey(req: Request): string | undefined {
   return m && m[1].startsWith(KEY_PREFIX) ? m[1] : undefined;
 }
 
+// A key that hasn't been used for this long stops working (the PC was
+// probably given away or wiped); connecting again makes a new one.
+export const KEY_IDLE_SECONDS = 60 * 86400;
+
 // The account behind an upload key, and which PC it is.
 export async function keyUser(env: Env, key: string): Promise<(User & { key_id: string }) | null> {
+  const t = now();
   const row = await env.DB.prepare(
-    `SELECT u.id, u.bnet_id, u.battletag, u.last_upload_at, k.id AS key_id FROM upload_keys k JOIN users u ON u.id = k.user_id
-     WHERE k.key_hash = ?`,
+    `SELECT u.id, u.bnet_id, u.battletag, u.last_upload_at, k.id AS key_id, COALESCE(k.last_seen_at, k.created_at) AS seen
+     FROM upload_keys k JOIN users u ON u.id = k.user_id
+     WHERE k.key_hash = ? AND COALESCE(k.last_seen_at, k.created_at) > ?`,
   )
-    .bind(await sha256(key))
-    .first<User & { key_id: string }>();
-  return row ?? null;
+    .bind(await sha256(key), t - KEY_IDLE_SECONDS)
+    .first<User & { key_id: string; seen: number }>();
+  if (!row) return null;
+  // Being used keeps it alive (written at most hourly).
+  if (t - row.seen > 3600) await env.DB.prepare("UPDATE upload_keys SET last_seen_at = ? WHERE id = ?").bind(t, row.key_id).run();
+  const { seen: _seen, ...user } = row;
+  return user;
 }
 
 function settingsOf(text: string | null | undefined): UploaderSettings {

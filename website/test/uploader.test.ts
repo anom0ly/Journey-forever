@@ -133,6 +133,18 @@ describe("auto-uploader keys", () => {
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM upload_codes").first()).toEqual({ n: 0 });
   });
 
+  it("stops a key that hasn't been used for 60 days, and keeps a used one alive", async () => {
+    const { env, call, connect } = await setup();
+    const { key } = (await call("/api/uploader/claim", { method: "POST", body: { code: await connect(), verifier: "a-secret-only-the-pc-knows" } })).body as { key: string };
+    const old = Math.floor(Date.now() / 1000) - 59 * 86400;
+    await env.DB.prepare("UPDATE upload_keys SET created_at = ?, last_seen_at = NULL").bind(old).run();
+    expect((await call("/api/uploader/settings", { key })).status).toBe(200);
+    const seen = (await env.DB.prepare("SELECT last_seen_at AS t FROM upload_keys").first()) as { t: number };
+    expect(seen.t).toBeGreaterThan(old);
+    await env.DB.prepare("UPDATE upload_keys SET last_seen_at = ?").bind(old - 2 * 86400).run();
+    expect((await call("/api/uploader/settings", { key })).status).toBe(401);
+  });
+
   it("knows which routes a key may use", () => {
     expect(keyAllows("PUT", "/api/characters/Adom-Toretto/screenshots/0123456789abcdef/thumb")).toBe(true);
     expect(keyAllows("DELETE", "/api/characters/Adom-Toretto/screenshots/0123456789abcdef")).toBe(false);

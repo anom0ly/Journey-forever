@@ -54,8 +54,13 @@ export function messagePage(title: string, message: string, ok: boolean): string
   return shell(
     title,
     `<h1>${esc(title)}</h1><div class="card"><div class="status"><span class="dot ${ok ? "" : "warn"}"></span><span>${esc(message)}</span></div>
-     <p class="note">You can close this tab. <a href="/" style="color:var(--accent)">Open the uploader's page</a></p></div>`,
+     <p class="note">You can close this tab. Double-click the uploader any time to see its page.</p></div>`,
   );
+}
+
+// JSON inside a <script>: "</script>" in a name or message must not end it.
+export function scriptJson(v: unknown): string {
+  return JSON.stringify(v).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 }
 
 export function statusPage(s: Status, token: string): string {
@@ -116,8 +121,8 @@ ${s.error ? `<div class="err">${esc(s.error)}</div>` : ""}
 <p class="note">Version ${esc(s.version)}. This page is only on this PC. Settings (screenshots, notifications, addon updates) are on your Account page on the site.</p>`;
 
   const script = `<script>
-const token = ${JSON.stringify(token)};
-let last = ${JSON.stringify(JSON.stringify(s))};
+const token = ${scriptJson(token)};
+let last = ${scriptJson(JSON.stringify(s))};
 async function act(action) {
   document.querySelectorAll("button").forEach((b) => (b.disabled = true));
   const r = await fetch("/action", { method: "POST", headers: { "x-token": token, "content-type": "application/json" }, body: JSON.stringify({ action }) }).then((r) => r.json()).catch(() => ({}));

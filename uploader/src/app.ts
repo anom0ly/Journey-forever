@@ -8,7 +8,7 @@ import { claimKey, SiteClient, SiteError } from "./client";
 import { prepareImage, shotId } from "./images";
 import type { Store } from "./store";
 import { sync, type ShotSource, type SyncResult } from "./sync";
-import { computerName, notify, openUrl, wowRunning } from "./windows";
+import { computerName, notify, openUrl, protect, unprotect, wowRunning } from "./windows";
 import { addonDir, listSaved, listScreenshots, readSaved, signature } from "./wow";
 
 const TICK_MS = 5_000;
@@ -83,12 +83,28 @@ export class Uploader {
   private characters: string[] = [];
   private verifier: string | undefined;
   private force = false;
+  private key: string | undefined; // decrypted, in memory only
 
   constructor(readonly store: Store, readonly port: () => number) {}
 
   get client(): SiteClient | undefined {
-    const { site, key } = this.store.config;
-    return key ? new SiteClient(site, key) : undefined;
+    return this.key ? new SiteClient(this.store.config.site, this.key) : undefined;
+  }
+
+  get isConnected(): boolean {
+    return !!this.key;
+  }
+
+  // The key from config.json, decrypted for this Windows user.
+  async loadKey(): Promise<void> {
+    this.key = await unprotect(this.store.config.key);
+    if (this.store.config.key && !this.key) this.store.log("Couldn't read this PC's key. Connect it again.", false);
+  }
+
+  private async saveKey(key: string | undefined): Promise<void> {
+    this.key = key;
+    this.store.config.key = key ? await protect(key) : undefined;
+    this.store.saveConfig();
   }
 
   start(): void {
@@ -106,7 +122,7 @@ export class Uploader {
     return {
       version: UPLOADER_VERSION,
       site: c.site,
-      connected: !!c.key,
+      connected: !!this.key,
       account: c.account,
       forever: c.forever,
       paused: !!c.paused,
@@ -153,9 +169,8 @@ export class Uploader {
     try {
       const r = await claimKey(this.store.config.site, code, this.verifier);
       this.verifier = undefined;
-      this.store.config.key = r.key;
       this.store.config.account = r.battletag;
-      this.store.saveConfig();
+      await this.saveKey(r.key);
       this.store.state.signature = undefined; // upload everything once
       this.store.saveState();
       this.error = undefined;
@@ -170,13 +185,11 @@ export class Uploader {
   // Remove from this PC: the key is dropped on the site and here.
   async forget(): Promise<void> {
     await this.client?.forget().catch(() => undefined);
-    this.store.config.key = undefined;
-    this.store.saveConfig();
+    await this.saveKey(undefined);
   }
 
   private disconnected(): void {
-    this.store.config.key = undefined;
-    this.store.saveConfig();
+    void this.saveKey(undefined);
     this.error = "This PC was disconnected from the site.";
     this.store.log("Disconnected by the site (or the account isn't allowed to auto-upload)", false);
     void notify("This PC was disconnected", "Double-click the Journey Forever uploader to connect it again.");
@@ -314,6 +327,7 @@ export class Uploader {
         this.addonNote = undefined;
         const title = r.status === "installed" ? `Journey Forever addon ${r.version} installed` : `Journey Forever addon updated to ${r.version}`;
         this.store.log(title);
+        this.store.debug(`Addon ${r.version} zip SHA-256 ${r.sha256}`);
         if (this.settings.notify) await notify(title, "It loads next time you start WoW (or after /reload).");
       } else if (r.status === "waiting") {
         st.addonVersion = r.installed;

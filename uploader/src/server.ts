@@ -1,8 +1,9 @@
 // The uploader's only window: a small page it serves to the browser on this
 // PC (http://127.0.0.1:<port>/). It answers only requests addressed to
-// 127.0.0.1 or localhost (so another site can't reach it by DNS tricks), and
-// every button needs the token printed in the page (so another site can't
-// press them).
+// 127.0.0.1 or localhost (so another site can't reach it by DNS tricks). The
+// page itself opens only with ?t=<instance token>, which only this Windows
+// user can read (so another user of the PC can't use it), and every button
+// needs a token printed in the page (so another site can't press them).
 
 import type { Uploader } from "./app";
 import { statusPage, messagePage } from "./page";
@@ -30,7 +31,12 @@ export function handler(h: ServerHooks, port: () => number) {
       new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY" } });
 
     if (url.pathname === "/ping") return Response.json({ app: APP_NAME, version: h.uploader.status().version });
-    if (url.pathname === "/" && req.method === "GET") return html(statusPage(h.uploader.status(), h.token));
+    if (url.pathname === "/" && req.method === "GET") {
+      if (url.searchParams.get("t") !== h.instanceToken) {
+        return html(messagePage("Journey Forever uploader", "Double-click the uploader to open this page.", false), 403);
+      }
+      return html(statusPage(h.uploader.status(), h.token));
+    }
     if (url.pathname === "/connected" && req.method === "GET") {
       const r = await h.uploader.connected(url.searchParams.get("code") ?? "");
       return html(messagePage(r.ok ? "Connected" : "Not connected", r.message, r.ok), r.ok ? 200 : 400);

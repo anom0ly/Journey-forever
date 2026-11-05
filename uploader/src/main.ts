@@ -7,13 +7,13 @@
 // Started by Windows (--background) it shows nothing until there's news.
 
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { UPLOADER_EXE, UPLOADER_VERSION } from "../../website/src/lib/uploader";
 import { Uploader } from "./app";
 import { APP_NAME, handler } from "./server";
 import { Store } from "./store";
-import { IS_WINDOWS, notify, openUrl, pickFolder, registryWowPaths, setStartup } from "./windows";
+import { deleteAfterExit, IS_WINDOWS, notify, openUrl, pickFolder, registryWowPaths, setStartup } from "./windows";
 import { candidateRoots, existingDrives, findForever, foreverIn } from "./wow";
 
 const SITE = process.env.JF_SITE ?? "https://journey-forever.hi-anomoly.workers.dev";
@@ -24,15 +24,16 @@ function randomHex(n = 24): string {
   return [...crypto.getRandomValues(new Uint8Array(n))].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// A token other copies of the uploader (same Windows user) can read, so one
-// can ask a running older one to quit before replacing it.
+// A secret only this Windows user can read (it's in their own AppData). It
+// opens the status page (/?t=…), so other users of the PC can't, and lets one
+// copy of the uploader ask a running older one to quit before replacing it.
 function instanceToken(store: Store): string {
   const file = join(store.dir, "instance.token");
   try {
     return readFileSync(file, "utf8").trim();
   } catch {
     const t = randomHex();
-    writeFileSync(file, t);
+    writeFileSync(file, t, { mode: 0o600 });
     return t;
   }
 }
@@ -64,7 +65,7 @@ async function main(): Promise<void> {
   if (compiled && self.toLowerCase() !== installed.toLowerCase()) {
     if (running) {
       if (running.version === UPLOADER_VERSION) {
-        await openUrl(`http://127.0.0.1:${running.port}/`);
+        await openUrl(`http://127.0.0.1:${running.port}/?t=${token}`);
         return;
       }
       // An older version is running from the installed copy: stop it first.
@@ -72,12 +73,12 @@ async function main(): Promise<void> {
       await sleep(2000);
     }
     copyFileSync(self, installed);
-    spawn(installed, [], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    spawn(installed, [], { detached: true, stdio: "ignore", windowsHide: true, cwd: store.dir }).unref();
     return;
   }
 
   if (running) {
-    if (!background) await openUrl(`http://127.0.0.1:${running.port}/`);
+    if (!background) await openUrl(`http://127.0.0.1:${running.port}/?t=${token}`);
     return;
   }
 
@@ -103,6 +104,9 @@ async function main(): Promise<void> {
       store.log("Removed from this PC");
       await uploader.forget();
       await setStartup(undefined);
+      // Everything it kept goes: key, settings, upload history, log, and the .exe.
+      for (const f of ["config.json", "state.json", "uploader.log", "uploader.log.old", "instance.token"]) rmSync(join(store.dir, f), { force: true });
+      if (compiled) deleteAfterExit(store.dir);
       setTimeout(quit, 500);
     },
     quit,
@@ -135,16 +139,17 @@ async function main(): Promise<void> {
     }
   }
 
+  await uploader.loadKey();
   uploader.start();
 
-  if (!store.config.key) {
+  if (!uploader.isConnected) {
     if (background) await notify("Journey Forever uploader isn't connected", "Double-click it to connect this PC.");
     else {
-      await openUrl(`http://127.0.0.1:${port}/`);
+      await openUrl(`http://127.0.0.1:${port}/?t=${token}`);
       await uploader.connect();
     }
   } else if (!background) {
-    await openUrl(`http://127.0.0.1:${port}/`);
+    await openUrl(`http://127.0.0.1:${port}/?t=${token}`);
   }
 }
 
