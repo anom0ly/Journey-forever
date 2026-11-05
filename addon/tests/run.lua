@@ -377,6 +377,81 @@ test("Battle.net friends' BattleTags are saved", function()
     eq(#db.friends.tags, 2, "an empty answer keeps the last list")
 end)
 
+-- Sets the XP bar and fires the update.
+local function XP(level, xp)
+    W.player.level, W.player.xp, W.player.xpMax = level, xp, 1000
+    W.Fire("PLAYER_XP_UPDATE", "player")
+end
+
+test("halfway through a level takes one screenshot", function()
+    W.Advance(15)
+    eq(db.settings.shots.halfway, true, "on by default")
+    XP(30, 100)
+    local n, before = #db.screenshots, W.screenshots
+    XP(30, 400)
+    W.Advance(1)
+    eq(#db.screenshots, n, "not yet halfway")
+    XP(30, 520)
+    W.Advance(1)
+    eq(W.screenshots, before + 1, "taken")
+    local s = last(db.screenshots)
+    eq(s.kind, "halfway", "kind")
+    eq(s.detail.level, 30, "level")
+    eq(ns.Describe(s.kind, s.detail), "Halfway to level 31", "label")
+    W.Fire("SCREENSHOT_SUCCEEDED")
+    eq(db.halfway[30], true, "remembered")
+    XP(30, 700)
+    XP(30, 300)   -- a lost-XP oddity, then back over halfway
+    XP(30, 600)
+    W.Advance(1)
+    eq(#db.screenshots, n + 1, "only once per level")
+end)
+
+test("halfway waits for combat to end", function()
+    XP(31, 100)
+    W.combat = true
+    local n = #db.screenshots
+    XP(31, 550)
+    W.Advance(5)
+    eq(#db.screenshots, n, "waits in combat")
+    W.combat = false
+    W.Fire("PLAYER_REGEN_ENABLED")
+    W.Advance(1)
+    eq(#db.screenshots, n + 1, "taken after combat")
+    W.Fire("SCREENSHOT_SUCCEEDED")
+    W.Advance(1)
+    XP(32, 100)
+    W.combat = true
+    XP(32, 600)
+    W.Advance(31)
+    eq(#db.screenshots, n + 2, "taken anyway after 30 seconds")
+    W.combat = false
+    W.Fire("SCREENSHOT_SUCCEEDED")
+    W.Advance(1)
+end)
+
+test("halfway doesn't fire on login or at max level", function()
+    local n = #db.screenshots
+    W.player.level, W.player.xp = 33, 700
+    W.Fire("PLAYER_ENTERING_WORLD", false, true)
+    W.Advance(6)
+    XP(33, 750)
+    W.Advance(1)
+    eq(#db.screenshots, n, "already past halfway at login")
+    XP(34, 600)   -- a big turn-in: dinged and past halfway at once
+    W.Advance(1)
+    eq(#db.screenshots, n + 1, "new level past halfway counts")
+    W.Fire("SCREENSHOT_SUCCEEDED")
+    W.Advance(1)
+    W.player.level, W.player.xp, W.player.xpMax = 60, 0, 0
+    W.Fire("PLAYER_XP_UPDATE", "player")
+    W.player.xp = 0
+    W.Fire("PLAYER_XP_UPDATE", "player")
+    W.Advance(1)
+    eq(#db.screenshots, n + 1, "nothing at 60")
+    W.player.xpMax = 1000
+end)
+
 test("data from a newer version is left alone", function()
     local ns2 = {}
     JourneyForeverDB = { schemaVersion = 99, screenshots = { { t = 1 } } }

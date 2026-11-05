@@ -21,6 +21,7 @@ ns.KIND_LABELS = {
     epic = "Epic loot",
     blue = "Rare loot",
     level = "Level up",
+    halfway = "Halfway through a level",
     death = "Death",
     boss = "Boss killed",
     rare = "Rare killed",
@@ -91,6 +92,7 @@ end
 local function Describe(kind, detail)
     local label = ns.KIND_LABELS[kind] or kind
     if kind == "level" and detail.level then return "Level " .. detail.level end
+    if kind == "halfway" and detail.level then return "Halfway to level " .. (detail.level + 1) end
     if (kind == "epic" or kind == "blue") and detail.name then return label .. ": " .. detail.name end
     if kind == "dungeon" and detail.instance then return "Cleared " .. detail.instance end
     if kind == "boss" and detail.boss then return "Killed " .. detail.boss end

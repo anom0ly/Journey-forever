@@ -28,6 +28,7 @@ const KIND_TAG: Record<string, { tag: string; cls: string }> = {
   epic: { tag: "Epic loot", cls: "lilac" },
   blue: { tag: "Rare loot", cls: "lilac" },
   level: { tag: "Level up", cls: "gold" },
+  halfway: { tag: "Halfway", cls: "gold" },
   death: { tag: "Death", cls: "red" },
   boss: { tag: "Boss", cls: "teal" },
   rare: { tag: "Rare", cls: "gold" },

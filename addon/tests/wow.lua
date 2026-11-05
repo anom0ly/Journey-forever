@@ -83,6 +83,8 @@ W.bags = {}      -- { [bag] = { [slot] = info } }
 W.worn = {}      -- { [slot] = link }
 
 UnitLevel = function() return W.player.level end
+UnitXP = function() return W.player.xp or 0 end
+UnitXPMax = function() return W.player.xpMax or 1000 end
 UnitGUID = function(unit)
     if unit == "player" then return "Player-1234-0ABCDEF0" end
     return W.target and W.target.guid

@@ -1,7 +1,7 @@
 local _, ns = ...
 
 -- What sets off an automatic screenshot. On by default: dungeon completed,
--- epic loot, level up. Off by default: rare (blue) loot, death, any boss,
+-- epic loot, level up, halfway through a level. Off by default: rare (blue) loot, death, any boss,
 -- a rare mob killed, first visit to a zone. Settings live in
 -- JourneyForeverDB.settings.shots.
 
@@ -16,6 +16,62 @@ local EPIC, RARE = 4, 3
 ns.On("PLAYER_LEVEL_UP", function(level)
     -- A second later, so the level-up glow is in the picture.
     ns.TakeShot("level", { level = Num(level) }, { delay = 1 })
+end)
+
+---------------------------------------------------------------------------
+-- Halfway through a level: the XP bar going from under 50% to 50% or more.
+-- Once per level (db.halfway remembers), never on login, never at max level.
+-- XP mostly tips over right after a kill, so the shot waits for combat to
+-- end (up to COMBAT_WAIT seconds) for a cleaner picture.
+---------------------------------------------------------------------------
+
+local COMBAT_WAIT = 30
+local lastLevel, lastFrac   -- the XP bar when last read
+local waiting               -- detail of a halfway shot waiting for combat to end
+
+local function ReadXP()
+    local level = Num(Call("UnitLevel", "player"))
+    local xp, max = Num(Call("UnitXP", "player")), Num(Call("UnitXPMax", "player"))
+    if not level or not xp or not max or max <= 0 then return level, nil end
+    return level, xp / max
+end
+
+local function ShootHalfway()
+    local detail = waiting
+    waiting = nil
+    if detail then ns.TakeShot("halfway", detail, { delay = 0.5 }) end
+end
+
+local function CheckXP()
+    if not ns.db or ns.readOnly then return end
+    local level, frac = ReadXP()
+    local beforeLevel, beforeFrac = lastLevel, lastFrac
+    lastLevel, lastFrac = level, frac
+    if not level or not frac or not beforeLevel then return end
+    -- A new level starts the bar from empty (a big turn-in can ding and pass halfway at once).
+    if level > beforeLevel then beforeFrac = 0 end
+    if level < beforeLevel then return end
+    if not beforeFrac or beforeFrac >= 0.5 or frac < 0.5 then return end
+    if ns.db.halfway[level] then return end
+    ns.db.halfway[level] = true
+    waiting = { level = level }
+    if not ns.InCombat() then
+        ShootHalfway()
+        return
+    end
+    local mine = waiting
+    ns.After(COMBAT_WAIT, function() if waiting == mine then ShootHalfway() end end)
+end
+
+ns.On("PLAYER_XP_UPDATE", function(unit)
+    if unit == nil or unit == "player" then CheckXP() end
+end)
+ns.On("PLAYER_ENTERING_WORLD", function()
+    -- A baseline after each loading screen: being past halfway already doesn't count.
+    lastLevel, lastFrac = ReadXP()
+end)
+ns.On("PLAYER_REGEN_ENABLED", function()
+    if waiting then ShootHalfway() end
 end)
 
 ---------------------------------------------------------------------------
