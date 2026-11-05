@@ -3,7 +3,7 @@
 // The uploader's version. Bump it to release a new build: the Uploader
 // workflow (Actions tab, Run workflow) tags uploader-v<version> and attaches
 // the .exe, and the Account page links to that release.
-export const UPLOADER_VERSION = "1.0.0";
+export const UPLOADER_VERSION = "1.1.0";
 export const UPLOADER_EXE = "JourneyForeverUploader.exe";
 export const UPLOADER_REPO = "anom0ly/Journey-forever";
 
@@ -16,9 +16,10 @@ export interface UploaderSettings {
   shots: boolean; // upload screenshots (addon and Print Screen ones from a session)
   notify: boolean; // a Windows notification after each upload
   addon: boolean; // install the Journey Forever addon and keep it up to date
+  update: boolean; // the uploader updates itself (1.1.0 and later)
 }
 
-export const UPLOADER_SETTINGS_DEFAULT: UploaderSettings = { shots: true, notify: true, addon: true };
+export const UPLOADER_SETTINGS_DEFAULT: UploaderSettings = { shots: true, notify: true, addon: true, update: true };
 
 // A port number from a /connect link, or undefined when it isn't one.
 export function connectPort(v: string | null | undefined): number | undefined {

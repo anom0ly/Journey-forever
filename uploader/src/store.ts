@@ -18,6 +18,7 @@ export interface Config {
   account?: string | null; // the BattleTag it was connected as
   forever?: string; // ...\World of Warcraft\_forever_
   paused?: boolean;
+  startup?: boolean; // start with Windows (undefined = yes)
 }
 
 export interface LogLine {
@@ -34,6 +35,8 @@ export interface State {
   friendsHash?: string;
   addonCheckedAt?: number;
   addonVersion?: string;
+  updateCheckedAt?: number;
+  shortcutVersion?: string; // the Start menu entry was made by this version
   log: LogLine[];
 }
 

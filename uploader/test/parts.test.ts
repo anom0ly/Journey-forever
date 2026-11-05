@@ -11,6 +11,7 @@ import { esc, scriptJson, statusPage } from "../src/page";
 import { handler, hostOk } from "../src/server";
 import { psQuote, toastXml } from "../src/windows";
 import { candidateRoots, foreverIn } from "../src/wow";
+import { trayState, WindowControl } from "../src/window";
 import type { Status, Uploader } from "../src/app";
 
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -150,10 +151,25 @@ describe("finding WoW", () => {
 describe("the status page and notifications", () => {
   const status: Status = {
     version: "1.0.0", site: "https://site", connected: true, account: "Justin#1234", forever: "C:\\WoW\\_forever_", paused: false,
-    characters: ["Adom"], log: [{ t: 1793900000, text: "<b>Adom</b> uploaded", ok: true }],
+    characters: ["Adom"], log: [{ t: 1793900000, text: "<b>Adom</b> uploaded", ok: true }], startup: true,
+    update: { note: "Up to date", auto: true, canCheck: true },
   };
-  const fake = { status: () => status, connected: async () => ({ ok: true, message: "ok" }), uploadNow() {} } as unknown as Uploader;
-  const hooks = { uploader: fake, token: "page", instanceToken: "inst", pickFolder: async () => {}, remove: async () => {}, quit() {} };
+  const calls: string[] = [];
+  const fake = {
+    status: () => status,
+    connected: async () => ({ ok: true, message: "ok" }),
+    uploadNow: () => calls.push("sync"),
+    setPaused: (p: boolean) => calls.push(p ? "pause" : "resume"),
+    checkForUpdates: () => calls.push("check-update"),
+  } as unknown as Uploader;
+  const win = new WindowControl();
+  const hooks = {
+    uploader: fake, token: "page", instanceToken: "inst", window: win,
+    pickFolder: async () => {}, remove: async () => {}, quit() {},
+    openJourney: async () => void calls.push("journey"),
+    openInBrowser: async () => void calls.push("browser"),
+    setStartup: async (on: boolean) => void calls.push(on ? "startup-on" : "startup-off"),
+  };
   const serve = handler(hooks, () => 47213);
   const req = (path: string, init: RequestInit & { host?: string } = {}) =>
     serve(new Request(`http://127.0.0.1:47213${path}`, { ...init, headers: { host: init.host ?? "127.0.0.1:47213", ...(init.headers as Record<string, string>) } }));
@@ -184,5 +200,44 @@ describe("the status page and notifications", () => {
     expect((await req("/action", { method: "POST", headers: { "x-token": "page" }, body: JSON.stringify({ action: "sync" }) })).status).toBe(200);
     expect((await req("/quit", { method: "POST", headers: { "x-token": "page" } })).ok).toBe(false);
     expect((await req("/state")).status).toBe(403);
+  });
+
+  it("shows Start with Windows and the update line, escaped", () => {
+    const page = statusPage({ ...status, update: { note: "Couldn't update: <x>", auto: false, canCheck: true } }, "page");
+    expect(page).toContain('id="startup" checked');
+    expect(page).toContain("Couldn&#39;t update: &lt;x&gt; (automatic updates are off)");
+    expect(page).toContain('data-action="check-update"');
+  });
+
+  it("lets the window and tray (with the instance token) read state and send commands", async () => {
+    const h = (path: string, init: RequestInit = {}) => req(path, { ...init, headers: { "x-token": "inst", ...(init.headers as Record<string, string>) } });
+    expect((await req("/host/state", { headers: { "x-token": "page" } })).ok).toBe(false);
+    expect(await (await h("/host/state?visible=1")).json()).toMatchObject({ dot: "live", paused: false, show: 0, quit: false });
+    expect(win.visible).toBe(true);
+    calls.length = 0;
+    for (const cmd of ["sync", "pause", "journey"]) expect((await h("/host/cmd", { method: "POST", body: JSON.stringify({ cmd }) })).status).toBe(200);
+    expect((await h("/host/cmd", { method: "POST", body: JSON.stringify({ cmd: "rm -rf" }) })).status).toBe(400);
+    expect(calls).toEqual(["sync", "pause", "journey"]);
+    // Double-click while running: the window opens (the next poll sees show go up).
+    await h("/show", { method: "POST" });
+    expect(((await (await h("/host/state")).json()) as { show: number }).show).toBe(1);
+    // No WebView2 on this PC: the page opens in the browser instead.
+    calls.length = 0;
+    await h("/host/cmd", { method: "POST", body: JSON.stringify({ cmd: "nowebview" }) });
+    await h("/show", { method: "POST" });
+    expect(calls).toEqual(["browser", "browser"]);
+    // Page buttons for the new switches.
+    calls.length = 0;
+    for (const action of ["startup-off", "check-update"]) await req("/action", { method: "POST", headers: { "x-token": "page" }, body: JSON.stringify({ action }) });
+    expect(calls).toEqual(["startup-off", "check-update"]);
+  });
+
+  it("picks the tray dot and hover text", () => {
+    expect(trayState(status).dot).toBe("live");
+    expect(trayState({ ...status, busy: "Uploading" })).toEqual({ dot: "busy", tip: "Journey Forever: Uploading…" });
+    expect(trayState({ ...status, paused: true }).dot).toBe("off");
+    expect(trayState({ ...status, connected: false }).dot).toBe("warn");
+    expect(trayState({ ...status, error: "x" }).dot).toBe("warn");
+    for (const s of [status, { ...status, connected: false }, { ...status, forever: undefined }]) expect(trayState(s).tip.length).toBeLessThanOrEqual(63);
   });
 });

@@ -88,7 +88,7 @@ describe("auto-uploader keys", () => {
     const { call, connect } = await setup();
     const { key } = (await call("/api/uploader/claim", { method: "POST", body: { code: await connect(), verifier: "a-secret-only-the-pc-knows" } })).body as { key: string };
     expect((await call("/api/characters", { key })).status).toBe(200);
-    expect((await call("/api/uploader/settings", { key })).body).toEqual({ shots: true, notify: true, addon: true });
+    expect((await call("/api/uploader/settings", { key })).body).toEqual({ shots: true, notify: true, addon: true, update: true });
     expect((await call("/api/account", { key })).status).toBe(403);
     expect((await call("/api/account", { key, method: "DELETE", body: { confirm: "admin#1" } })).status).toBe(403);
     expect((await call("/api/characters/Adom-Toretto", { key, method: "PATCH", body: { isPublic: true } })).status).toBe(403);
@@ -109,7 +109,7 @@ describe("auto-uploader keys", () => {
 
   it("keeps the switches the Account page sets", async () => {
     const { call } = await setup();
-    expect((await call("/api/uploader/settings", { method: "PATCH", session: "admin", body: { shots: false, addon: "yes" } })).body).toEqual({ shots: false, notify: true, addon: true });
+    expect((await call("/api/uploader/settings", { method: "PATCH", session: "admin", body: { shots: false, addon: "yes" } })).body).toEqual({ shots: false, notify: true, addon: true, update: true });
     expect(((await call("/api/uploader", { session: "admin" })).body.settings as Record<string, boolean>).shots).toBe(false);
   });
 

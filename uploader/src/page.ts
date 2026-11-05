@@ -43,6 +43,10 @@ button:focus-visible, a.btn:focus-visible { outline: 2px solid var(--accent); ou
 .log div { display: grid; grid-template-columns: 110px 1fr; gap: 12px; padding: 7px 0; border-top: 1px solid var(--border); }
 .muted { color: var(--muted); } .bad { color: var(--warn); }
 .note { font-size: 13px; color: var(--muted); margin: 0; }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 14px; }
+.foot label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.foot input { accent-color: var(--accent); width: 16px; height: 16px; }
+.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .err { border: 1px solid #6b3a35; color: var(--warn); border-radius: 10px; padding: 12px 14px; font-size: 14px; }
 `;
 
@@ -118,7 +122,11 @@ ${s.error ? `<div class="err">${esc(s.error)}</div>` : ""}
     </div>
   </section>
 </div>
-<p class="note">Version ${esc(s.version)}. This page is only on this PC. Settings (screenshots, notifications, addon updates) are on your Account page on the site.</p>`;
+<div class="foot">
+  <label><input type="checkbox" id="startup" ${s.startup ? "checked" : ""}> Start with Windows</label>
+  <span>Version ${esc(s.version)}${s.update ? ` · ${esc(s.update.note)}${s.update.auto ? "" : " (automatic updates are off)"} · <button class="link" data-action="check-update" ${s.update.canCheck ? "" : "disabled"}>Check for updates</button>` : ""}</span>
+</div>
+<p class="note">Settings for screenshots, notifications and updates are on your Account page on the site.</p>`;
 
   const script = `<script>
 const token = ${scriptJson(token)};
@@ -131,6 +139,7 @@ async function act(action) {
 }
 document.querySelectorAll("[data-action]").forEach((b) => b.addEventListener("click", () => act(b.dataset.action)));
 document.getElementById("remove").addEventListener("click", () => { document.getElementById("confirm").hidden = false; });
+document.getElementById("startup").addEventListener("change", (e) => act(e.target.checked ? "startup-on" : "startup-off"));
 document.getElementById("keep").addEventListener("click", () => { document.getElementById("confirm").hidden = true; });
 setInterval(async () => {
   const s = await fetch("/state", { headers: { "x-token": token } }).then((r) => r.text()).catch(() => null);

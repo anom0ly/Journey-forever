@@ -12,6 +12,7 @@ const SWITCHES: { key: keyof UploaderSettings; label: string; hint?: string }[] 
   { key: "shots", label: "Upload screenshots", hint: "Addon shots and Print Screen shots taken during a session, the same as a manual upload" },
   { key: "notify", label: "Show a notification after each upload" },
   { key: "addon", label: "Keep the Journey Forever addon installed and up to date", hint: "Installs it if it's missing and updates it when a new version is out. Only while WoW is closed." },
+  { key: "update", label: "Keep the uploader up to date", hint: "Installs new versions of this program by itself and restarts it. From version 1.1.0." },
 ];
 
 function pcState(pc: UploaderPc): { tag: string; cls: string; line: string } {
@@ -126,7 +127,7 @@ export function UploaderSection() {
       {error && <div class="notice err">{error}</div>}
       <p class="tiny muted">
         Version {UPLOADER_VERSION}. The uploader reads your saved files on your PC, like the Upload page, so the raw files never leave it.
-        Disconnect stops a PC's uploads at once. To stop the uploader itself, double-click it again and choose Remove from this PC.
+        Disconnect stops a PC's uploads at once. To stop the uploader itself, open its window from the tray icon and choose Remove from this PC.
       </p>
     </section>
   );
