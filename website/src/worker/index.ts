@@ -6,6 +6,7 @@ import { checkSameOrigin, HttpError, json, withSecurityHeaders } from "./http";
 import { checkRate } from "./limits";
 import { handleMapTile } from "./maps";
 import { handleErrorReport } from "./errors";
+import { bearerKey, keyAllows, keyUser } from "./uploader";
 
 // What the error log says about a request that failed.
 interface Seen {
@@ -14,6 +15,15 @@ interface Seen {
 
 async function route(req: Request, env: Env, url: URL, seen: Seen): Promise<Response> {
   checkSameOrigin(req, url);
+  // The Windows uploader signs in with its key, which only works for
+  // admins (for now) and only for uploading (uploader.ts).
+  const key = bearerKey(req);
+  if (key) {
+    const owner = await keyUser(env, key);
+    if (!owner) throw new HttpError(401, "This PC was disconnected. Connect it again from the uploader.");
+    if (!isAdmin(env, owner)) throw new HttpError(404, "Not found");
+    if (!keyAllows(req.method, url.pathname)) throw new HttpError(403, "The uploader can't do that");
+  }
   // Changes are limited per account when signed in, so look the account up
   // for those (reads are limited by IP only).
   const user = req.method === "GET" || req.method === "HEAD" ? null : await currentUser(req, env);

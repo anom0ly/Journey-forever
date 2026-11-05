@@ -2,6 +2,7 @@ import { Component, render, type ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { api, type Me } from "./api";
 import { AccountPage } from "./pages/Account";
+import { ConnectPage } from "./pages/Uploader";
 import { CharactersPage } from "./pages/Characters";
 import { ComparePage, DemoComparePage } from "./pages/Compare";
 import { DataPage } from "./pages/Data";
@@ -138,6 +139,7 @@ function App() {
   else if (path === "/upload") page = needsUser(<UploadPage />);
   else if (path === "/characters") page = needsUser(<CharactersPage />);
   else if (path === "/account") page = needsUser(<AccountPage onDeleted={accountDeleted} />);
+  else if (path === "/connect") page = <ConnectPage />;
   else if (path === "/data") page = <DataPage signedIn={signedIn} />;
   else if (path === "/demo") page = <JourneyPage source={{ kind: "demo" }} />;
   else if (path === "/demo/compare") page = <DemoComparePage />;

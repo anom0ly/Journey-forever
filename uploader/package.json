@@ -1,0 +1,20 @@
+{
+  "name": "journey-forever-uploader",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Windows helper that uploads Journey Forever saves and screenshots after each WoW session. Version: website/src/lib/uploader.ts.",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build src/main.ts --compile --target=bun-windows-x64 --outfile dist/JourneyForeverUploader.exe"
+  },
+  "dependencies": {
+    "fflate": "0.8.2",
+    "jpeg-js": "0.4.4"
+  },
+  "devDependencies": {
+    "@types/bun": "1.2.23",
+    "typescript": "5.9.3"
+  }
+}

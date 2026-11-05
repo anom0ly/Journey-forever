@@ -1,0 +1,80 @@
+name: Uploader
+
+on:
+  push:
+    branches: [main]
+    paths: ["uploader/**", "website/src/lib/**", ".github/workflows/uploader.yml"]
+  pull_request:
+    paths: ["uploader/**", "website/src/lib/**", ".github/workflows/uploader.yml"]
+  # Release: bump UPLOADER_VERSION in website/src/lib/uploader.ts, merge,
+  # then Run workflow on main. It tags uploader-v<version> and attaches the .exe.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: uploader
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Install Bun
+        run: npm install -g bun@1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - name: Check the Windows build compiles
+        run: bun build src/main.ts --compile --target=bun-windows-x64 --windows-hide-console --outfile dist/JourneyForeverUploader.exe
+
+  release:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    # Built on Windows so the .exe carries its name and version (Explorer,
+    # and the "Windows protected your PC" box, show them).
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: uploader
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Install Bun
+        run: npm install -g bun@1.4.4
+      - run: bun install --frozen-lockfile
+      - name: Work out the version
+        id: version
+        run: |
+          v=$(sed -n 's/^export const UPLOADER_VERSION = "\(.*\)";.*/\1/p' ../website/src/lib/uploader.ts)
+          [ -n "$v" ] || { echo "No UPLOADER_VERSION in website/src/lib/uploader.ts" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Build the .exe
+        run: |
+          bun build src/main.ts --compile --target=bun-windows-x64 --windows-hide-console \
+            --windows-title "Journey Forever uploader" --windows-publisher "Journey Forever" \
+            --windows-description "Uploads your WoW Forever journey and screenshots to Journey Forever" \
+            --windows-version "${{ steps.version.outputs.version }}.0" \
+            --outfile dist/JourneyForeverUploader.exe
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: uploader-v${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/JourneyForeverUploader.exe --clobber
+          else
+            # --latest=false: "latest" stays the addon release, which addon links point at.
+            gh release create "$TAG" dist/JourneyForeverUploader.exe --target "$GITHUB_SHA" --latest=false \
+              --title "Journey Forever uploader ${{ steps.version.outputs.version }}" \
+              --notes "Windows auto-uploader (admin only for now). Download JourneyForeverUploader.exe and double-click it. Windows may say it protected your PC: click More info, then Run anyway. See uploader/README.md."
+          fi

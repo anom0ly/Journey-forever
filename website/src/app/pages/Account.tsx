@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { api, type AccountSummary, type FriendsInfo } from "../api";
 import { date, dateTime, plural } from "../format";
 import { setFriends, useFriends } from "../friends";
+import { UploaderSection } from "./Uploader";
 
 function megabytes(bytes: number): string {
   return bytes < 1e6 ? "under 1 MB" : `${Math.round(bytes / 1e6).toLocaleString("en-US")} MB`;
@@ -218,6 +219,7 @@ export function AccountPage({ onDeleted }: { onDeleted: () => void }) {
               Battle.net friends' BattleTags if your upload has a friends list, and your sign-in sessions. Nothing else.
             </p>
           </section>
+          <UploaderSection />
           <FriendsSection />
           <DeleteAccount a={a} onDeleted={onDeleted} />
         </>
