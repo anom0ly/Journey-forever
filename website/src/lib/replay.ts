@@ -111,3 +111,16 @@ export function continentsOf(j: Journey): number[] {
   for (const s of j.segments) size.set(s.c, (size.get(s.c) ?? 0) + s.d.length + 1);
   return [...size.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
 }
+
+// The zone (uiMapID) the character last entered by real time t, from Road
+// to Sixty's zone events, which it records on every zone change. The replay
+// keeps this zone's map up until the next change: zone map rectangles
+// overlap a lot, so the one under a point is often the wrong zone.
+export function zoneMapAt(j: Journey, t: number): number | undefined {
+  let mapID: number | undefined;
+  for (const e of j.events) {
+    if (e.t > t) break;
+    if (e.k === "zone" && typeof e.mapID === "number") mapID = e.mapID;
+  }
+  return mapID;
+}
