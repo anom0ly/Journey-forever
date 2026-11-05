@@ -3,6 +3,7 @@ import { readUpload } from "../src/lib/parse/upload";
 import { buildClock, toReal, toReplay, tracksOf, whereAt, zoneMapAt } from "../src/lib/replay";
 import type { Journey } from "../src/lib/journey";
 import { matchShots, shotTime } from "../src/lib/shots";
+import { citiesOn, homeZone, isCity, mapInfo } from "../src/lib/maps";
 import { sampleFiles } from "./samples";
 
 const utc = (y: number, mo: number, d: number, h: number, mi: number, s: number) => Date.UTC(y, mo - 1, d, h, mi, s) / 1000;
@@ -101,5 +102,28 @@ describe("replay zone map", () => {
     expect(zoneMapAt(j, 199)).toBe(1420);
     expect(zoneMapAt(j, 210)).toBe(1458);
     expect(zoneMapAt(j, 10_000)).toBe(1420);
+  });
+});
+
+describe("city maps", () => {
+  it("keeps a city's own zone under it", () => {
+    expect(isCity(1458)).toBe(true);
+    expect(isCity(1420)).toBe(false);
+    expect(homeZone(1458)).toBe(1420); // Undercity: Tirisfal Glades
+    expect(homeZone(1454)).toBe(1411); // Orgrimmar: Durotar
+    expect(homeZone(1420)).toBe(1420);
+  });
+
+  it("has art for every city, inside its zone", () => {
+    for (const c of [0, 1]) {
+      for (const city of citiesOn(c)) {
+        const zone = mapInfo(homeZone(city.id))!;
+        expect(city.art).toBeDefined();
+        expect(zone.c).toBe(city.c);
+        const x = (city.minX + city.maxX) / 2, y = (city.minY + city.maxY) / 2;
+        expect(x >= zone.minX && x <= zone.maxX && y >= zone.minY && y <= zone.maxY).toBe(true);
+      }
+    }
+    expect(citiesOn(0).length + citiesOn(1).length).toBe(6);
   });
 });

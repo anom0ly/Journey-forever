@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { describe, duration, levelAt, zoneAt } from "../../lib/insights";
 import type { JEvent, Journey } from "../../lib/journey";
 import { buildClock, continentsOf, toReal, toReplay, tracksOf, whereAt, zoneMapAt, type Track } from "../../lib/replay";
-import { continentMap, zonesOn, type MapInfo } from "../../lib/maps";
+import { citiesOn, continentMap, homeZone, isCity, mapInfo, zonesOn, type MapInfo } from "../../lib/maps";
 import { continentName } from "../../lib/wow";
 import { day, time } from "../format";
 import { mapArt } from "../mapArt";
@@ -29,6 +29,9 @@ export interface Fade {
   busy: boolean;
 }
 const CROSSFADE_MS = 300;
+const CITY_FROM = 0.08;
+const CITY_FULL = 0.16;
+const CITY_ZOOM_MS = 700;
 
 export interface View {
   cx: number; // world y at the canvas centre (screen x)
@@ -82,7 +85,8 @@ export function draw(
 
 // The map under the paths: the continent's art, a zone's art fading in over
 // it, or zone outlines while the art loads. The zone is `pinned` when given
-// (the one the character is in), else the one under the centre.
+// (the one the character is in), else the one under the centre. Cities
+// never take a zone's place: their maps sit on top over their own spot.
 export function drawMap(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -119,7 +123,7 @@ export function drawMap(
   const area = (z: MapInfo) => (z.maxX - z.minX) * (z.maxY - z.minY);
   const shownAt = (z: MapInfo | undefined) => (z ? Math.min(1, Math.max(0, (rect(z).width / w - 0.3) / 0.2)) : 0);
   const under = zones.find((z) => z.id === pinned) ?? zones
-    .filter((z) => cy >= z.minX && cy <= z.maxX && cx >= z.minY && cx <= z.maxY)
+    .filter((z) => !isCity(z.id) && cy >= z.minX && cy <= z.maxX && cx >= z.minY && cx <= z.maxY)
     .sort((a, b) => area(a) - area(b))[0];
   const target = shownAt(under) > 0 ? under : undefined;
   const clock = performance.now();
@@ -145,6 +149,17 @@ export function drawMap(
   ] as const) {
     if (!z || !img || alpha <= 0) continue;
     const r = rect(z);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(img, r.left, r.top, r.width, r.height);
+  }
+  // Each city's map over its spot once it's big enough on screen to read,
+  // fading in between CITY_FROM and CITY_FULL of the view's width.
+  for (const city of citiesOn(c)) {
+    const r = rect(city);
+    if (r.left + r.width < 0 || r.left > w || r.top + r.height < 0 || r.top > h) continue;
+    const alpha = Math.min(1, Math.max(0, (r.width / w - CITY_FROM) / (CITY_FULL - CITY_FROM)));
+    const img = alpha > 0 ? art(city.id, true) : undefined;
+    if (!img) continue;
     ctx.globalAlpha = alpha;
     ctx.drawImage(img, r.left, r.top, r.width, r.height);
   }
@@ -396,6 +411,41 @@ function Player({ j, base }: { j: Journey; base: string }) {
 
   const shown: View | undefined = view && follow && here && here.c === continent ? { ...view, cx: here.y, cy: here.x } : view;
 
+  // Following into a city, the camera glides in until the city's map fills
+  // the view, and back out to the zoom from before once the character leaves.
+  const recorded = zoneMapAt(j, now);
+  const inCity = follow && here?.c === continent && isCity(recorded) ? recorded : undefined;
+  const cityZoom = useRef<{ city: number; before: number }>();
+  const glide = useRef(0);
+  const zoomTo = (scale: number) => {
+    cancelAnimationFrame(glide.current);
+    const from = view?.scale;
+    if (!from) return;
+    const start = performance.now();
+    const step = (t: number) => {
+      const k = Math.min(1, (t - start) / CITY_ZOOM_MS);
+      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      setView((v) => v && { ...v, scale: from * Math.pow(scale / from, e) });
+      if (k < 1) glide.current = requestAnimationFrame(step);
+    };
+    glide.current = requestAnimationFrame(step);
+  };
+  useEffect(() => () => cancelAnimationFrame(glide.current), []);
+  useEffect(() => {
+    if (!view) return;
+    const z = cityZoom.current;
+    if (inCity !== undefined) {
+      if (z?.city === inCity) return;
+      const m = mapInfo(inCity)!;
+      const fit = Math.min(1.2, (size.w * 0.85) / (m.maxY - m.minY), (size.h * 0.85) / (m.maxX - m.minX));
+      cityZoom.current = { city: inCity, before: z?.before ?? view.scale };
+      if (fit > view.scale) zoomTo(fit);
+    } else if (z) {
+      cityZoom.current = undefined;
+      if (follow) zoomTo(z.before);
+    }
+  }, [inCity]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !shown) return;
@@ -406,10 +456,11 @@ function Player({ j, base }: { j: Journey; base: string }) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const redraw = () => setFrame((n) => n + 1);
     // While the character is in view, their recorded zone's map stays up
-    // until they enter another zone; looking elsewhere shows the zone there.
+    // until they enter another zone (in a city, the zone it sits in);
+    // looking elsewhere shows the zone there.
     const { sx, sy } = screen(shown, size.w, size.h);
     const onScreen = here && here.c === continent && sx(here.y) >= 0 && sx(here.y) <= size.w && sy(here.x) >= 0 && sy(here.x) <= size.h;
-    const pinned = onScreen ? zoneMapAt(j, now) : undefined;
+    const pinned = onScreen && recorded !== undefined ? homeZone(recorded) : undefined;
     draw(ctx, size.w, size.h, shown, j, tracks, continent, now, layers, visited, (id, soft) => mapArt(id, redraw, soft), fade.current, pinned);
     if (fade.current.busy) {
       const id = requestAnimationFrame(redraw);
@@ -420,6 +471,7 @@ function Player({ j, base }: { j: Journey; base: string }) {
   const onWheel = (e: WheelEvent) => {
     if (!view) return;
     e.preventDefault();
+    cancelAnimationFrame(glide.current);
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const mx = e.clientX - rect.left - size.w / 2, my = e.clientY - rect.top - size.h / 2;
     const k = Math.exp(-e.deltaY * 0.0015);
