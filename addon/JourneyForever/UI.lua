@@ -5,7 +5,7 @@ local _, ns = ...
 
 local GOLD = { 0.878, 0.698, 0.322 }
 local MUTED = { 0.655, 0.631, 0.588 }
-local WIDTH, HEIGHT = 640, 470
+local WIDTH, HEIGHT = 640, 510
 
 local frame, tabs, pages, current = nil, {}, {}, "shots"
 local refreshers = {}
@@ -77,6 +77,7 @@ local SHOT_OPTIONS = {
     { "dungeon", "Dungeon completed (final boss killed)", "Dates every dungeon clear on your journey" },
     { "epic", "Epic (purple) item looted", "Captures the moment it drops" },
     { "level", "Level up", "One shot per level, 1 to 60" },
+    { "halfway", "Halfway through a level", "One shot at 50% XP, once per level" },
     { "blue", "Rare (blue) item looted", "More shots early on, when blues are rare" },
     { "death", "Death", "Where it happened" },
     { "boss", "Any boss killed", "Off by default to keep the folder tidy" },

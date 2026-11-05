@@ -202,7 +202,7 @@ ns.DEFAULTS = {
     paused = false,
     settings = {
         shots = {
-            dungeon = true, epic = true, level = true,
+            dungeon = true, epic = true, level = true, halfway = true,
             blue = false, death = false, boss = false, rare = false, zone = false,
             manual = true,   -- log Print Screen shots too (no shot is taken for these)
         },
@@ -245,6 +245,7 @@ local function Load()
     if type(db.screenshots) ~= "table" then db.screenshots = {} end
     if type(db.notes) ~= "table" then db.notes = {} end
     if type(db.zones) ~= "table" then db.zones = {} end   -- uiMapID = true, zones visited (for "first visit")
+    if type(db.halfway) ~= "table" then db.halfway = {} end   -- level = true, halfway shot already taken
     Fill(db, ns.DEFAULTS)
     JourneyForeverDB = db
     ns.db = db

@@ -5,7 +5,7 @@ A small World of Warcraft addon for WoW Forever (interface 16001). It takes scre
 ## What it does
 
 - **Automatic screenshots**, each logged with time, place and what happened:
-  - On by default: dungeon completed (final boss killed), epic item looted, level up.
+  - On by default: dungeon completed (final boss killed), epic item looted, level up, halfway through a level (50% XP).
   - Off by default: rare (blue) item looted, death, any boss killed, rare mob killed, first visit to a zone.
   - Optionally hides the interface for the shot (out of combat only).
   - Print Screen shots you take yourself are logged too, so the site can place them.

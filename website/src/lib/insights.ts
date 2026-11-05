@@ -315,6 +315,7 @@ export function shotLabel(j: Journey, e: JEvent): string {
     case "epic":
     case "blue": return `Looted [${itemName(j, d.item as Item | undefined)}]`;
     case "level": return `Reached level ${d.level ?? levelAt(j, e.t)}`;
+    case "halfway": return `Halfway to level ${(typeof d.level === "number" ? d.level : levelAt(j, e.t)) + 1}`;
     case "death": return "Died";
     case "boss": return `Killed ${d.name ?? "a boss"}`;
     case "rare": return `Killed rare ${d.name ?? ""}`.trim();

@@ -21,7 +21,7 @@ Readers should refuse a `schemaVersion` they don't know, accept unknown `kind` v
 | `screenshots` | array | One entry per screenshot logged, oldest first (below). Capped at 5000. |
 | `notes` | array | One entry per note, oldest first (below). Capped at 5000. |
 | `friends` | table | The account's Battle.net friends (since 1.1.0): `t` (`time()` when read) and `tags`, the friends' BattleTags (`"Name#1234"`), sorted, unique. Refreshed a few seconds after login and when the list changes; kept as it was if Battle.net answers with nothing. Missing until first read. |
-| `paused`, `settings`, `zones`, `run` | | The addon's own state. Ignore. |
+| `paused`, `settings`, `zones`, `halfway`, `run` | | The addon's own state. Ignore. |
 
 ## Place fields (screenshots and notes)
 
@@ -53,6 +53,7 @@ Two triggers at the same moment (a boss kill that also clears the dungeon) share
 | `dungeon` | on | `instance` (name), `instanceID`, `boss` (final boss, may be missing), `via`: `"encounter"` (final boss kill seen) or `"left"` (fallback: left the dungeon after a boss kill, shot taken outside) |
 | `epic` | on | `item` (item string `"item:..."`), `name`, `itemID`, `quality` (4) |
 | `level` | on | `level` (the new level) |
+| `halfway` | on | `level`: the level the XP bar is halfway through (since 1.2.0). Shown as "Halfway to level `level + 1`". Once per level, when XP goes from under 50% to 50% or more; waits up to 30 s for combat to end. |
 | `blue` | off | as `epic`, `quality` 3 |
 | `death` | off | (empty; the killer is unknown on Forever) |
 | `boss` | off | `boss`, `instance`, `instanceID` |

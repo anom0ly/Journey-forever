@@ -2,7 +2,7 @@
 ## Title: Journey Forever
 ## Notes: Screenshots of your big moments and notes along the way, for your Journey Forever page.
 ## Author: anom0ly
-## Version: 1.1.0
+## Version: 1.2.0
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 ## AddonCompartmentFunc: JourneyForever_OnAddonCompartmentClick
 ## SavedVariablesPerCharacter: JourneyForeverDB
