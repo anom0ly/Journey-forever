@@ -112,6 +112,20 @@ export async function setStartup(exe: string | undefined): Promise<void> {
   }
 }
 
+// "Journey Forever Uploader" in the Start menu (or not, with exe undefined).
+export async function setStartMenu(exe: string | undefined): Promise<void> {
+  const script = exe
+    ? `$p = Join-Path ([Environment]::GetFolderPath('Programs')) 'Journey Forever Uploader.lnk'
+$s = (New-Object -ComObject WScript.Shell).CreateShortcut($p)
+$s.TargetPath = $env:JF_ARG0
+$s.WorkingDirectory = Split-Path $env:JF_ARG0
+$s.IconLocation = "$($env:JF_ARG0),0"
+$s.Description = 'Uploads your WoW Forever journey and screenshots to Journey Forever'
+$s.Save()`
+    : `Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath('Programs')) 'Journey Forever Uploader.lnk') -ErrorAction SilentlyContinue`;
+  await powershell(script, { args: exe ? [exe] : [] });
+}
+
 // Windows' own folder picker; undefined when closed without choosing.
 export async function pickFolder(start?: string): Promise<string | undefined> {
   const out = await powershell(
@@ -178,7 +192,7 @@ try { [Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unp
 export function deleteAfterExit(dir: string): void {
   if (!IS_WINDOWS) return;
   const cmd = win32.join(SYSTEM32, "cmd.exe"), ping = win32.join(SYSTEM32, "PING.EXE");
-  spawn(cmd, ["/d", "/c", `"${ping}" -n 4 127.0.0.1 >nul & rmdir /s /q "${dir}"`], {
+  spawn(cmd, ["/d", "/c", `"${ping}" -n 8 127.0.0.1 >nul & rmdir /s /q "${dir}"`], {
     detached: true,
     stdio: "ignore",
     windowsHide: true,

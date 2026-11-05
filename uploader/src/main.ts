@@ -1,24 +1,30 @@
 // Journey Forever uploader for Windows. Double-click it: it copies itself to
-// %LOCALAPPDATA%\JourneyForever, starts with Windows from then on, finds
-// WoW Forever, and opens the site once so you can click Allow. After that it
-// uploads your journey and new screenshots each time you log out.
+// %LOCALAPPDATA%\JourneyForever, adds itself to the Start menu and to
+// Windows startup, finds WoW Forever, and opens the site once so you can
+// click Allow. After that it uploads your journey and new screenshots each
+// time you log out.
 //
-// Run it again while it's running and it opens its status page instead.
-// Started by Windows (--background) it shows nothing until there's news.
+// It has a tray icon while it runs and a window (host.ps1); run it again
+// while it's running and the window opens. Started by Windows (--background)
+// it's in the tray only. --updated-from=<version>: it just updated itself.
 
 import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { UPLOADER_EXE, UPLOADER_VERSION } from "../../website/src/lib/uploader";
 import { Uploader } from "./app";
+import { prepareHost, startHost } from "./host";
+import { removeOldExe } from "./update";
+import { WindowControl } from "./window";
 import { APP_NAME, handler } from "./server";
 import { Store } from "./store";
-import { deleteAfterExit, IS_WINDOWS, notify, openUrl, pickFolder, registryWowPaths, setStartup } from "./windows";
+import { deleteAfterExit, IS_WINDOWS, notify, openUrl, pickFolder, registryWowPaths, setStartMenu, setStartup } from "./windows";
 import { candidateRoots, existingDrives, findForever, foreverIn } from "./wow";
 
 const SITE = process.env.JF_SITE ?? "https://journey-forever.hi-anomoly.workers.dev";
 const PORTS = Array.from({ length: 10 }, (_, i) => 47213 + i);
-const background = process.argv.includes("--background");
+const updatedFrom = process.argv.find((a) => a.startsWith("--updated-from="))?.slice("--updated-from=".length);
+const background = process.argv.includes("--background") || (!!updatedFrom && !process.argv.includes("--show"));
 
 function randomHex(n = 24): string {
   return [...crypto.getRandomValues(new Uint8Array(n))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -53,19 +59,28 @@ async function findRunning(): Promise<{ port: number; version: string } | undefi
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Asks the running copy to bring up its window (it opens the page in the
+// browser itself when it has no window).
+async function showRunning(port: number, token: string): Promise<void> {
+  const r = await fetch(`http://127.0.0.1:${port}/show`, { method: "POST", headers: { "x-token": token } }).catch(() => undefined);
+  if (!r?.ok) await openUrl(`http://127.0.0.1:${port}/?t=${token}`);
+}
+
 async function main(): Promise<void> {
   const store = new Store(SITE);
   const token = instanceToken(store);
   const installed = join(store.dir, UPLOADER_EXE);
   const self = process.execPath;
   const compiled = IS_WINDOWS && basename(self).toLowerCase() === UPLOADER_EXE.toLowerCase();
+  // After an update the old copy is still quitting: give it a moment.
+  if (updatedFrom) await sleep(1500);
   const running = await findRunning();
 
   // Started from Downloads (or wherever): install this copy, then hand over.
   if (compiled && self.toLowerCase() !== installed.toLowerCase()) {
     if (running) {
       if (running.version === UPLOADER_VERSION) {
-        await openUrl(`http://127.0.0.1:${running.port}/?t=${token}`);
+        await showRunning(running.port, token);
         return;
       }
       // An older version is running from the installed copy: stop it first.
@@ -78,12 +93,32 @@ async function main(): Promise<void> {
   }
 
   if (running) {
-    if (!background) await openUrl(`http://127.0.0.1:${running.port}/?t=${token}`);
+    if (!background) await showRunning(running.port, token);
     return;
   }
+  if (compiled) removeOldExe(installed);
 
   let port = 0;
-  const uploader = new Uploader(store, () => port);
+  const windowCtl = new WindowControl();
+  const statusUrl = () => `http://127.0.0.1:${port}/?t=${token}`;
+  const uploader = new Uploader(
+    store,
+    () => port,
+    compiled
+      ? {
+          exe: installed,
+          restart(version) {
+            const args = [`--updated-from=${UPLOADER_VERSION}`, ...(windowCtl.visible ? ["--show"] : [])];
+            store.debug(`Restarting as ${version}`);
+            windowCtl.quitting = true; // the tray icon goes
+            setTimeout(() => {
+              spawn(installed, args, { detached: true, stdio: "ignore", windowsHide: true, cwd: store.dir }).unref();
+              quit();
+            }, 1500);
+          },
+        }
+      : undefined,
+  );
   const pageToken = randomHex();
   const quit = () => {
     uploader.stop();
@@ -93,6 +128,17 @@ async function main(): Promise<void> {
     uploader,
     token: pageToken,
     instanceToken: token,
+    window: windowCtl,
+    async openJourney() {
+      await openUrl(`${store.config.site}/characters`);
+    },
+    async openInBrowser() {
+      await openUrl(statusUrl());
+    },
+    async setStartup(on: boolean) {
+      uploader.setStartup(on);
+      if (compiled) await setStartup(on ? installed : undefined);
+    },
     async pickFolder() {
       const chosen = await pickFolder(store.config.forever);
       if (!chosen) return;
@@ -104,10 +150,12 @@ async function main(): Promise<void> {
       store.log("Removed from this PC");
       await uploader.forget();
       await setStartup(undefined);
+      await setStartMenu(undefined);
+      windowCtl.quitting = true;
       // Everything it kept goes: key, settings, upload history, log, and the .exe.
       for (const f of ["config.json", "state.json", "uploader.log", "uploader.log.old", "instance.token"]) rmSync(join(store.dir, f), { force: true });
       if (compiled) deleteAfterExit(store.dir);
-      setTimeout(quit, 500);
+      setTimeout(quit, 1500); // the window and tray see "quit" and close first
     },
     quit,
   };
@@ -126,7 +174,38 @@ async function main(): Promise<void> {
   }
   store.debug(`Started ${UPLOADER_VERSION} on port ${port}${background ? " (background)" : ""}`);
 
-  if (compiled) await setStartup(installed);
+  // The tray icon and window. Elsewhere (development) the page opens in the browser.
+  let hasWindow = false;
+  if (compiled) {
+    try {
+      startHost(await prepareHost(store.dir), port, token, !background);
+      hasWindow = true;
+    } catch (e) {
+      store.debug(`No window: ${(e as Error).message}`);
+    }
+  }
+  // The host opens the window itself (JF_SHOW); if it hasn't checked in
+  // after a while, something's wrong with it: use the browser.
+  const showPage = async () => {
+    for (let i = 0; hasWindow && i < 15; i++) {
+      if (windowCtl.running || windowCtl.noWebView) return;
+      await sleep(1000);
+    }
+    await openUrl(statusUrl());
+  };
+
+  if (compiled) {
+    await setStartup(store.config.startup === false ? undefined : installed);
+    if (store.state.shortcutVersion !== UPLOADER_VERSION) {
+      await setStartMenu(installed);
+      store.state.shortcutVersion = UPLOADER_VERSION;
+      store.saveState();
+    }
+  }
+  if (updatedFrom) {
+    store.log(`Updated from version ${updatedFrom} to ${UPLOADER_VERSION}`);
+    await notify(`Uploader updated to ${UPLOADER_VERSION}`, "It restarted itself and is watching for WoW saves again.");
+  }
 
   if (!store.config.forever || !existsSync(store.config.forever)) {
     const forever = findForever(candidateRoots(await registryWowPaths(), existingDrives()));
@@ -143,13 +222,13 @@ async function main(): Promise<void> {
   uploader.start();
 
   if (!uploader.isConnected) {
-    if (background) await notify("Journey Forever uploader isn't connected", "Double-click it to connect this PC.");
+    if (background) await notify("Journey Forever uploader isn't connected", "Click its tray icon to connect this PC.");
     else {
-      await openUrl(`http://127.0.0.1:${port}/?t=${token}`);
+      await showPage();
       await uploader.connect();
     }
   } else if (!background) {
-    await openUrl(`http://127.0.0.1:${port}/?t=${token}`);
+    await showPage();
   }
 }
 

@@ -8,6 +8,7 @@ import { claimKey, SiteClient, SiteError } from "./client";
 import { prepareImage, shotId } from "./images";
 import type { Store } from "./store";
 import { sync, type ShotSource, type SyncResult } from "./sync";
+import { downloadUploader, latestUploader, swapExe } from "./update";
 import { computerName, notify, openUrl, protect, unprotect, wowRunning } from "./windows";
 import { addonDir, listSaved, listScreenshots, readSaved, signature } from "./wow";
 
@@ -17,6 +18,15 @@ const RETRY_MS = 5 * 60_000;
 const ADDON_EVERY_MS = 6 * 3600_000;
 const ADDON_RETRY_MS = 10 * 60_000; // while WoW is open
 const SETTINGS_EVERY_MS = 10 * 60_000;
+const UPDATE_EVERY_MS = 6 * 3600_000;
+const UPDATE_FIRST_MS = 60_000; // after starting, so the first upload isn't held up
+
+// Only the installed copy updates itself: `exe` is that file, and restart()
+// starts the new one and quits this.
+export interface SelfUpdater {
+  exe: string;
+  restart(version: string): void;
+}
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
@@ -65,6 +75,8 @@ export interface Status {
   addonVersion?: string;
   addonNote?: string;
   error?: string;
+  startup: boolean;
+  update?: { note: string; auto: boolean; canCheck: boolean };
   log: { t: number; text: string; ok: boolean }[];
 }
 
@@ -84,8 +96,11 @@ export class Uploader {
   private verifier: string | undefined;
   private force = false;
   private key: string | undefined; // decrypted, in memory only
+  private updateNote: string | undefined;
+  private checkUpdateNow = false;
+  private readonly startedAt = Date.now();
 
-  constructor(readonly store: Store, readonly port: () => number) {}
+  constructor(readonly store: Store, readonly port: () => number, readonly updater?: SelfUpdater) {}
 
   get client(): SiteClient | undefined {
     return this.key ? new SiteClient(this.store.config.site, this.key) : undefined;
@@ -132,8 +147,60 @@ export class Uploader {
       addonVersion: s.addonVersion,
       addonNote: this.addonNote,
       error: this.error,
+      startup: c.startup !== false,
+      update: this.updater
+        ? { note: this.updateNote ?? (s.updateCheckedAt ? "Up to date" : "Checks for updates soon"), auto: this.settings.update, canCheck: !this.busy }
+        : undefined,
       log: s.log,
     };
+  }
+
+  checkForUpdates(): void {
+    this.checkUpdateNow = true;
+    void this.tick();
+  }
+
+  // New versions: when it's switched on (Account page), every 6 hours, or
+  // when asked. Never in the middle of an upload.
+  private async maybeUpdate(): Promise<boolean> {
+    const u = this.updater;
+    if (!u) return false;
+    const now = Date.now();
+    const due = this.checkUpdateNow || (this.settings.update && now - this.startedAt >= UPDATE_FIRST_MS && now - (this.store.state.updateCheckedAt ?? 0) * 1000 >= UPDATE_EVERY_MS);
+    if (!due) return false;
+    const manual = this.checkUpdateNow;
+    this.checkUpdateNow = false;
+    this.store.state.updateCheckedAt = Math.floor(now / 1000);
+    this.store.saveState();
+    this.busy = "Checking for updates";
+    try {
+      const rel = await latestUploader(UPLOADER_VERSION);
+      if (!rel) {
+        this.updateNote = "Up to date";
+        if (manual) this.store.log(`Checked for updates: ${UPLOADER_VERSION} is the newest`);
+        return false;
+      }
+      this.busy = `Downloading version ${rel.version}`;
+      const bytes = await downloadUploader(rel);
+      swapExe(u.exe, bytes);
+      this.store.log(`Updating to version ${rel.version}`);
+      this.store.debug(`Uploader ${rel.version} SHA-256 ${rel.sha256}`);
+      u.restart(rel.version);
+      return true;
+    } catch (e) {
+      const message = (e as Error).message || String(e);
+      this.updateNote = `Couldn't update: ${message}`;
+      this.store.log(`Couldn't update the uploader: ${message}`, false);
+      return false;
+    } finally {
+      this.busy = undefined;
+    }
+  }
+
+  setStartup(on: boolean): void {
+    this.store.config.startup = on;
+    this.store.saveConfig();
+    this.store.log(on ? "Starts with Windows" : "Won't start with Windows");
   }
 
   uploadNow(): void {
@@ -212,6 +279,7 @@ export class Uploader {
 
   private async tick(): Promise<void> {
     if (this.busy) return;
+    if (await this.maybeUpdate()) return;
     const { forever, paused } = this.store.config;
     const client = this.client;
     if (!client || !forever || paused) return;

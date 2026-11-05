@@ -32,8 +32,26 @@ jobs:
       - name: Check the Windows build compiles
         run: bun build src/main.ts --compile --target=bun-windows-x64 --windows-hide-console --outfile dist/JourneyForeverUploader.exe
 
+  # The window and tray only run on Windows: start them for real once.
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: uploader
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Install Bun
+        run: npm install -g bun@1.4.4
+      - run: bun install --frozen-lockfile
+      - name: Open the window and tray
+        run: bun scripts/host-smoke.ts
+
   release:
-    needs: test
+    needs: [test, windows]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     # Built on Windows so the .exe carries its name and version (Explorer,
     # and the "Windows protected your PC" box, show them).
@@ -64,6 +82,7 @@ jobs:
             --windows-title "Journey Forever uploader" --windows-publisher "Journey Forever" \
             --windows-description "Uploads your WoW Forever journey and screenshots to Journey Forever" \
             --windows-version "${{ steps.version.outputs.version }}.0" \
+            --windows-icon assets/icon.ico \
             --outfile dist/JourneyForeverUploader.exe
       - name: Publish the release
         env:

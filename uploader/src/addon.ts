@@ -14,7 +14,7 @@ const FOLDER = "JourneyForever";
 // Only what our own release workflow (.github/workflows/addon.yml) published:
 // it runs as github-actions[bot]. A zip anyone else attached is ignored.
 export const RELEASE_BOT = "github-actions[bot]";
-const DOWNLOAD_PREFIX = `https://github.com/${UPLOADER_REPO}/releases/download/`;
+export const DOWNLOAD_PREFIX = `https://github.com/${UPLOADER_REPO}/releases/download/`;
 export const MAX_ZIP_BYTES = 5e6;
 const MAX_UNPACKED_BYTES = 20e6;
 const MAX_FILES = 200;
@@ -24,7 +24,7 @@ export interface Release {
   url: string; // the zip
 }
 
-async function sha256Hex(b: Uint8Array): Promise<string> {
+export async function sha256Hex(b: Uint8Array): Promise<string> {
   const d = await crypto.subtle.digest("SHA-256", b as Uint8Array<ArrayBuffer>);
   return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
@@ -51,12 +51,20 @@ export function isNewer(a: string, b: string | undefined): boolean {
   return false;
 }
 
-interface GhRelease {
+export interface GhRelease {
   tag_name: string;
   draft: boolean;
   prerelease: boolean;
   author?: { login?: string } | null;
-  assets: { name: string; browser_download_url: string; size?: number; uploader?: { login?: string } | null }[];
+  assets: { name: string; browser_download_url: string; size?: number; digest?: string | null; uploader?: { login?: string } | null }[];
+}
+
+export async function githubReleases(): Promise<GhRelease[]> {
+  const res = await fetch(`https://api.github.com/repos/${UPLOADER_REPO}/releases?per_page=30`, {
+    headers: { accept: "application/vnd.github+json", "user-agent": "JourneyForeverUploader" },
+  });
+  if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
+  return (await res.json()) as GhRelease[];
 }
 
 export function pickRelease(list: GhRelease[]): Release | undefined {
@@ -77,11 +85,7 @@ export function pickRelease(list: GhRelease[]): Release | undefined {
 }
 
 export async function latestRelease(): Promise<Release | undefined> {
-  const res = await fetch(`https://api.github.com/repos/${UPLOADER_REPO}/releases?per_page=30`, {
-    headers: { accept: "application/vnd.github+json", "user-agent": "JourneyForeverUploader" },
-  });
-  if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
-  return pickRelease((await res.json()) as GhRelease[]);
+  return pickRelease(await githubReleases());
 }
 
 // The zip's files, checked: everything inside JourneyForever/, nothing that

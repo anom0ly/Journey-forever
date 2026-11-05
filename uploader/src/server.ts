@@ -7,15 +7,20 @@
 
 import type { Uploader } from "./app";
 import { statusPage, messagePage } from "./page";
+import { trayState, type WindowControl } from "./window";
 
 export const APP_NAME = "journey-forever-uploader";
 
 export interface ServerHooks {
   uploader: Uploader;
   token: string; // for the page's buttons
-  instanceToken: string; // for another copy of the uploader asking this one to quit
+  instanceToken: string; // the window/tray, and another copy of the uploader
+  window: WindowControl;
   pickFolder(): Promise<void>;
   remove(): Promise<void>;
+  openJourney(): Promise<void>;
+  openInBrowser(): Promise<void>; // the status page, when there's no window
+  setStartup(on: boolean): Promise<void>;
   quit(): void;
 }
 
@@ -43,9 +48,34 @@ export function handler(h: ServerHooks, port: () => number) {
     }
 
     const token = req.headers.get("x-token");
-    if (url.pathname === "/quit" && req.method === "POST" && token === h.instanceToken) {
-      setTimeout(() => h.quit(), 100);
-      return Response.json({ ok: true });
+    if (token === h.instanceToken) {
+      if (url.pathname === "/quit" && req.method === "POST") {
+        setTimeout(() => h.quit(), 100);
+        return Response.json({ ok: true });
+      }
+      // Double-clicking the .exe again: bring up the window (or the page).
+      if (url.pathname === "/show" && req.method === "POST") {
+        if (!h.window.show()) await h.openInBrowser();
+        return Response.json({ ok: true });
+      }
+      if (url.pathname === "/host/state" && req.method === "GET") {
+        const s = h.uploader.status();
+        return Response.json({ ...trayState(s), paused: s.paused, ...h.window.polled(url.searchParams.get("visible") === "1") });
+      }
+      if (url.pathname === "/host/cmd" && req.method === "POST") {
+        const { cmd } = (await req.json().catch(() => ({}))) as { cmd?: string };
+        const u = h.uploader;
+        if (cmd === "sync") u.uploadNow();
+        else if (cmd === "pause") u.setPaused(true);
+        else if (cmd === "resume") u.setPaused(false);
+        else if (cmd === "journey") await h.openJourney();
+        else if (cmd === "quit") setTimeout(() => h.quit(), 100);
+        else if (cmd === "nowebview") {
+          h.window.noWebView = true;
+          await h.openInBrowser();
+        } else return new Response("Unknown command", { status: 400 });
+        return Response.json({ ok: true });
+      }
     }
     if (token !== h.token) return new Response("Forbidden", { status: 403 });
     if (url.pathname === "/state" && req.method === "GET") return Response.json(h.uploader.status());
@@ -57,6 +87,8 @@ export function handler(h: ServerHooks, port: () => number) {
       else if (action === "resume") u.setPaused(false);
       else if (action === "connect") await u.connect();
       else if (action === "pick") void h.pickFolder();
+      else if (action === "startup-on" || action === "startup-off") await h.setStartup(action === "startup-on");
+      else if (action === "check-update") u.checkForUpdates();
       else if (action === "remove") {
         await h.remove();
         return Response.json({ ok: true, removed: true });
