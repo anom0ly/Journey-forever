@@ -1,5 +1,6 @@
 import type { BoardEntry } from "../lib/boardDefs";
 import type { CharacterSummary, Journey } from "../lib/journey";
+import type { UploaderSettings } from "../lib/uploader";
 
 export interface Me {
   user: { id: string; battletag: string | null; lastUploadAt: number | null; isAdmin?: boolean } | null;
@@ -136,6 +137,19 @@ export interface ReviewItem {
   reports: ReviewReport[];
 }
 
+// A PC connected to the Windows uploader (Account page, admins only).
+export interface UploaderPc {
+  id: string;
+  name: string;
+  createdAt: number;
+  lastSeenAt: number | null;
+  lastUploadAt: number | null;
+  ok: boolean | null; // how the last try went; null before the first
+  message: string | null;
+  appVersion: string | null;
+  addonVersion: string | null;
+}
+
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -235,6 +249,17 @@ export const api = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ ignore }),
+    }),
+
+  uploader: () => call<{ pcs: UploaderPc[]; settings: UploaderSettings }>("/api/uploader"),
+  setUploaderSettings: (s: Partial<UploaderSettings>) =>
+    call<UploaderSettings>("/api/uploader/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(s) }),
+  disconnectPc: (id: string) => call<{ pcs: UploaderPc[] }>(`/api/uploader/pcs/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  connectPc: (name: string, challenge: string) =>
+    call<{ code: string }>("/api/uploader/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, challenge }),
     }),
 
   async saveJourney(journey: Journey, summary: CharacterSummary): Promise<StoredCharacter> {

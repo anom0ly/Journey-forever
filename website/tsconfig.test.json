@@ -2,8 +2,8 @@
   "extends": "./tsconfig.app.json",
   "compilerOptions": {
     "lib": ["ES2023"],
-    "types": ["node"],
+    "types": ["node", "@cloudflare/workers-types"],
     "tsBuildInfoFile": "node_modules/.tmp/test.tsbuildinfo"
   },
-  "include": ["test", "src/lib", "scripts", "src/worker/errors.ts", "src/worker/http.ts"]
+  "include": ["test", "src/lib", "scripts", "src/worker"]
 }

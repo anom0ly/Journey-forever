@@ -15,5 +15,5 @@
     "tsBuildInfoFile": "node_modules/.tmp/worker.tsbuildinfo",
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/worker", "src/lib/journey.ts", "src/lib/search.ts", "src/lib/boardDefs.ts", "src/lib/wow.ts", "src/lib/checks.ts", "src/lib/friendTags.ts", "src/lib/errorReport.ts", "src/lib/map-data.json"]
+  "include": ["src/worker", "src/lib/journey.ts", "src/lib/search.ts", "src/lib/boardDefs.ts", "src/lib/wow.ts", "src/lib/checks.ts", "src/lib/friendTags.ts", "src/lib/errorReport.ts", "src/lib/uploader.ts", "src/lib/map-data.json"]
 }

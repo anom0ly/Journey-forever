@@ -6,9 +6,13 @@
 import { hashTag } from "../lib/friendTags";
 import type { Env, User } from "./env";
 import { cookie, HttpError, isLocal, json, now, parseCookies, randomToken, sha256 } from "./http";
+import { bearerKey, keyUser } from "./uploader";
 
 const SESSION_COOKIE = "jf_session";
 const STATE_COOKIE = "jf_oauth_state";
+// Where to go after signing in (?to= on /auth/login): only this site's own
+// /connect page, so the uploader's connect link survives a sign-in.
+const RETURN_COOKIE = "jf_return";
 const SESSION_SECONDS = 30 * 24 * 3600;
 const BNET = "https://oauth.battle.net";
 
@@ -23,7 +27,11 @@ export function clearSessionCookie(url: URL): string {
   return cookie(SESSION_COOKIE, "", url, 0);
 }
 
+// The signed-in account: from the session cookie, or from an upload key
+// (the Windows uploader), which index.ts limits to the upload routes.
 export async function currentUser(req: Request, env: Env): Promise<User | null> {
+  const key = bearerKey(req);
+  if (key) return keyUser(env, key);
   const token = parseCookies(req)[SESSION_COOKIE];
   if (!token) return null;
   const row = await env.DB.prepare(
@@ -53,6 +61,7 @@ async function startSession(env: Env, url: URL, userId: string, to: string): Pro
   const headers = new Headers({ location: to });
   headers.append("set-cookie", cookie(SESSION_COOKIE, token, url, SESSION_SECONDS));
   headers.append("set-cookie", cookie(STATE_COOKIE, "", url, 0));
+  headers.append("set-cookie", cookie(RETURN_COOKIE, "", url, 0));
   return new Response(null, { status: 302, headers });
 }
 
@@ -73,10 +82,15 @@ function redirectUri(env: Env, url: URL): string {
   return env.BNET_REDIRECT_URI || `${url.origin}/auth/callback`;
 }
 
+export function returnPath(to: string | null | undefined): string | undefined {
+  return to && /^\/connect(\?[\w=&%.-]*)?$/.test(to) && to.length <= 500 ? to : undefined;
+}
+
 export async function handleAuth(req: Request, env: Env, url: URL): Promise<Response> {
   const mode = authMode(env, url);
   if (url.pathname === "/auth/login") {
-    if (mode === "dev") return startSession(env, url, await upsertUser(env, "dev", "Dev#0000"), "/characters");
+    const to = returnPath(url.searchParams.get("to"));
+    if (mode === "dev") return startSession(env, url, await upsertUser(env, "dev", "Dev#0000"), to ?? "/characters");
     if (mode === "unconfigured") return Response.redirect(`${url.origin}/?signin=unconfigured`, 302);
     const state = randomToken(16);
     const auth = new URL(`${BNET}/authorize`);
@@ -85,10 +99,10 @@ export async function handleAuth(req: Request, env: Env, url: URL): Promise<Resp
     auth.searchParams.set("response_type", "code");
     auth.searchParams.set("scope", "openid");
     auth.searchParams.set("state", state);
-    return new Response(null, {
-      status: 302,
-      headers: { location: auth.toString(), "set-cookie": cookie(STATE_COOKIE, state, url, 600) },
-    });
+    const headers = new Headers({ location: auth.toString() });
+    headers.append("set-cookie", cookie(STATE_COOKIE, state, url, 600));
+    if (to) headers.append("set-cookie", cookie(RETURN_COOKIE, to, url, 600));
+    return new Response(null, { status: 302, headers });
   }
 
   if (url.pathname === "/auth/callback") {
@@ -114,7 +128,7 @@ export async function handleAuth(req: Request, env: Env, url: URL): Promise<Resp
     const bnetId = info.sub ?? (info.id !== undefined ? String(info.id) : undefined);
     if (!bnetId) return Response.redirect(`${url.origin}/?signin=failed`, 302);
     // The Battle.net access token is only used here and never stored.
-    return startSession(env, url, await upsertUser(env, bnetId, info.battletag ?? null), "/characters");
+    return startSession(env, url, await upsertUser(env, bnetId, info.battletag ?? null), returnPath(parseCookies(req)[RETURN_COOKIE]) ?? "/characters");
   }
 
   if (url.pathname === "/auth/logout" && req.method === "POST") {

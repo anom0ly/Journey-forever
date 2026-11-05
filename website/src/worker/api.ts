@@ -12,6 +12,7 @@ import { board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, rank
 import type { Env, User } from "./env";
 import { summaryProblem } from "../lib/checks";
 import { HttpError, json, now, readBody, sha256 } from "./http";
+import { claimKey, handleUploader } from "./uploader";
 
 const JOURNEY_LIMIT = 30e6;
 const IMAGE_LIMIT = 25e6;
@@ -260,7 +261,12 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
     return json({ character: characterOut(row), screenshots: await listShots(env, row.user_id, row.key) });
   }
 
+  // The Windows uploader swapping its connect code for a key: no sign-in.
+  if (parts[0] === "uploader" && parts[1] === "claim" && parts.length === 2 && m === "POST") return claimKey(env, await req.json().catch(() => null));
+
   const user = await requireUser(req, env);
+
+  if (parts[0] === "uploader") return handleUploader(req, env, user, (user as User & { key_id?: string }).key_id, parts);
 
   // The review page: only for the accounts in ADMIN_BNET_IDS. Anyone else
   // gets the same "Not found" as a page that doesn't exist.
@@ -298,6 +304,8 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         env.DB.prepare("DELETE FROM flags WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM ignored_reporters WHERE reporter_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM friend_tags WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM upload_keys WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM upload_codes WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM screenshots WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM characters WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),
