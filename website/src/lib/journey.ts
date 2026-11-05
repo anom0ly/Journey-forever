@@ -175,7 +175,8 @@ export interface Journey {
   kills?: { d: string; names: string[] }; // packed "dt,xp,n;" as Road to Sixty saves it
   levels: LevelInfo[];
   sessions: Session[];
-  stats: Stats;
+  stats: Stats; // Journey Tracker's totals, every PC's added up
+  pcStats?: Record<string, Stats>; // each PC's own totals, by pcKey (merge.ts)
   zones: Record<string, string>; // uiMapID -> name, learned from the files
   items: Record<string, string>; // item ID -> name, from item links seen
   utcOffset?: number; // seconds the player's PC clock is ahead of UTC, from our addon

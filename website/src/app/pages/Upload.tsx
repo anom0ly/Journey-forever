@@ -67,12 +67,20 @@ interface Preview {
   notes: FileNote[];
   unnamed: Unnamed[];
   stored: Map<string, StoredCharacter>;
+  olds: Map<string, Journey>; // stored journeys already fetched
   deltas: Map<string, UploadDelta>;
   shots: ShotMatch<ShotFile>;
   already: number; // screenshots uploaded before
   skipped: number;
   friends: FriendLists;
   preLaunch: Set<string>; // new characters from the beta or stress test, left out unless kept
+}
+
+// When the earlier sessions were: they were played on another PC, between
+// sessions already on the site.
+function gapText(d: UploadDelta): string {
+  const days = [...new Set((d.gapDays ?? []).map((t) => new Date(t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })))];
+  return `Played ${days.join(", ")}, before your last upload. Looks like another PC.`;
 }
 
 function deltaText(d: UploadDelta): string {
@@ -83,6 +91,7 @@ function deltaText(d: UploadDelta): string {
     d.distance ? `${km(d.distance)} km walked` : undefined,
     d.deaths ? plural(d.deaths, "death") : undefined,
   ].filter(Boolean);
+  if (d.fillsGap) return `Earlier ${d.gapDays && d.gapDays.length > 1 ? "sessions" : "session"}: ${bits.join(", ") || "no new activity"}`;
   return `${d.isNew ? "Whole journey so far" : "New session"}: ${bits.join(", ") || "no new activity"}`;
 }
 
@@ -98,6 +107,19 @@ async function buildPreview(picked: Picked): Promise<Preview> {
   const { characters } = await api.characters();
   const stored = new Map(characters.map((c) => [c.key, c]));
   const deltas = new Map(journeys.map((j) => [j.character.key, uploadDelta(stored.get(j.character.key)?.summary, j)]));
+  // Nothing newer than the last upload: it may still hold sessions played on
+  // another PC before then, which only the stored journey can tell.
+  const olds = new Map<string, Journey>();
+  await Promise.all(
+    journeys
+      .filter((j) => deltas.get(j.character.key)?.upToDate && stored.get(j.character.key)?.hasJourney)
+      .map(async (j) => {
+        const old = await api.journey(j.character.key).catch(() => undefined);
+        if (!old) return;
+        olds.set(j.character.key, old);
+        deltas.set(j.character.key, uploadDelta(stored.get(j.character.key)?.summary, j, old));
+      }),
+  );
 
   const files: ShotFile[] = [];
   for (const file of picked.images) {
@@ -128,7 +150,7 @@ async function buildPreview(picked: Picked): Promise<Preview> {
   for (const m of [...shots.matched, ...shots.manual].slice(0, 60)) m.file.preview = await previewUrl(m.file.file).catch(() => undefined);
   // Ones already on the site were uploaded on purpose, so only new ones are left out.
   const preLaunch = new Set(journeys.filter((j) => isPreLaunch(j) && !stored.has(j.character.key)).map((j) => j.character.key));
-  return { journeys, notes, unnamed, stored, deltas, shots, already, skipped: picked.skipped, friends, preLaunch };
+  return { journeys, notes, unnamed, stored, olds, deltas, shots, already, skipped: picked.skipped, friends, preLaunch };
 }
 
 export function UploadPage() {
@@ -180,7 +202,7 @@ export function UploadPage() {
       for (const j of toSave) {
         setBusy(`Saving ${j.character.name} (${++n} of ${toSave.length})…`);
         const before = preview.stored.get(j.character.key);
-        const old = before?.hasJourney ? await api.journey(j.character.key).catch(() => undefined) : undefined;
+        const old = preview.olds.get(j.character.key) ?? (before?.hasJourney ? await api.journey(j.character.key).catch(() => undefined) : undefined);
         const merged = mergeJourneys(old, j);
         await api.saveJourney(merged, summarize(merged));
         await saveBoards(merged, old);
@@ -345,10 +367,13 @@ export function UploadPage() {
                       </span>
                     ))}
                   </div>
-                  <span class="small" style={{ flex: "1 1 260px" }}>
-                    {deltaText(d)}
+                  <span class="stack" style={{ flex: "1 1 260px", gap: "2px" }}>
+                    <span class="small">{deltaText(d)}</span>
+                    {d.fillsGap && <span class="tiny muted">{gapText(d)}</span>}
                   </span>
-                  <span class={`pill ${d.upToDate ? "" : "gold"}`}>{d.isNew ? "New character" : d.upToDate ? "Up to date" : "New session"}</span>
+                  <span class={`pill ${d.fillsGap ? "teal" : d.upToDate ? "" : "gold"}`}>
+                    {d.isNew ? "New character" : d.fillsGap ? "Fills a gap" : d.upToDate ? "Up to date" : "New session"}
+                  </span>
                 </div>
               );
             })}

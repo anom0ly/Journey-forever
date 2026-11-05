@@ -92,11 +92,13 @@ export function headToHead(a: Journey, b: Journey, level?: number): H2HRow[] {
       level: j.character.level,
       played: played(j),
       deaths: deathCount(j),
-      quests: snap?.quests ?? (questCount(j) || undefined),
+      // The timeline's counts come first: a level snapshot's totals count only
+      // what the PC that saved it saw, which is short when two PCs were used.
+      quests: questCount(j) || snap?.quests,
       questShare: levelStats(j).questShare,
-      kills: snap?.kills ?? killCount(j),
+      kills: killCount(j) ?? snap?.kills,
       money: level ? snap?.money ?? g.now?.money : g.now?.money,
-      distance: snap?.distance ?? (distanceByMode(j.segments).w || j.stats.travel?.ground || undefined),
+      distance: distanceByMode(j.segments).w || snap?.distance || j.stats.travel?.ground || undefined,
       dungeons: dungeonRuns(j).length,
     };
   };

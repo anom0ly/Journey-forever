@@ -11,7 +11,7 @@ import {
   zoneAt,
 } from "../../lib/insights";
 import type { Journey, JEvent } from "../../lib/journey";
-import { firstSeen } from "../../lib/merge";
+import { firstSeen, pcCount } from "../../lib/merge";
 import { distanceByMode, km } from "../../lib/path";
 import { tracksOf } from "../../lib/replay";
 import { QUALITY_COLORS } from "../../lib/wow";
@@ -445,6 +445,11 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
       {reporting && stored?.slug && <ReportDialog slug={stored.slug} name={c.name} onClose={() => setReporting(false)} />}
       {base === "/demo" && <div class="notice small">This is a made-up sample journey, built from the sample saved files that ship with the site. Nothing here is saved.</div>}
       <Sources j={j} />
+      {pcCount(j) > 1 && (
+        <p class="small muted" style={{ marginTop: "-16px" }}>
+          Uploaded from {pcCount(j)} PCs. Gold, kills and loot add up {pcCount(j) === 2 ? "both" : "all of them"}.
+        </p>
+      )}
       <TabNav base={base} tab={tab} />
 
       {tab === "deaths" ? (
