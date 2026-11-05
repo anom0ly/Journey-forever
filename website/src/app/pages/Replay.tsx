@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { describe, duration, levelAt, zoneAt } from "../../lib/insights";
 import type { JEvent, Journey } from "../../lib/journey";
-import { buildClock, continentsOf, toReal, toReplay, tracksOf, whereAt, type Track } from "../../lib/replay";
+import { buildClock, continentsOf, toReal, toReplay, tracksOf, whereAt, zoneMapAt, type Track } from "../../lib/replay";
 import { continentMap, zonesOn, type MapInfo } from "../../lib/maps";
 import { continentName } from "../../lib/wow";
 import { day, time } from "../format";
@@ -73,14 +73,16 @@ export function draw(
   visited: Set<number>,
   art: (mapID: number, feathered?: boolean) => HTMLCanvasElement | undefined,
   fade: Fade,
+  pinned?: number,
 ) {
-  drawMap(ctx, w, h, view, c, visited, art, fade);
+  drawMap(ctx, w, h, view, c, visited, art, fade, pinned);
   const { sx, sy } = screen(view, w, h);
   drawPaths(ctx, w, h, j, tracks, c, now, layers, sx, sy);
 }
 
-// The map under the paths: the continent's art, the zone under the centre
-// fading in over it, or zone outlines while the art loads.
+// The map under the paths: the continent's art, a zone's art fading in over
+// it, or zone outlines while the art loads. The zone is `pinned` when given
+// (the one the character is in), else the one under the centre.
 export function drawMap(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -90,6 +92,7 @@ export function drawMap(
   visited: Set<number>,
   art: (mapID: number, feathered?: boolean) => HTMLCanvasElement | undefined,
   fade: Fade,
+  pinned?: number,
 ) {
   const { sx, sy } = screen(view, w, h);
   const zones = zonesOn(c);
@@ -109,13 +112,13 @@ export function drawMap(
     const r = rect(cont);
     ctx.drawImage(contArt, r.left, r.top, r.width, r.height);
   }
-  // Zoomed in, the zone under the centre shows its own map, its edges
+  // Zoomed in, the zone shows its own map, its edges
   // fading into the continent's, which dims behind it. Moving into another
   // zone cross-fades between the two maps.
   const cy = view.cy, cx = view.cx;
   const area = (z: MapInfo) => (z.maxX - z.minX) * (z.maxY - z.minY);
   const shownAt = (z: MapInfo | undefined) => (z ? Math.min(1, Math.max(0, (rect(z).width / w - 0.3) / 0.2)) : 0);
-  const under = zones
+  const under = zones.find((z) => z.id === pinned) ?? zones
     .filter((z) => cy >= z.minX && cy <= z.maxX && cx >= z.minY && cx <= z.maxY)
     .sort((a, b) => area(a) - area(b))[0];
   const target = shownAt(under) > 0 ? under : undefined;
@@ -402,7 +405,12 @@ function Player({ j, base }: { j: Journey; base: string }) {
     const ctx = canvas.getContext("2d")!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const redraw = () => setFrame((n) => n + 1);
-    draw(ctx, size.w, size.h, shown, j, tracks, continent, now, layers, visited, (id, soft) => mapArt(id, redraw, soft), fade.current);
+    // While the character is in view, their recorded zone's map stays up
+    // until they enter another zone; looking elsewhere shows the zone there.
+    const { sx, sy } = screen(shown, size.w, size.h);
+    const onScreen = here && here.c === continent && sx(here.y) >= 0 && sx(here.y) <= size.w && sy(here.x) >= 0 && sy(here.x) <= size.h;
+    const pinned = onScreen ? zoneMapAt(j, now) : undefined;
+    draw(ctx, size.w, size.h, shown, j, tracks, continent, now, layers, visited, (id, soft) => mapArt(id, redraw, soft), fade.current, pinned);
     if (fade.current.busy) {
       const id = requestAnimationFrame(redraw);
       return () => cancelAnimationFrame(id);

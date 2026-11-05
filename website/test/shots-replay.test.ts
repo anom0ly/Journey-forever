@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readUpload } from "../src/lib/parse/upload";
-import { buildClock, toReal, toReplay, tracksOf, whereAt } from "../src/lib/replay";
+import { buildClock, toReal, toReplay, tracksOf, whereAt, zoneMapAt } from "../src/lib/replay";
+import type { Journey } from "../src/lib/journey";
 import { matchShots, shotTime } from "../src/lib/shots";
 import { sampleFiles } from "./samples";
 
@@ -80,5 +81,25 @@ describe("matching by the name the addon logged", () => {
     );
     expect(m.matched.find((x) => x.kind === "level")?.file.name).toBe("WoWScrnShot_010199_000000.png");
     expect(m.matched.filter((x) => x.file.name === byTime)).toHaveLength(0);
+  });
+});
+
+describe("replay zone map", () => {
+  // Tirisfal, a moment in Undercity, back to Tirisfal: as Road to Sixty records it.
+  const j = {
+    events: [
+      { t: 100, k: "zone", mapID: 1420 },
+      { t: 150, k: "qd", questID: 1 },
+      { t: 200, k: "zone", mapID: 1458 },
+      { t: 220, k: "zone", mapID: 1420 },
+    ],
+  } as unknown as Journey;
+
+  it("keeps the zone last entered until the next zone change", () => {
+    expect(zoneMapAt(j, 50)).toBeUndefined();
+    expect(zoneMapAt(j, 100)).toBe(1420);
+    expect(zoneMapAt(j, 199)).toBe(1420);
+    expect(zoneMapAt(j, 210)).toBe(1458);
+    expect(zoneMapAt(j, 10_000)).toBe(1420);
   });
 });
