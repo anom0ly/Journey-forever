@@ -3,7 +3,7 @@ import { saveBoards } from "../boardsSync";
 import { friendCount, friendHashes, type FriendLists } from "../../lib/friends";
 import { duration } from "../../lib/insights";
 import type { Journey, SourceInfo } from "../../lib/journey";
-import { mergeJourneys, summarize, uploadDelta, type UploadDelta } from "../../lib/merge";
+import { isPreLaunch, lastSeen, mergeJourneys, summarize, uploadDelta, type UploadDelta } from "../../lib/merge";
 import { readUpload, type FileNote, type Unnamed } from "../../lib/parse/upload";
 import { km } from "../../lib/path";
 import { matchShots, shotTime, type Matched, type ShotMatch } from "../../lib/shots";
@@ -72,6 +72,7 @@ interface Preview {
   already: number; // screenshots uploaded before
   skipped: number;
   friends: FriendLists;
+  preLaunch: Set<string>; // new characters from the beta or stress test, left out unless kept
 }
 
 function deltaText(d: UploadDelta): string {
@@ -125,7 +126,9 @@ async function buildPreview(picked: Picked): Promise<Preview> {
   shots.matched = await fresh(shots.matched);
   shots.manual = await fresh(shots.manual);
   for (const m of [...shots.matched, ...shots.manual].slice(0, 60)) m.file.preview = await previewUrl(m.file.file).catch(() => undefined);
-  return { journeys, notes, unnamed, stored, deltas, shots, already, skipped: picked.skipped, friends };
+  // Ones already on the site were uploaded on purpose, so only new ones are left out.
+  const preLaunch = new Set(journeys.filter((j) => isPreLaunch(j) && !stored.has(j.character.key)).map((j) => j.character.key));
+  return { journeys, notes, unnamed, stored, deltas, shots, already, skipped: picked.skipped, friends, preLaunch };
 }
 
 export function UploadPage() {
@@ -136,6 +139,7 @@ export function UploadPage() {
   const [picked, setPicked] = useState<Picked>();
   const [includeManual, setIncludeManual] = useState(true);
   const [done, setDone] = useState<string>();
+  const [keepBeta, setKeepBeta] = useState<Set<string>>(new Set());
 
   useEffect(() => () => {
     for (const m of [...(preview?.shots.matched ?? []), ...(preview?.shots.manual ?? [])]) if (m.file.preview) URL.revokeObjectURL(m.file.preview);
@@ -156,6 +160,7 @@ export function UploadPage() {
       return;
     }
     setBusy("Reading your saved files…");
+    setKeepBeta(new Set());
     try {
       setPreview(await buildPreview(all));
     } catch (e) {
@@ -170,7 +175,7 @@ export function UploadPage() {
     if (!preview) return;
     setError(undefined);
     try {
-      const toSave = preview.journeys.filter((j) => !preview.deltas.get(j.character.key)?.upToDate || !preview.stored.has(j.character.key));
+      const toSave = active.filter((j) => !preview.deltas.get(j.character.key)?.upToDate || !preview.stored.has(j.character.key));
       let n = 0;
       for (const j of toSave) {
         setBusy(`Saving ${j.character.name} (${++n} of ${toSave.length})…`);
@@ -180,7 +185,6 @@ export function UploadPage() {
         await api.saveJourney(merged, summarize(merged));
         await saveBoards(merged, old);
       }
-      const shots = [...preview.shots.matched, ...(includeManual ? preview.shots.manual : [])];
       let i = 0;
       for (const s of shots) {
         setBusy(`Uploading screenshot ${++i} of ${shots.length}…`);
@@ -210,9 +214,14 @@ export function UploadPage() {
     }
   };
 
-  const shots = preview ? [...preview.shots.matched, ...(includeManual ? preview.shots.manual : [])] : [];
+  const left = (key: string) => !!preview?.preLaunch.has(key) && !keepBeta.has(key);
+  const active = preview ? preview.journeys.filter((j) => !left(j.character.key)) : [];
+  const skippedBeta = preview ? preview.journeys.filter((j) => left(j.character.key)) : [];
+  const shots = preview ? [...preview.shots.matched, ...(includeManual ? preview.shots.manual : [])].filter((s) => !left(s.charKey)) : [];
+  const matchedCount = preview ? preview.shots.matched.filter((s) => !left(s.charKey)).length : 0;
+  const manualCount = preview ? preview.shots.manual.filter((s) => !left(s.charKey)).length : 0;
   const friends = preview && hasFriends(preview.friends) ? friendCount(preview.friends) : undefined;
-  const sessions = preview ? preview.journeys.filter((j) => !preview.deltas.get(j.character.key)?.upToDate).length : 0;
+  const sessions = preview ? active.filter((j) => !preview.deltas.get(j.character.key)?.upToDate).length : 0;
 
   return (
     <main class="page narrow">
@@ -313,7 +322,7 @@ export function UploadPage() {
             </div>
           ))}
           <div class="list">
-            {preview.journeys.map((j) => {
+            {active.map((j) => {
               const d = preview.deltas.get(j.character.key)!;
               const src = sourcesLine(j.sources);
               const refused = j.sources.filter((s) => s.status === "refused" || s.status === "error");
@@ -359,6 +368,38 @@ export function UploadPage() {
               </div>
             ))}
           </div>
+          {skippedBeta.length > 0 && (
+            <details class="notice skip-note">
+              <summary>
+                Skipped {plural(skippedBeta.length, "character")} from before launch (last played before Nov 4).{" "}
+                <span class="when-closed">Show</span>
+                <span class="when-open">Hide</span>
+              </summary>
+              <div class="list" style={{ marginTop: "12px" }}>
+                {skippedBeta.map((j) => {
+                  const last = lastSeen(j);
+                  return (
+                    <div class="item" key={j.character.key}>
+                      <div class="avatar sm" style={{ background: classColor(j.character.className), opacity: 0.45 }} aria-hidden="true">
+                        {j.character.name.charAt(0)}
+                      </div>
+                      <div class="stack" style={{ flex: "1 1 220px", gap: "2px" }}>
+                        <span style={{ fontWeight: 600, color: "var(--muted)" }}>{j.character.name}</span>
+                        <span class="small muted">
+                          {describeCharacter(j.character)} · level {preview.deltas.get(j.character.key)?.toLevel}
+                          {last ? ` · last played ${new Date(last * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""}
+                        </span>
+                        <span class="tiny" style={{ color: "var(--amber)" }}>From the beta or stress test. That realm is gone, so it isn't saved.</span>
+                      </div>
+                      <button type="button" class="btn chip" onClick={() => setKeepBeta(new Set([...keepBeta, j.character.key]))}>
+                        Save anyway
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          )}
           {friends && (
             <div class="item">
               <div class="stack" style={{ flex: "1 1 220px", gap: "2px" }}>
@@ -376,10 +417,10 @@ export function UploadPage() {
           )}
           {preview.skipped > 0 && <p class="tiny muted">{plural(preview.skipped, "other file was", "other files were")} skipped unread.</p>}
 
-          {(shots.length > 0 || preview.shots.manual.length > 0) && (
+          {(shots.length > 0 || manualCount > 0) && (
             <div class="card flat">
               <div class="row between">
-                <span style={{ fontWeight: 600 }}>{plural(preview.shots.matched.length, "screenshot")} matched to your journey</span>
+                <span style={{ fontWeight: 600 }}>{plural(matchedCount, "screenshot")} matched to your journey</span>
                 <span class="small muted">Paired by the time the addon logged each one</span>
               </div>
               <div class="shots">
@@ -398,10 +439,10 @@ export function UploadPage() {
                   );
                 })}
               </div>
-              {preview.shots.manual.length > 0 && (
+              {manualCount > 0 && (
                 <div class="row between small" style={{ paddingTop: "12px", borderTop: "1px solid var(--line)" }}>
                   <span class="muted">
-                    {plural(preview.shots.manual.length, "more was", "more were")} taken by hand (Print Screen), not by the addon. They'll go on the
+                    {plural(manualCount, "more was", "more were")} taken by hand (Print Screen), not by the addon. They'll go on the
                     timeline at the moment they were taken.
                   </span>
                   <label class="row" style={{ gap: "8px", cursor: "pointer" }}>

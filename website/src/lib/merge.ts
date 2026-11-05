@@ -284,6 +284,16 @@ export function lastSeen(j: Journey): number | undefined {
   return times.length ? Math.max(...times) : undefined;
 }
 
+// Forever's realms opened at 2026-11-04 18:00 UTC. A character whose newest
+// data is older was played on the beta or stress test, whose realms are gone
+// (Road to Sixty 1.19.5 hides them in-game by the same rule).
+export const FOREVER_LAUNCH = 1793815200;
+
+export function isPreLaunch(j: Journey): boolean {
+  const last = lastSeen(j);
+  return last !== undefined && last < FOREVER_LAUNCH;
+}
+
 export function firstSeen(j: Journey): number | undefined {
   const times = [j.events[0]?.t, j.segments[0]?.t, j.sessions[0]?.start, j.stats.firstSeen].filter((x): x is number => !!x);
   return times.length ? Math.min(...times) : undefined;
