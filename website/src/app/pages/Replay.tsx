@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { describe, duration, levelAt, zoneAt } from "../../lib/insights";
 import type { JEvent, Journey } from "../../lib/journey";
-import { buildClock, continentsOf, toReal, toReplay, tracksOf, whereAt, zoneMapAt, type Track } from "../../lib/replay";
+import { buildClock, continentsOf, replayAtOrAfter, toReal, toReplay, tracksOf, whereAt, zoneMapAt, type Track } from "../../lib/replay";
 import { citiesOn, continentMap, homeZone, isCity, mapInfo, zonesOn, type MapInfo } from "../../lib/maps";
 import { continentName } from "../../lib/wow";
 import { day, time } from "../format";
 import { mapArt } from "../mapArt";
 import { useJourney, type JourneySource } from "../source";
+import type { Screenshot } from "../api";
+import { pinsAt, pinsOf, type Pin } from "../../lib/pins";
+import { CLICK_SLOP, drawPin, drawPinMark, PinCard } from "../PinCard";
 
 const SPEEDS = [1, 8, 32, 128, 512, 2048];
 
@@ -311,17 +314,7 @@ function drawPaths(
       ctx.lineWidth = 2.5;
       ctx.strokeRect(px - 8, py - 8, 16, 16);
     } else if ((e.k === "shot" || e.k === "note") && layers.has("shot")) {
-      ctx.fillStyle = "#7A3FB0";
-      ctx.strokeStyle = "#FFFFFF";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(px, py - 8);
-      ctx.lineTo(px + 7, py);
-      ctx.lineTo(px, py + 8);
-      ctx.lineTo(px - 7, py);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+      drawPin(ctx, px, py);
     }
   }
 
@@ -342,8 +335,9 @@ function drawPaths(
   }
 }
 
-function Player({ j, base }: { j: Journey; base: string }) {
+function Player({ j, base, shots }: { j: Journey; base: string; shots: Screenshot[] }) {
   const tracks = useMemo(() => tracksOf(j.segments), [j]);
+  const pins = useMemo(() => pinsOf(j, shots), [j, shots]);
   const clock = useMemo(() => buildClock(tracks), [tracks]);
   const continents = useMemo(() => continentsOf(j), [j]);
   const visited = useMemo(() => new Set(j.events.filter((e) => e.k === "zone" && typeof e.mapID === "number").map((e) => e.mapID as number)), [j]);
@@ -366,7 +360,10 @@ function Player({ j, base }: { j: Journey; base: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 860, h: 620 });
-  const drag = useRef<{ x: number; y: number; view: View } | null>(null);
+  const drag = useRef<{ x: number; y: number; view: View; moved: boolean } | null>(null);
+  // The diamonds under the pointer, and the ones open in a card.
+  const [hover, setHover] = useState<Pin[]>();
+  const [open, setOpen] = useState<Pin[]>();
   // Bumped as each map's art arrives, and each frame of a cross-fade, to redraw.
   const [, setFrame] = useState(0);
   const fade = useRef<Fade>({ at: 0, busy: false });
@@ -446,6 +443,17 @@ function Player({ j, base }: { j: Journey; base: string }) {
     }
   }, [inCity]);
 
+  // A card shows while its diamond does.
+  const pinShown = (p: Pin) => layers.has("shot") && p.c === continent && p.t <= now;
+  const openShown = open?.[0] && pinShown(open[0]) ? open : undefined;
+  const pinsUnder = (e: PointerEvent) => {
+    if (!shown || !layers.has("shot")) return [];
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const { sx, sy } = screen(shown, size.w, size.h);
+    return pinsAt(pins, continent, now, e.clientX - box.left, e.clientY - box.top, sx, sy);
+  };
+  const closeCard = () => setOpen(undefined);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !shown) return;
@@ -462,6 +470,10 @@ function Player({ j, base }: { j: Journey; base: string }) {
     const onScreen = here && here.c === continent && sx(here.y) >= 0 && sx(here.y) <= size.w && sy(here.x) >= 0 && sy(here.x) <= size.h;
     const pinned = onScreen && recorded !== undefined ? homeZone(recorded) : undefined;
     draw(ctx, size.w, size.h, shown, j, tracks, continent, now, layers, visited, (id, soft) => mapArt(id, redraw, soft), fade.current, pinned);
+    for (const [set, isOpen] of [[hover, false], [openShown, true]] as const) {
+      const p = set?.[0];
+      if (p) drawPinMark(ctx, sx(p.y), sy(p.x), isOpen);
+    }
     if (fade.current.busy) {
       const id = requestAnimationFrame(redraw);
       return () => cancelAnimationFrame(id);
@@ -534,18 +546,39 @@ function Player({ j, base }: { j: Journey; base: string }) {
         <div
           class="map"
           ref={wrapRef}
+          style={hover?.length ? { cursor: "pointer" } : undefined}
           onPointerDown={(e) => {
-            if (!view) return;
+            if (!shown) return;
             (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-            drag.current = { x: e.clientX, y: e.clientY, view };
-            setFollow(false);
+            drag.current = { x: e.clientX, y: e.clientY, view: shown, moved: false };
           }}
           onPointerMove={(e) => {
             const d = drag.current;
-            if (!d) return;
+            if (!d) {
+              const under = pinsUnder(e);
+              if ((under[0]?.t ?? -1) !== (hover?.[0]?.t ?? -1)) setHover(under.length ? under : undefined);
+              return;
+            }
+            if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < CLICK_SLOP) return;
+            if (!d.moved) {
+              d.moved = true;
+              setFollow(false);
+              setHover(undefined);
+            }
             setView({ ...d.view, cx: d.view.cx + (e.clientX - d.x) / d.view.scale, cy: d.view.cy + (e.clientY - d.y) / d.view.scale });
           }}
-          onPointerUp={() => (drag.current = null)}
+          onPointerUp={(e) => {
+            const d = drag.current;
+            drag.current = null;
+            if (!d || d.moved) return;
+            // A click: open the diamonds under it, or close the card.
+            const under = pinsUnder(e);
+            if (under.length) {
+              setOpen(under);
+              setPlaying(false);
+            } else setOpen(undefined);
+          }}
+          onPointerLeave={() => setHover(undefined)}
         >
           <canvas ref={canvasRef} role="img" aria-label={`Map of ${j.character.name}'s path on ${continentName(continent)}`} />
           <div class="hud">
@@ -562,6 +595,22 @@ function Player({ j, base }: { j: Journey; base: string }) {
             </span>
           </div>
           <span class="credit">Map art © Blizzard Entertainment</span>
+          {hover?.[0] && !openShown && shown && (
+            <span class="pin-tip" style={{ left: `${screen(shown, size.w, size.h).sx(hover[0].y)}px`, top: `${screen(shown, size.w, size.h).sy(hover[0].x)}px` }}>
+              {hover[0].k === "note" ? "Note" : hover[0].title}
+              {hover.length > 1 ? ` +${hover.length - 1}` : ""}
+            </span>
+          )}
+          {openShown && shown && (
+            <PinCard
+              pins={openShown}
+              x={screen(shown, size.w, size.h).sx(openShown[0].y)}
+              y={screen(shown, size.w, size.h).sy(openShown[0].x)}
+              w={size.w}
+              onClose={closeCard}
+              onJump={(t) => setR(replayAtOrAfter(clock, t))}
+            />
+          )}
         </div>
 
         <div class="card" style={{ padding: "16px 20px", gap: "12px" }}>
@@ -684,7 +733,7 @@ export function ReplayPage({ source }: { source: JourneySource }) {
       {error ? (
         <div class="notice err">{error}</div>
       ) : data ? (
-        <Player j={data.journey} base={data.base} />
+        <Player j={data.journey} base={data.base} shots={data.screenshots} />
       ) : (
         <p class="muted" role="status">
           Loading the journey…

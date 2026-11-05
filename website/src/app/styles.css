@@ -181,6 +181,32 @@ table.data th { color: var(--muted); font-weight: 600; font-size: 13px; }
 .feed > div:last-child { border-bottom: none; }
 .tone-gold { color: var(--gold); } .tone-red { color: var(--red); } .tone-plain { color: var(--text); } .tone-muted { color: var(--muted); } .tone-lilac { color: var(--lilac); }
 
+/* Screenshot cards on the replay maps */
+.pin-tip { position: absolute; transform: translate(-50%, calc(-100% - 14px)); background: rgba(18, 13, 13, 0.92); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; white-space: nowrap; pointer-events: none; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.pin-card { position: absolute; width: 264px; background: var(--surface); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); cursor: default; z-index: 2; }
+.pin-card.above { transform: translate(-50%, calc(-100% - 18px)); }
+.pin-card.below { transform: translate(-50%, 18px); }
+.pin-card.above::after, .pin-card.below::after { content: ""; position: absolute; left: calc(50% + var(--ax, 0px)); width: 14px; height: 14px; background: var(--surface); border: inherit; border-width: 0 1px 1px 0; }
+.pin-card.above::after { bottom: -8px; transform: translateX(-50%) rotate(45deg); }
+.pin-card.below::after { top: -8px; transform: translateX(-50%) rotate(-135deg); }
+.pin-card.sheet { left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0; box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5); max-height: 70%; overflow: auto; }
+.pin-grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line-2); margin: 8px auto 6px; }
+.pin-img { display: block; width: 100%; padding: 0; border: none; background: var(--bg); cursor: zoom-in; border-radius: 11px 11px 0 0; overflow: hidden; }
+.pin-img img { display: block; width: 100%; height: 148px; object-fit: cover; }
+.pin-card.sheet .pin-img { width: calc(100% - 24px); margin: 0 12px; border-radius: 10px; }
+.pin-note { margin: 0; padding: 14px 40px 4px 14px; font-family: Georgia, serif; font-style: italic; font-size: 15px; line-height: 1.4; color: #f3e3c6; overflow-wrap: anywhere; max-height: 180px; overflow: auto; }
+.pin-missing { min-height: 96px; border-radius: 11px 11px 0 0; background: repeating-linear-gradient(45deg, var(--surface-2) 0 10px, var(--surface) 10px 20px); display: grid; place-items: center; color: var(--muted); font-size: 12px; text-align: center; padding: 12px 36px; }
+.pin-x { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; background: rgba(18, 13, 13, 0.8); color: var(--text); border: 1px solid rgba(255, 255, 255, 0.2); cursor: pointer; font-size: 16px; line-height: 1; display: grid; place-items: center; padding: 0; }
+.pin-card.sheet .pin-x { top: 14px; right: 18px; }
+.pin-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 2px; }
+.pin-title { font-weight: 600; font-size: 14px; }
+.pin-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
+.pin-link { background: none; border: none; padding: 0; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+.pin-jump { background: var(--surface-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; font-size: 12px; padding: 6px 10px; cursor: pointer; min-height: 32px; }
+.pin-pager { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.pin-pager button { border: 1px solid var(--line); background: none; color: var(--text); border-radius: 6px; min-width: 28px; min-height: 28px; cursor: pointer; }
+.pin-pager button:disabled { opacity: 0.35; cursor: default; }
+
 .lightbox { position: fixed; inset: 0; background: rgba(10, 6, 6, 0.92); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; z-index: 10; }
 .lightbox img { max-width: 100%; max-height: calc(100vh - 120px); border-radius: 8px; }
 

@@ -14,6 +14,9 @@ import { continentName } from "../../lib/wow";
 import { classColor, describeCharacter } from "../format";
 import { mapArt } from "../mapArt";
 import { drawMap, fitView, screen, type Fade, type View } from "./Replay";
+import type { Screenshot } from "../api";
+import { pinsAt, pinsOf, type Pin } from "../../lib/pins";
+import { CLICK_SLOP, drawPin, drawPinMark, PinCard } from "../PinCard";
 
 const INK = { a: "#E0B252", b: "#C9B6E4" } as const;
 const SPEEDS = [
@@ -36,6 +39,7 @@ interface Prep {
   visits: Visit[];
   feed: JEvent[];
   visited: Set<number>;
+  pins: Pin[];
 }
 
 // Where one character is at the replay's current moment.
@@ -49,7 +53,7 @@ interface Now {
   over: boolean; // past the end of the record
 }
 
-function prep(j: Journey, key: "a" | "b"): Prep {
+function prep(j: Journey, key: "a" | "b", shots: Screenshot[]): Prep {
   const clock = playClock(j);
   return {
     key,
@@ -61,6 +65,7 @@ function prep(j: Journey, key: "a" | "b"): Prep {
     visits: visits(j).filter((v) => !v.pvp || v.to > v.from),
     feed: j.events.filter((e) => FEED_KINDS.has(e.k)),
     visited: new Set(j.events.filter((e) => e.k === "zone" && typeof e.mapID === "number").map((e) => e.mapID as number)),
+    pins: pinsOf(j, shots),
   };
 }
 
@@ -155,6 +160,25 @@ function drawSide(ctx: CanvasRenderingContext2D, n: Now, c: number, sx: (y: numb
   }
 }
 
+// Each side's screenshots and notes: purple diamonds edged in its colour.
+function drawPins(ctx: CanvasRenderingContext2D, n: Now, c: number, sx: (y: number) => number, sy: (x: number) => number) {
+  if (n.before) return;
+  for (const p of n.p.pins) {
+    if (p.t > n.t) break;
+    if (p.c === c) drawPin(ctx, sx(p.y), sy(p.x), n.p.ink);
+  }
+}
+
+// The diamonds under a point, from whichever side has one there.
+function pinsUnder(all: Now[], c: number, px: number, py: number, sx: (y: number) => number, sy: (x: number) => number): { n: Now; pins: Pin[] } | undefined {
+  for (const n of all) {
+    if (n.before) continue;
+    const pins = pinsAt(n.p.pins, c, n.t, px, py, sx, sy);
+    if (pins.length) return { n, pins };
+  }
+  return undefined;
+}
+
 function drawDot(ctx: CanvasRenderingContext2D, n: Now, x: number, y: number) {
   const name = n.p.j.character.name;
   const hollow = !!n.inside && !n.over;
@@ -192,13 +216,45 @@ function drawDot(ctx: CanvasRenderingContext2D, n: Now, x: number, y: number) {
   ctx.globalAlpha = 1;
 }
 
-function MapPane({ c, panes, all, cam, playing, label }: { c: number; panes: Now[]; all: Now[]; cam: Cam; playing: boolean; label?: string }) {
+function MapPane({
+  c,
+  panes,
+  all,
+  cam,
+  playing,
+  label,
+  onOpen,
+  onJump,
+}: {
+  c: number;
+  panes: Now[];
+  all: Now[];
+  cam: Cam;
+  playing: boolean;
+  label?: string;
+  onOpen: () => void;
+  onJump: (key: "a" | "b", t: number) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 860, h: 560 });
   const [, setFrame] = useState(0);
   const fade = useRef<Fade>({ at: 0, busy: false });
   const view = useRef<{ v: View; c: number; cam: Cam }>();
+  const press = useRef<{ x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<{ key: "a" | "b"; pins: Pin[] }>();
+  const [open, setOpen] = useState<{ key: "a" | "b"; pins: Pin[] }>();
+  const nowOf = (key: "a" | "b") => all.find((n) => n.p.key === key)!;
+  // A card shows while its diamond does.
+  const shownCard = open && open.pins[0].c === c && !nowOf(open.key).before && open.pins[0].t <= nowOf(open.key).t ? open : undefined;
+  const under = (e: PointerEvent) => {
+    const v = view.current?.v;
+    if (!v) return undefined;
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const { sx, sy } = screen(v, size.w, size.h);
+    const hit = pinsUnder(all, c, e.clientX - box.left, e.clientY - box.top, sx, sy);
+    return hit && { key: hit.n.p.key, pins: hit.pins };
+  };
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -233,6 +289,11 @@ function MapPane({ c, panes, all, cam, playing, label }: { c: number; panes: Now
     drawMap(ctx, size.w, size.h, v, c, visited, (id, soft) => mapArt(id, redraw, soft), fade.current);
     const { sx, sy } = screen(v, size.w, size.h);
     for (const n of [...all].reverse()) drawSide(ctx, n, c, sx, sy);
+    for (const n of [...all].reverse()) drawPins(ctx, n, c, sx, sy);
+    for (const [m, isOpen] of [[hover, false], [shownCard, true]] as const) {
+      const p = m?.pins[0];
+      if (p) drawPinMark(ctx, sx(p.y), sy(p.x), isOpen, nowOf(m.key).p.ink);
+    }
     const dots = panes.filter((n) => n.here && n.here.c === c).map((n) => ({ n, x: sx(n.here!.y), y: sy(n.here!.x) }));
     // Two dots on the same spot: nudge the second so both show.
     if (dots.length === 2 && Math.hypot(dots[0].x - dots[1].x, dots[0].y - dots[1].y) < 18) {
@@ -247,11 +308,52 @@ function MapPane({ c, panes, all, cam, playing, label }: { c: number; panes: Now
   });
 
   const names = panes.map((n) => n.p.j.character.name).join(" and ");
+  const at = (p: Pin) => {
+    const v = view.current?.v ?? targetView(panes, all, c, cam, size.w, size.h);
+    const { sx, sy } = screen(v, size.w, size.h);
+    return { x: sx(p.y), y: sy(p.x) };
+  };
   return (
-    <div class="map duo-map" ref={wrapRef}>
+    <div
+      class="map duo-map"
+      ref={wrapRef}
+      style={hover ? { cursor: "pointer" } : undefined}
+      onPointerDown={(e) => (press.current = { x: e.clientX, y: e.clientY })}
+      onPointerMove={(e) => {
+        if (press.current) return;
+        const h = under(e);
+        if ((h?.pins[0].t ?? -1) !== (hover?.pins[0].t ?? -1) || h?.key !== hover?.key) setHover(h);
+      }}
+      onPointerUp={(e) => {
+        const p = press.current;
+        press.current = null;
+        if (!p || Math.hypot(e.clientX - p.x, e.clientY - p.y) >= CLICK_SLOP) return;
+        const h = under(e);
+        setOpen(h);
+        if (h) onOpen();
+      }}
+      onPointerLeave={() => setHover(undefined)}
+    >
       <canvas ref={canvasRef} role="img" aria-label={`Map of ${continentName(c)}${names ? ` with ${names}` : ""}`} />
       {label && <span class="duo-map-label">{label}</span>}
       {continentMap(c)?.art && <span class="credit">Map art © Blizzard Entertainment</span>}
+      {hover && !shownCard && (
+        <span class="pin-tip" style={{ left: `${at(hover.pins[0]).x}px`, top: `${at(hover.pins[0]).y}px` }}>
+          {nowOf(hover.key).p.j.character.name}: {hover.pins[0].k === "note" ? "Note" : hover.pins[0].title}
+          {hover.pins.length > 1 ? ` +${hover.pins.length - 1}` : ""}
+        </span>
+      )}
+      {shownCard && (
+        <PinCard
+          pins={shownCard.pins}
+          {...at(shownCard.pins[0])}
+          w={size.w}
+          ink={nowOf(shownCard.key).p.ink}
+          who={`${nowOf(shownCard.key).p.j.character.name}'s ${shownCard.pins[0].k === "note" ? "note" : "screenshot"}`}
+          onClose={() => setOpen(undefined)}
+          onJump={(t) => onJump(shownCard.key, t)}
+        />
+      )}
     </div>
   );
 }
@@ -464,9 +566,11 @@ function Race({ a, b, mode, u, maxP, maxL, onSeek }: { a: Prep; b: Prep; mode: M
 
 // ---------------------------------------------------------------- the tab
 
-export function ReplayDuo({ ja, jb }: { ja: Journey; jb: Journey }) {
-  const a = useMemo(() => prep(ja, "a"), [ja]);
-  const b = useMemo(() => prep(jb, "b"), [jb]);
+const NO_SHOTS: Screenshot[] = [];
+
+export function ReplayDuo({ ja, jb, shotsA = NO_SHOTS, shotsB = NO_SHOTS }: { ja: Journey; jb: Journey; shotsA?: Screenshot[]; shotsB?: Screenshot[] }) {
+  const a = useMemo(() => prep(ja, "a", shotsA), [ja, shotsA]);
+  const b = useMemo(() => prep(jb, "b", shotsB), [jb, shotsB]);
   const maxP = Math.max(1, a.clock.total, b.clock.total);
   const maxL = Math.min(a.curve.level.at(-1)!, b.curve.level.at(-1)!);
   const canLevel = maxL >= 2;
@@ -508,6 +612,15 @@ export function ReplayDuo({ ja, jb }: { ja: Journey; jb: Journey }) {
     setMode(m);
   };
   const u2 = (v: number) => setU(Number.isFinite(v) ? v : 0);
+  // "Jump here" on a card: the moment that character took it, a second on
+  // so the diamond is there.
+  const jump = (key: "a" | "b", t: number) => {
+    const p = key === "a" ? a : b;
+    const played = playedAt(p.clock, t) + 1;
+    const v = mode === "time" ? played / maxP : (levelAtPlayed(p.curve, played) - 1) / (maxL - 1);
+    u2(Math.min(1, Math.max(0, v)));
+  };
+  const pane = { onOpen: () => setPlaying(false), onJump: jump };
 
   if (!a.tracks.length && !b.tracks.length) {
     return (
@@ -585,11 +698,11 @@ export function ReplayDuo({ ja, jb }: { ja: Journey; jb: Journey }) {
             <div class={split ? "duo-maps split" : "duo-maps"}>
               {split ? (
                 <>
-                  <MapPane c={ca!} panes={[na]} all={all} cam={cam} playing={playing} label={`${continentName(ca!)} · ${ja.character.name}`} />
-                  <MapPane c={cb!} panes={[nb]} all={all} cam={cam} playing={playing} label={`${continentName(cb!)} · ${jb.character.name}`} />
+                  <MapPane c={ca!} panes={[na]} all={all} cam={cam} playing={playing} label={`${continentName(ca!)} · ${ja.character.name}`} {...pane} />
+                  <MapPane c={cb!} panes={[nb]} all={all} cam={cam} playing={playing} label={`${continentName(cb!)} · ${jb.character.name}`} {...pane} />
                 </>
               ) : (
-                <MapPane c={one} panes={all} all={all} cam={cam} playing={playing} />
+                <MapPane c={one} panes={all} all={all} cam={cam} playing={playing} {...pane} />
               )}
             </div>
             <div class="duo-hud" aria-live="off">
@@ -635,6 +748,7 @@ export function ReplayDuo({ ja, jb }: { ja: Journey; jb: Journey }) {
                 <span class="key" style={{ background: INK.b, marginLeft: "12px" }} /> {jb.character.name}
                 <span class="key" style={{ background: "#F29C93", marginLeft: "12px", borderRadius: "50%" }} /> Death
                 <span class="key" style={{ background: "#7A5FAE", marginLeft: "12px" }} /> Dungeon
+                <span class="key" style={{ background: "#7A3FB0", marginLeft: "12px", transform: "rotate(45deg) scale(0.8)" }} /> Screenshot or note
               </span>
             </div>
             <Race a={a} b={b} mode={mode} u={u} maxP={maxP} maxL={Math.max(2, maxL)} onSeek={(v) => setU(v)} />

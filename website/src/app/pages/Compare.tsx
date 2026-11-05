@@ -9,7 +9,7 @@ import { slugFromLink } from "../../lib/search";
 import { duration, gold, played } from "../../lib/insights";
 import { km } from "../../lib/path";
 import { deathStats, goldStats, levelStats, professionStats, pvpStats, SKILL_CAPS } from "../../lib/stats";
-import { api, type PublicHit, type StoredCharacter } from "../api";
+import { api, type PublicHit, type Screenshot, type StoredCharacter } from "../api";
 import { classColor, describeCharacter, plural } from "../format";
 import { friendCharacters, friendSlugs, useFriends } from "../friends";
 import { navigate } from "../router";
@@ -21,6 +21,7 @@ const COLOR = { a: "var(--gold)", b: "var(--lilac)" } as const;
 
 interface Side {
   j: Journey;
+  shots?: Screenshot[];
   slug?: string; // undefined for the samples
 }
 
@@ -35,9 +36,10 @@ function usePublic(slug: string | undefined): { side?: Side; error?: string } {
     if (!slug) return;
     let live = true;
     setState({});
-    api
-      .publicJourneyData(slug)
-      .then((j) => live && setState({ side: { j, slug } }))
+    // The screenshots are for the replay's cards: without them the
+    // diamonds still open, saying the image isn't there.
+    Promise.all([api.publicJourneyData(slug), api.publicJourney(slug).then((m) => m.screenshots).catch(() => [] as Screenshot[])])
+      .then(([j, shots]) => live && setState({ side: { j, slug, shots } }))
       .catch((e: Error) => live && setState({ error: e.message }));
     return () => {
       live = false;
@@ -354,7 +356,7 @@ function CompareView({ a, b, demo }: { a: Side; b: Side; demo?: boolean }) {
       ) : tab === "Route" ? (
         <RouteTab {...props} />
       ) : tab === "Replay" ? (
-        <ReplayDuo ja={ja} jb={jb} />
+        <ReplayDuo ja={ja} jb={jb} shotsA={a.shots} shotsB={b.shots} />
       ) : tab === "Levels" ? (
         <LevelsTab {...props} />
       ) : tab === "Deaths" ? (

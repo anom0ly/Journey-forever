@@ -62,6 +62,15 @@ export function toReplay(clock: Clock, t: number): number {
   return clock.at[lo] + Math.min(t, clock.end[lo]) - clock.start[lo];
 }
 
+// The first replay moment at or after real time t: a time in a gap (inside
+// a dungeon, say) goes to where the replay picks up again.
+export function replayAtOrAfter(clock: Clock, t: number): number {
+  const r = toReplay(clock, t);
+  if (toReal(clock, r) >= t) return r;
+  const next = clock.at.find((at) => at > r);
+  return next ?? clock.total;
+}
+
 // Real time for replay seconds.
 export function toReal(clock: Clock, r: number): number {
   const n = clock.start.length;
