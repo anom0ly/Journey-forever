@@ -38,10 +38,15 @@ export interface UploadResult {
   friends: FriendLists; // Battle.net friends' BattleTags; never sent as they are (lib/friends.ts)
 }
 
-// Whether a dropped file is one this site reads, by name.
+// Whether a dropped file is one this site reads: one of the three names,
+// either picked on its own or inside a SavedVariables folder. The addons'
+// own code has the same names (Interface/AddOns/JourneyTracker/
+// JourneyTracker.lua), so a dropped game folder must not match those.
 export function isSavedFile(path: string): boolean {
-  const name = path.split(/[\\/]/).pop() ?? "";
-  return SAVED_FILES.includes(name);
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const name = parts.pop() ?? "";
+  if (!SAVED_FILES.includes(name)) return false;
+  return parts.length === 0 || parts[parts.length - 1].toLowerCase() === "savedvariables";
 }
 
 // <realm>/<character>/SavedVariables/<file>, or SavedVariables/<file> for
