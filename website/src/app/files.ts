@@ -52,7 +52,7 @@ async function walk(entry: FileSystemEntry, files: { path: string; file: File }[
   if (entry.isFile) {
     const name = entry.name;
     // Only open files we might use.
-    if (!isSavedFile(name) && !IMAGE_RE.test(name)) {
+    if (!isSavedFile(entry.fullPath) && !IMAGE_RE.test(name)) {
       files.push({ path: entry.fullPath, file: new File([], name) });
       return;
     }

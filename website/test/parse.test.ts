@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { mergeJourneys, summarize, uploadDelta } from "../src/lib/merge";
-import { contextOf, readUpload } from "../src/lib/parse/upload";
+import { contextOf, isSavedFile, readUpload } from "../src/lib/parse/upload";
 import { distanceByMode } from "../src/lib/path";
 import { sampleFiles } from "./samples";
+
+describe("isSavedFile", () => {
+  it("takes saved files from SavedVariables folders or picked loose", () => {
+    expect(isSavedFile("_forever_/WTF/Account/ACC/Realm/Char/SavedVariables/JourneyTracker.lua")).toBe(true);
+    expect(isSavedFile("WTF\\Account\\ACC\\SavedVariables\\RoadToSixty.lua")).toBe(true);
+    expect(isSavedFile("JourneyForever.lua")).toBe(true);
+  });
+  it("skips the addons' own code of the same name", () => {
+    expect(isSavedFile("_forever_/Interface/AddOns/JourneyTracker/JourneyTracker.lua")).toBe(false);
+    expect(isSavedFile("Interface/AddOns/RoadToSixty/RoadToSixty.lua")).toBe(false);
+    expect(isSavedFile("Char/SavedVariables/JourneyTracker.lua.bak")).toBe(false);
+  });
+});
 
 describe("contextOf", () => {
   it("finds realm and character from the folder", () => {
