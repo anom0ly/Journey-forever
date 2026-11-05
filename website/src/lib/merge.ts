@@ -13,6 +13,7 @@ import {
   type Segment,
   type Session,
   type SourceInfo,
+  type Stats,
 } from "./journey";
 import { distanceByMode, PathIndex } from "./path";
 import type { Contribution } from "./parse/types";
@@ -207,6 +208,7 @@ export function buildJourney(parts: Contribution[], now = Math.floor(Date.now() 
     levels,
     sessions,
     stats: jt?.stats ?? {},
+    ...(jt?.stats && Object.keys(jt.stats).length ? { pcStats: { [pcKey(jt.stats)]: jt.stats } } : {}),
     zones,
     items: { ...rts?.items, ...jf?.items },
     ...(jf?.utcOffset !== undefined ? { utcOffset: jf.utcOffset } : {}),
@@ -221,9 +223,145 @@ function eventKey(e: JEvent): string {
   return `${e.t}|${e.k}|${String(extra)}${rank}`;
 }
 
+// ---------------------------------------------------------------- two PCs
+//
+// Saved files live on the PC, so a character played on two PCs has two sets,
+// each holding only that PC's sessions. Road to Sixty times everything by the
+// realm's clock, so its timeline, path and kills from both simply interleave.
+// Journey Tracker keeps running totals instead, which can't be told apart by
+// time: each PC's totals are kept on their own and added up.
+
+// Which PC a Journey Tracker file came from: the moment it first saw the
+// character, which is set once per PC and never changes.
+export function pcKey(stats: Stats): string {
+  return stats.firstSeen ? String(stats.firstSeen) : "?";
+}
+
+// Each PC's Journey Tracker totals in a stored journey (older journeys kept
+// only one set, in stats).
+function pcStatsOf(j: Journey): Record<string, Stats> {
+  if (j.pcStats) return j.pcStats;
+  return Object.keys(j.stats).length ? { [pcKey(j.stats)]: j.stats } : {};
+}
+
+// How many PCs the journey's Journey Tracker totals came from.
+export function pcCount(j: Journey): number {
+  return Object.keys(j.pcStats ?? {}).length;
+}
+
+function addRecords(list: (Record<string, number> | undefined)[]): Record<string, number> | undefined {
+  let out: Record<string, number> | undefined;
+  for (const r of list) {
+    if (!r) continue;
+    out ??= {};
+    for (const [k, v] of Object.entries(r)) if (typeof v === "number") out[k] = (out[k] ?? 0) + v;
+  }
+  return out;
+}
+
+function addOpt(list: (number | undefined)[]): number | undefined {
+  const n = list.filter((x): x is number => typeof x === "number");
+  return n.length ? n.reduce((a, b) => a + b, 0) : undefined;
+}
+
+function maxOpt(list: (number | undefined)[]): number | undefined {
+  const n = list.filter((x): x is number => typeof x === "number");
+  return n.length ? Math.max(...n) : undefined;
+}
+
+function unionBy<T>(lists: (T[] | undefined)[], key: (x: T) => string, time: (x: T) => number): T[] | undefined {
+  if (!lists.some((l) => l)) return undefined;
+  const by = new Map<string, T>();
+  for (const l of lists) for (const x of l ?? []) if (!by.has(key(x))) by.set(key(x), x);
+  return [...by.values()].sort((a, b) => time(a) - time(b));
+}
+
+// Journey Tracker's totals from several PCs as one set. Played time is the
+// server's (the same on every PC), so the largest is right; days played can
+// fall on both PCs, so the largest is the safe count; the rest add up.
+export function combineStats(list: Stats[]): Stats {
+  if (list.length <= 1) return list[0] ?? {};
+  const top = new Map<string, number>();
+  for (const s of list) for (const [name, n] of s.kills?.top ?? []) top.set(name, (top.get(name) ?? 0) + n);
+  const professions: NonNullable<Stats["professions"]> = {};
+  for (const s of list) {
+    for (const [name, p] of Object.entries(s.professions ?? {})) {
+      const had = professions[name] ?? {};
+      professions[name] = strip({ level: maxOpt([had.level, p.level]), time: addOpt([had.time, p.time]) });
+    }
+  }
+  const where: Record<string, Record<string, number>> = {};
+  for (const s of list) for (const [id, squares] of Object.entries(s.where ?? {})) where[id] = addRecords([where[id], squares])!;
+  const firstSeen = list.map((s) => s.firstSeen).filter((x): x is number => !!x);
+  return strip({
+    played: maxOpt(list.map((s) => s.played)),
+    time: addRecords(list.map((s) => s.time)),
+    xp: addRecords(list.map((s) => s.xp)),
+    kills: list.some((s) => s.kills)
+      ? strip({
+          total: addOpt(list.map((s) => s.kills?.total)),
+          byClass: addRecords(list.map((s) => s.kills?.byClass)),
+          byType: addRecords(list.map((s) => s.kills?.byType)),
+          top: [...top].sort((a, b) => b[1] - a[1]).slice(0, 15),
+        })
+      : undefined,
+    quests: addRecords(list.map((s) => s.quests)),
+    money: addRecords(list.map((s) => s.money)),
+    loot: list.some((s) => s.loot)
+      ? strip({ items: addOpt(list.map((s) => s.loot?.items)), byQuality: addRecords(list.map((s) => s.loot?.byQuality)) })
+      : undefined,
+    travel: addRecords(list.map((s) => s.travel)),
+    falls: addRecords(list.map((s) => s.falls)),
+    days: maxOpt(list.map((s) => s.days)),
+    hours: addRecords(list.map((s) => s.hours)),
+    professions: Object.keys(professions).length ? professions : undefined,
+    dungeonsEntered: addRecords(list.map((s) => s.dungeonsEntered)),
+    runs: unionBy(list.map((s) => s.runs), (r) => `${r.start}|${r.name}`, (r) => r.start),
+    deaths: unionBy(list.map((s) => s.deaths), (d) => `${d.t}|${d.killer ?? ""}`, (d) => d.t),
+    where: Object.keys(where).length ? where : undefined,
+    firstSeen: firstSeen.length ? Math.min(...firstSeen) : undefined,
+  });
+}
+
+// Road to Sixty's kill lists ("dt,xp,n;" with dt counted from 0, so the
+// times are the realm's clock, and n the mob's place in names, from 1 as Lua
+// counts) from two PCs as one list.
+export function mergeKills(a: Journey["kills"], b: Journey["kills"]): Journey["kills"] {
+  if (!a || !b) return a ?? b;
+  const names: string[] = [];
+  const nameIndex = new Map<string, number>();
+  const kills = new Map<string, { t: number; xp: string; n: number }>();
+  for (const list of [a, b]) {
+    let t = 0;
+    for (const m of list.d.matchAll(/(-?\d+),(\d+),(\d+);/g)) {
+      t += Number(m[1]);
+      // The same mob can have a different place in each PC's names, so the
+      // name itself is matched.
+      const name = list.names[Number(m[3]) - 1] ?? `#${m[3]}`;
+      const key = `${t}|${m[2]}|${name}`;
+      if (kills.has(key)) continue;
+      let n = nameIndex.get(name);
+      if (n === undefined) {
+        names.push(name.startsWith("#") ? "?" : name);
+        n = names.length;
+        nameIndex.set(name, n);
+      }
+      kills.set(key, { t, xp: m[2], n });
+    }
+  }
+  let t = 0;
+  let d = "";
+  for (const k of [...kills.values()].sort((x, y) => x.t - y.t)) {
+    d += `${k.t - t},${k.xp},${k.n};`;
+    t = k.t;
+  }
+  return { d, names };
+}
+
 // Folds a newly uploaded journey into the stored one. Saved files are
 // cumulative, so the new one usually holds everything; the union keeps what
-// a wiped or reset file no longer has (the beta's files were deleted once).
+// a wiped or reset file no longer has (the beta's files were deleted once),
+// and what was played on another PC.
 export function mergeJourneys(old: Journey | undefined, next: Journey): Journey {
   if (!old) return next;
   const events = new Map<string, JEvent>();
@@ -243,8 +381,16 @@ export function mergeJourneys(old: Journey | undefined, next: Journey): Journey 
     if (!had || s.end >= had.end) sessions.set(s.start, s);
   }
 
-  const kills = !old.kills || (next.kills && next.kills.d.length >= old.kills.d.length) ? next.kills : old.kills;
-  const stats = (next.stats.played ?? 0) >= (old.stats.played ?? 0) ? next.stats : old.stats;
+  const kills = mergeKills(old.kills, next.kills);
+  // A new upload from the same PC replaces that PC's totals; another PC's are kept.
+  const pcStats = { ...pcStatsOf(old) };
+  for (const [pc, st] of Object.entries(pcStatsOf(next))) {
+    const had = pcStats[pc];
+    // The same PC's file is cumulative, so a smaller one was wiped: keep the larger.
+    if (!had || (st.played ?? 0) >= (had.played ?? 0)) pcStats[pc] = st;
+  }
+  const slots = Object.values(pcStats);
+  const stats = slots.length ? combineStats(slots) : (next.stats.played ?? 0) >= (old.stats.played ?? 0) ? next.stats : old.stats;
 
   const sources = next.sources.map((s) => {
     const before = old.sources.find((o) => o.addon === s.addon);
@@ -264,6 +410,7 @@ export function mergeJourneys(old: Journey | undefined, next: Journey): Journey 
     levels: mergeLevels([next.levels, old.levels]),
     sessions: [...sessions.values()].sort((a, b) => a.start - b.start),
     stats,
+    ...(slots.length ? { pcStats } : {}),
     zones: { ...old.zones, ...next.zones },
     items: { ...old.items, ...next.items },
     ...((next.utcOffset ?? old.utcOffset) !== undefined ? { utcOffset: next.utcOffset ?? old.utcOffset } : {}),
@@ -337,6 +484,8 @@ export function sessionsPlayed(sessions: Session[]): number | undefined {
 export interface UploadDelta {
   isNew: boolean; // a character the site hasn't seen
   upToDate: boolean;
+  fillsGap?: boolean; // sessions from before the last upload, played on another PC
+  gapDays?: number[]; // when those sessions were (their starts)
   fromLevel?: number;
   toLevel: number;
   played: number; // seconds in the new sessions
@@ -345,17 +494,46 @@ export interface UploadDelta {
   deaths: number;
 }
 
-export function uploadDelta(before: CharacterSummary | undefined, j: Journey): UploadDelta {
+// The upload's sessions that the stored journey doesn't have: ones that
+// don't overlap any stored session (the same session, saved again, overlaps
+// itself; a character can't be on two PCs at once).
+export function missingSessions(stored: Session[], sessions: Session[]): Session[] {
+  return sessions.filter((s) => !stored.some((o) => s.start <= o.end && o.start <= s.end));
+}
+
+// Pass the stored journey (`old`) to find sessions from another PC that fall
+// before the last upload; without it only what's newer counts.
+export function uploadDelta(before: CharacterSummary | undefined, j: Journey, old?: Journey): UploadDelta {
   const since = before?.lastSeenAt ?? -Infinity;
+  const last = lastSeen(j);
+  const base = {
+    isNew: !before,
+    fromLevel: before?.level,
+    toLevel: j.character.level,
+  };
+  if (old && before && (last === undefined || last <= since)) {
+    const gap = missingSessions(old.sessions, j.sessions).filter((s) => s.end <= since);
+    if (gap.length) {
+      const inGap = (t: number) => gap.some((s) => t >= s.start && t <= s.end);
+      const fresh = j.events.filter((e) => inGap(e.t));
+      return {
+        ...base,
+        upToDate: false,
+        fillsGap: true,
+        gapDays: gap.map((s) => s.start),
+        played: gap.reduce((n, s) => n + Math.max(0, s.end - s.start), 0),
+        quests: fresh.filter((e) => e.k === "qd").length,
+        distance: Math.round(gap.reduce((n, s) => n + distanceByMode(j.segments, s.start, s.end).w, 0)),
+        deaths: fresh.filter((e) => e.k === "die").length,
+      };
+    }
+  }
   const sessions = j.sessions.filter((s) => s.end > since);
   const played = sessions.reduce((n, s) => n + Math.max(0, s.end - Math.max(s.start, since)), 0);
   const fresh = j.events.filter((e) => e.t > since);
-  const last = lastSeen(j);
   return {
-    isNew: !before,
+    ...base,
     upToDate: !!before && (last === undefined || last <= since),
-    fromLevel: before?.level,
-    toLevel: j.character.level,
     played,
     quests: fresh.filter((e) => e.k === "qd").length,
     distance: Math.round(distanceByMode(j.segments, since).w),
