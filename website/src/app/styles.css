@@ -433,3 +433,9 @@ dialog textarea { width: 100%; background: var(--bg); color: var(--text); border
   .addon.compact p { display: none; }
   .addons-strip-sep { display: none; }
 }
+
+/* Upload: characters from before launch, left out behind one line. */
+.skip-note summary { list-style: none; cursor: pointer; }
+.skip-note summary::-webkit-details-marker { display: none; }
+.skip-note .when-closed, .skip-note .when-open { color: var(--accent); }
+.skip-note[open] .when-closed, .skip-note:not([open]) .when-open { display: none; }
