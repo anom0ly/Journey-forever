@@ -159,6 +159,12 @@ export interface BoardEntry {
 
 // ---------------------------------------------------------------- display
 
+/** Splits a copper amount into gold, silver and copper, as the game shows it. */
+export function coins(copper: number): { g: number; s: number; c: number } {
+  const v = Math.max(0, Math.floor(copper));
+  return { g: Math.floor(v / 10000), s: Math.floor((v % 10000) / 100), c: v % 100 };
+}
+
 export function formatValue(fmt: Fmt, v: number): string {
   switch (fmt) {
     case "duration": {
@@ -169,10 +175,14 @@ export function formatValue(fmt: Fmt, v: number): string {
     }
     case "date":
       return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(new Date(v * 1000));
-    case "gold":
-      return `${Math.floor(v / 10000).toLocaleString("en-US")}g`;
-    case "goldHour":
-      return `${Math.floor(v / 10000).toLocaleString("en-US")}g/h`;
+    case "gold": {
+      const m = coins(v);
+      return `${m.g.toLocaleString("en-US")}g ${m.s}s ${m.c}c`;
+    }
+    case "goldHour": {
+      const m = coins(v);
+      return `${m.g.toLocaleString("en-US")}g ${m.s}s ${m.c}c/h`;
+    }
     case "xp":
       return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v));
     case "distance":

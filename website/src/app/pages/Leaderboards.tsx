@@ -3,7 +3,7 @@
 // card opens the full board.
 
 import { useEffect, useState } from "preact/hooks";
-import { BOARD_BY_ID, boardTitle, CARDS, formatValue, GROUPS, type BoardDef, type GroupId } from "../../lib/boardDefs";
+import { BOARD_BY_ID, boardTitle, CARDS, coins, formatValue, GROUPS, type BoardDef, type GroupId } from "../../lib/boardDefs";
 import { className as classLabel } from "../../lib/wow";
 import { api, type BoardFilters, type BoardPage, type BoardRow } from "../api";
 import { classColor, describeCharacter, plural } from "../format";
@@ -218,6 +218,21 @@ function BoardCard({ title, boards, f, index }: { title: string; boards: { id: s
   );
 }
 
+// Gold boards show gold, silver and copper with in-game coin colours; a zero
+// part stays (dimmed) so amounts line up down the list.
+function BoardValue({ def, value }: { def: BoardDef; value: number }) {
+  if (def.fmt !== "gold" && def.fmt !== "goldHour") return <>{formatValue(def.fmt, value)}</>;
+  const m = coins(value);
+  return (
+    <span class="lb-money" aria-label={formatValue(def.fmt, value)}>
+      <span class={`g${m.g ? "" : " zero"}`} aria-hidden="true"><b>{m.g.toLocaleString("en-US")}</b><i /></span>
+      <span class={`s${m.s ? "" : " zero"}`} aria-hidden="true"><b>{m.s}</b><i /></span>
+      <span class={`c${m.c ? "" : " zero"}`} aria-hidden="true"><b>{m.c}</b><i /></span>
+      {def.fmt === "goldHour" && <span class="per" aria-hidden="true">/h</span>}
+    </span>
+  );
+}
+
 function RankLi({ r, def }: { r: BoardRow; def: BoardDef }) {
   return (
     <li class={r.mine ? "mine" : r.friend ? "friend" : undefined} title={r.friend ? "Your Battle.net friend" : undefined}>
@@ -228,7 +243,7 @@ function RankLi({ r, def }: { r: BoardRow; def: BoardDef }) {
         {r.mine && <span class="lb-you">You</span>}
         {r.overall !== undefined && <span class="lb-overall">#{r.overall} overall</span>}
       </a>
-      <span class="val">{formatValue(def.fmt, r.value)}</span>
+      <span class="val"><BoardValue def={def} value={r.value} /></span>
     </li>
   );
 }
@@ -343,7 +358,7 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
           </div>
         </div>
       </td>
-      <td class="lb-val">{formatValue(def.fmt, r.value)}</td>
+      <td class="lb-val"><BoardValue def={def} value={r.value} /></td>
       <td class="lb-actions">
         {!r.mine && (
           <a class="small" href={mineSlug ? `/compare/${encodeURIComponent(mineSlug)}/${encodeURIComponent(r.slug)}` : `/compare/${encodeURIComponent(r.slug)}`}>

@@ -391,6 +391,16 @@ label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; 
 .lb-rank .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); text-decoration: none; }
 .lb-rank .nm:hover { color: var(--accent-hi); }
 .lb-rank .val { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.lb-money { --coin-g: #f2c14e; --coin-s: #c9d1d9; --coin-c: #d0844a; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.lb-money > span { display: inline-flex; align-items: center; gap: 3px; }
+.lb-money b { font-weight: 600; }
+.lb-money .s b, .lb-money .c b { display: inline-block; min-width: 2ch; text-align: right; }
+.lb-money i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+.lb-money .g i { background: var(--coin-g); }
+.lb-money .s i { background: var(--coin-s); }
+.lb-money .c i { background: var(--coin-c); }
+.lb-money .zero { opacity: 0.45; }
+.lb-money .per { color: var(--muted); font-weight: 500; font-size: 12px; margin-left: -2px; }
 .lb-rank li.lb-gap { display: block; color: var(--muted); font-size: 12px; padding: 0 8px 0 46px; }
 .lb-dot { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-family: var(--serif); font-weight: 700; font-size: 11px; flex: none; }
 .lb-dot.lg { width: 32px; height: 32px; font-size: 14px; }

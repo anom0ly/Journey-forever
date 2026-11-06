@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_BY_ID, BOARDS, CARDS, fixedParams, formatValue, GROUPS } from "../src/lib/boardDefs";
+import { BOARD_BY_ID, BOARDS, CARDS, coins, fixedParams, formatValue, GROUPS } from "../src/lib/boardDefs";
 import { boardEntries, integrityChecks } from "../src/lib/boards";
 import type { Journey } from "../src/lib/journey";
 import { readUpload } from "../src/lib/parse/upload";
@@ -21,7 +21,7 @@ describe("board catalogue", () => {
   it("formats values", () => {
     expect(formatValue("duration", 3 * 86400 + 5 * 3600 + 7 * 60)).toBe("3d 5h 07m");
     expect(formatValue("duration", 125)).toBe("2m 05s");
-    expect(formatValue("gold", 2125000)).toBe("212g");
+    expect(formatValue("gold", 2125000)).toBe("212g 50s 0c");
     expect(formatValue("percent", 61.25)).toBe("61.3%");
     expect(formatValue("deaths", 1)).toBe("1 death");
   });
@@ -79,5 +79,14 @@ describe("automatic checks", () => {
     [l3.t, l4.t] = [l4.t, l3.t];
     j.levels = j.levels.map((l) => ({ ...l, t: undefined }));
     expect(integrityChecks(j, undefined, NOW).some((c) => c.includes("recorded before"))).toBe(true);
+  });
+});
+
+describe("gold board values", () => {
+  it("splits copper into gold, silver and copper", () => {
+    expect(coins(12843712)).toEqual({ g: 1284, s: 37, c: 12 });
+    expect(coins(9407)).toEqual({ g: 0, s: 94, c: 7 });
+    expect(formatValue("gold", 4129903)).toBe("412g 99s 3c");
+    expect(formatValue("goldHour", 381560)).toBe("38g 15s 60c/h");
   });
 });
