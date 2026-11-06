@@ -7,7 +7,7 @@ import { returnPath } from "../src/worker/auth";
 import type { Env } from "../src/worker/env";
 import { sha256 } from "../src/worker/http";
 import worker from "../src/worker/index";
-import { keyAllows } from "../src/worker/uploader";
+import { githubBuilds, keyAllows } from "../src/worker/uploader";
 
 // D1, enough of it for these routes, over Node's SQLite with every migration.
 function fakeD1(): D1Database {
@@ -298,5 +298,19 @@ describe("uploader Beta switches", () => {
     expect((await call("/api/uploader/download")).body).toEqual({ beta: false, connect: true, version: null });
     await env.DB.prepare("INSERT INTO uploader_releases (version, sha256, size, approved_at, approved_by) VALUES ('1.3.0', ?, 116000000, 1, 'admin')").bind("b".repeat(64)).run();
     expect((await call("/api/uploader/download")).body).toEqual({ beta: false, connect: true, version: "1.3.0", sha256: "b".repeat(64), size: 116000000 });
+  });
+});
+
+describe("GitHub release list", () => {
+  it("sends the site's token, and says what to do when GitHub limits the shared address", async () => {
+    const seen: (string | null)[] = [];
+    const get = (async (_u: string, init: RequestInit) => {
+      seen.push(new Headers(init.headers).get("authorization"));
+      return Response.json([]);
+    }) as unknown as typeof fetch;
+    await githubBuilds("tok", get);
+    expect(seen).toEqual(["Bearer tok"]);
+    const limited = (async () => new Response("rate limited", { status: 403 })) as unknown as typeof fetch;
+    await expect(githubBuilds(undefined, limited)).rejects.toThrow(/GITHUB_TOKEN/);
   });
 });

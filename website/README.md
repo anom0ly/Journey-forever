@@ -90,7 +90,12 @@ is public.
 6. Leaderboard review page: `npx wrangler secret put ADMIN_BNET_IDS` with your
    Battle.net account ID (the `bnet_id` column of your row in `users`). Only
    those accounts see Review; everyone else gets "Not found".
-7. `npm run deploy`
+7. Uploader build approvals: make a fine-grained GitHub token at
+   https://github.com/settings/personal-access-tokens/new (Repository access:
+   Public repositories, no extra permissions), then
+   `npx wrangler secret put GITHUB_TOKEN`. Without it GitHub often refuses
+   the Uploaders page's release list from Workers' shared addresses.
+8. `npm run deploy`
 
 Dev sign-in (`AUTH_MODE=dev`) only works on localhost, so it can't be switched
 on by accident in production.
