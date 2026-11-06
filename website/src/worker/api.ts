@@ -12,7 +12,7 @@ import { board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, rank
 import type { Env, User } from "./env";
 import { summaryProblem } from "../lib/checks";
 import { HttpError, json, now, readBody, sha256 } from "./http";
-import { claimKey, handleUploader, handleUploaderHealth } from "./uploader";
+import { claimKey, handleUploader, handleUploaderHealth, uploaderDownload } from "./uploader";
 
 const JOURNEY_LIMIT = 30e6;
 const IMAGE_LIMIT = 25e6;
@@ -263,6 +263,9 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
 
   // The Windows uploader swapping its connect code for a key: no sign-in.
   if (parts[0] === "uploader" && parts[1] === "claim" && parts.length === 2 && m === "POST") return claimKey(env, await req.json().catch(() => null));
+
+  // The /uploader download page: which build to offer. No sign-in.
+  if (parts[0] === "uploader" && parts[1] === "download" && parts.length === 2 && m === "GET") return uploaderDownload(env);
 
   const user = await requireUser(req, env);
 

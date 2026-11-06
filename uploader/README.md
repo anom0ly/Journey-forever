@@ -2,12 +2,15 @@
 
 A small Windows program that uploads your journey and new screenshots to
 Journey Forever each time you log out of WoW Forever, and keeps the Journey
-Forever addon installed and up to date. **Admin only for now**: only accounts
-in the site's `ADMIN_BNET_IDS` can connect a PC.
+Forever addon installed and up to date. Admins can always use it; everyone
+else can while the **Beta** switch on the admin Uploaders page is on (up to
+3 PCs per account). The same page can stop new PCs connecting and set a
+minimum version (older uploaders can then only update themselves).
 
 ## Using it
 
-1. On the site, open **Account** and click **Download for Windows**.
+1. On the site, open **/uploader** (linked from Upload, Account and the home
+   page) and click **Download for Windows**.
 2. Double-click `JourneyForeverUploader.exe`. Windows may say it "protected
    your PC" (the file isn't code-signed): click **More info**, then **Run anyway**.
 3. It copies itself to `%LOCALAPPDATA%\JourneyForever\`, adds itself to

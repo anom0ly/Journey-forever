@@ -7,6 +7,9 @@ export const UPLOADER_VERSION = "1.3.0";
 export const UPLOADER_EXE = "JourneyForeverUploader.exe";
 export const UPLOADER_REPO = "anom0ly/Journey-forever";
 
+// Accounts other than admins can connect this many PCs.
+export const BETA_MAX_PCS = 3;
+
 export function uploaderDownloadUrl(version = UPLOADER_VERSION): string {
   return `https://github.com/${UPLOADER_REPO}/releases/download/uploader-v${version}/${UPLOADER_EXE}`;
 }

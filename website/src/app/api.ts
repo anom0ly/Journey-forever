@@ -3,7 +3,14 @@ import type { CharacterSummary, Journey } from "../lib/journey";
 import type { UploaderSettings } from "../lib/uploader";
 
 export interface Me {
-  user: { id: string; battletag: string | null; lastUploadAt: number | null; isAdmin?: boolean } | null;
+  user: {
+    id: string;
+    battletag: string | null;
+    lastUploadAt: number | null;
+    isAdmin?: boolean;
+    // The Windows uploader: open to this account (admins, or everyone in Beta), and how many PCs are connected.
+    uploader?: { allowed: boolean; beta: boolean; pcs: number };
+  } | null;
   reviewCount?: number;
   authMode: "battlenet" | "dev" | "unconfigured";
 }
@@ -167,6 +174,22 @@ export interface UploaderBuild {
   approvedAt: number | null;
   changed: boolean; // approved, but GitHub's file is no longer the one approved
 }
+// The site switches for the uploader (admin Uploaders page).
+export interface UploaderSwitches {
+  beta: boolean;
+  connect: boolean;
+  minVersion: string | null;
+}
+
+// What the /uploader page offers: the newest approved build.
+export interface UploaderDownload {
+  beta: boolean;
+  connect: boolean;
+  version: string | null;
+  sha256?: string;
+  size?: number;
+}
+
 export interface UploaderBuilds {
   latest: string | null;
   error?: string;
@@ -288,6 +311,10 @@ export const api = {
   uploaderBuilds: () => call<UploaderBuilds>("/api/admin/uploader/releases"),
   approveUploader: (version: string) => call<UploaderBuilds>(`/api/admin/uploader/releases/${encodeURIComponent(version)}`, { method: "POST" }),
   withdrawUploader: (version: string) => call<UploaderBuilds>(`/api/admin/uploader/releases/${encodeURIComponent(version)}`, { method: "DELETE" }),
+  uploaderSwitches: () => call<UploaderSwitches>("/api/admin/uploader/switches"),
+  setUploaderSwitches: (s: Partial<UploaderSwitches>) =>
+    call<UploaderSwitches>("/api/admin/uploader/switches", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(s) }),
+  uploaderDownload: () => call<UploaderDownload>("/api/uploader/download"),
   uploaderProblems: (id: string) => call<{ errors: UploaderProblem[] }>(`/api/admin/uploader/${encodeURIComponent(id)}/errors`),
   disconnectPc: (id: string) => call<{ pcs: UploaderPc[] }>(`/api/uploader/pcs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   connectPc: (name: string, challenge: string) =>

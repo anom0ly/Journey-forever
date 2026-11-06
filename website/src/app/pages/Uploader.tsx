@@ -1,9 +1,9 @@
 // The Windows auto-uploader on the site: the Account page card (download,
 // connected PCs, switches) and the /connect page the uploader opens on its
-// first run. Admins only for now.
+// first run. Open to admins, and to everyone while the Beta switch is on.
 
 import { useEffect, useState } from "preact/hooks";
-import { connectPort, UPLOADER_SETTINGS_DEFAULT, UPLOADER_VERSION, uploaderDownloadUrl, type UploaderSettings } from "../../lib/uploader";
+import { BETA_MAX_PCS, connectPort, UPLOADER_SETTINGS_DEFAULT, UPLOADER_VERSION, type UploaderSettings } from "../../lib/uploader";
 import { api, type UploaderPc } from "../api";
 import { dateTime } from "../format";
 import { useMe } from "../me";
@@ -43,10 +43,12 @@ export function UploaderSection() {
   const [settings, setSettings] = useState<UploaderSettings>(UPLOADER_SETTINGS_DEFAULT);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const allowed = !!me?.user?.uploader?.allowed;
   const admin = !!me?.user?.isAdmin;
+  const beta = !!me?.user?.uploader?.beta;
 
   useEffect(() => {
-    if (!admin) return;
+    if (!allowed) return;
     api.uploader().then(
       (r) => {
         setPcs(r.pcs);
@@ -54,9 +56,9 @@ export function UploaderSection() {
       },
       (e) => setError((e as Error).message),
     );
-  }, [admin]);
+  }, [allowed]);
 
-  if (!admin) return null;
+  if (!allowed) return null;
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -75,12 +77,12 @@ export function UploaderSection() {
       <div class="row between">
         <div class="stack" style={{ gap: "4px", flex: "1 1 260px" }}>
           <h2>
-            Auto-upload from your PC <span class="pill gold">Admin</span>
+            Auto-upload from your PC {beta ? <span class="pill beta">Beta</span> : <span class="pill gold">Admin</span>}
           </h2>
           <span class="small muted">Uploads your journey and new screenshots each time you log out of WoW. Windows 10 and 11.</span>
         </div>
-        <a class="btn primary" href={uploaderDownloadUrl()}>
-          Download for Windows
+        <a class="btn primary" href="/uploader">
+          Get the uploader
         </a>
       </div>
       {pcs && pcs.length > 0 && (
@@ -110,8 +112,7 @@ export function UploaderSection() {
       )}
       {pcs && pcs.length === 0 && (
         <p class="small muted">
-          No PCs connected yet. Download the uploader, run it, and click Allow when it opens this site. Windows may say it "protected your
-          PC" the first time: click More info, then Run anyway.
+          No PCs connected yet. <a href="/uploader">Get the uploader</a>, run it, and click Allow when it opens this site.
         </p>
       )}
       <div class="stack" style={{ gap: "0" }}>
@@ -135,6 +136,11 @@ export function UploaderSection() {
         ))}
       </div>
       {error && <div class="notice err">{error}</div>}
+      {beta && !admin && (
+        <div class="notice warn small">
+          Beta: up to {BETA_MAX_PCS} PCs per account. Something not right? Error reports are on by default, so problems reach us.
+        </div>
+      )}
       <p class="tiny muted">
         Version {UPLOADER_VERSION}. The uploader reads your saved files on your PC, like the Upload page, so the raw files never leave it.
         Disconnect stops a PC's uploads at once. To stop the uploader itself, open its window from the tray icon and choose Remove from this PC.
@@ -183,7 +189,7 @@ export function ConnectPage() {
         </div>
       </>
     );
-  } else if (!me.user.isAdmin) {
+  } else if (!me.user.uploader?.allowed) {
     body = <p class="lead">Auto-upload isn't available for your account yet. Keep using the Upload page for now.</p>;
   } else if (cancelled) {
     body = <p class="lead">Not connected. You can close this tab.</p>;

@@ -63,8 +63,8 @@ async function setup() {
     const res = await worker.fetch(new Request(ORIGIN + path, { method: o.method ?? "GET", headers, body: o.body === undefined ? undefined : JSON.stringify(o.body) }), env);
     return { status: res.status, body: (await res.json().catch(() => null)) as Record<string, unknown> };
   };
-  const connect = async (verifier = "a-secret-only-the-pc-knows") => {
-    const r = await call("/api/uploader/connect", { method: "POST", session: "admin", body: { name: "DESKTOP-JUSTIN", challenge: await sha256(verifier) } });
+  const connect = async (verifier = "a-secret-only-the-pc-knows", session = "admin") => {
+    const r = await call("/api/uploader/connect", { method: "POST", session, body: { name: "DESKTOP-JUSTIN", challenge: await sha256(verifier) } });
     expect(r.status).toBe(200);
     return r.body.code as string;
   };
@@ -229,5 +229,74 @@ describe("auto-uploader keys", () => {
     expect(connectPort("47213")).toBe(47213);
     expect(connectPort("80")).toBeUndefined();
     expect(connectPort("47213.5")).toBeUndefined();
+  });
+});
+
+describe("uploader Beta switches", () => {
+  const claim = async (call: Awaited<ReturnType<typeof setup>>["call"], code: string) =>
+    (await call("/api/uploader/claim", { method: "POST", body: { code, verifier: "a-secret-only-the-pc-knows" } })).body as { key: string };
+
+  it("only admins can flip the switches", async () => {
+    const { call } = await setup();
+    expect((await call("/api/admin/uploader/switches", { session: "admin" })).body).toEqual({ beta: false, connect: true, minVersion: null });
+    expect((await call("/api/admin/uploader/switches", { session: "player" })).status).toBe(404);
+    expect((await call("/api/admin/uploader/switches", { method: "PATCH", session: "player", body: { beta: true } })).status).toBe(404);
+    expect((await call("/api/admin/uploader/switches", { method: "PATCH", session: "admin", body: { beta: true } })).body).toMatchObject({ beta: true });
+  });
+
+  it("opens the uploader to every account in Beta, up to 3 PCs each", async () => {
+    const { call, connect } = await setup();
+    expect(((await call("/api/me", { session: "player" })).body.user as { uploader: unknown }).uploader).toEqual({ allowed: false, beta: false, pcs: 0 });
+    await call("/api/admin/uploader/switches", { method: "PATCH", session: "admin", body: { beta: true } });
+    const { key } = await claim(call, await connect(undefined, "player"));
+    expect((await call("/api/characters", { key })).status).toBe(200);
+    expect(((await call("/api/me", { session: "player" })).body.user as { uploader: unknown }).uploader).toEqual({ allowed: true, beta: true, pcs: 1 });
+    await claim(call, await connect(undefined, "player"));
+    await claim(call, await connect(undefined, "player"));
+    const fourth = await call("/api/uploader/connect", { method: "POST", session: "player", body: { challenge: "0".repeat(64) } });
+    expect(fourth.status).toBe(413);
+    // Closing the Beta stops the player's PCs too.
+    await call("/api/admin/uploader/switches", { method: "PATCH", session: "admin", body: { beta: false } });
+    expect((await call("/api/characters", { key })).status).toBe(404);
+  });
+
+  it("can stop new PCs connecting while connected ones keep working", async () => {
+    const { call, connect } = await setup();
+    await call("/api/admin/uploader/switches", { method: "PATCH", session: "admin", body: { beta: true } });
+    const { key } = await claim(call, await connect(undefined, "player"));
+    const pending = await connect(undefined, "player");
+    await call("/api/admin/uploader/switches", { method: "PATCH", session: "admin", body: { connect: false } });
+    expect((await call("/api/uploader/connect", { method: "POST", session: "player", body: { challenge: "0".repeat(64) } })).status).toBe(403);
+    // A code made just before the switch can't be claimed either.
+    expect((await call("/api/uploader/claim", { method: "POST", body: { code: pending, verifier: "a-secret-only-the-pc-knows" } })).status).toBe(403);
+    expect((await call("/api/characters", { key })).status).toBe(200);
+    // Admins can still connect, to test.
+    await connect();
+  });
+
+  it("lets an outdated uploader only update itself", async () => {
+    const { env, call, connect } = await setup();
+    const { key } = await claim(call, await connect());
+    await call("/api/uploader/status", { key, method: "POST", body: { ok: true, appVersion: "1.2.0" } });
+    // The minimum has to be an approved build.
+    expect((await call("/api/admin/uploader/switches", { method: "PATCH", session: "admin", body: { minVersion: "1.3.0" } })).status).toBe(400);
+    await env.DB.prepare("INSERT INTO uploader_releases (version, sha256, size, approved_at, approved_by) VALUES ('1.3.0', ?, 1000, 1, 'admin')").bind("a".repeat(64)).run();
+    expect((await call("/api/admin/uploader/switches", { method: "PATCH", session: "admin", body: { minVersion: "1.3.0" } })).body).toMatchObject({ minVersion: "1.3.0" });
+    expect((await call("/api/characters", { key })).status).toBe(426);
+    expect((await call("/api/uploader/latest", { key })).body).toMatchObject({ version: "1.3.0" });
+    expect((await call("/api/uploader/status", { key, method: "POST", body: { ok: true, appVersion: "1.3.0" } })).status).toBe(200);
+    expect((await call("/api/characters", { key })).status).toBe(200);
+    // Withdrawing that build clears the minimum.
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json([]));
+    await call("/api/admin/uploader/releases/1.3.0", { method: "DELETE", session: "admin" });
+    expect((await call("/api/admin/uploader/switches", { session: "admin" })).body).toMatchObject({ minVersion: null });
+    vi.restoreAllMocks();
+  });
+
+  it("tells the download page what to offer, without sign-in", async () => {
+    const { env, call } = await setup();
+    expect((await call("/api/uploader/download")).body).toEqual({ beta: false, connect: true, version: null });
+    await env.DB.prepare("INSERT INTO uploader_releases (version, sha256, size, approved_at, approved_by) VALUES ('1.3.0', ?, 116000000, 1, 'admin')").bind("b".repeat(64)).run();
+    expect((await call("/api/uploader/download")).body).toEqual({ beta: false, connect: true, version: "1.3.0", sha256: "b".repeat(64), size: 116000000 });
   });
 });

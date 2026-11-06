@@ -1,12 +1,12 @@
 import { handleApi, handleMedia } from "./api";
 import { authMode, currentUser, handleAuth } from "./auth";
 import { isAdmin, reviewCount } from "./boards";
-import type { Env } from "./env";
+import type { Env, User } from "./env";
 import { checkSameOrigin, HttpError, json, withSecurityHeaders } from "./http";
 import { checkRate } from "./limits";
 import { handleMapTile } from "./maps";
 import { handleErrorReport } from "./errors";
-import { bearerKey, keyAllows, keyUser } from "./uploader";
+import { bearerKey, canUseUploader, keyAllows, keyUser, outdatedBlocked, uploaderSwitches } from "./uploader";
 
 // What the error log says about a request that failed.
 interface Seen {
@@ -15,14 +15,19 @@ interface Seen {
 
 async function route(req: Request, env: Env, url: URL, seen: Seen): Promise<Response> {
   checkSameOrigin(req, url);
-  // The Windows uploader signs in with its key, which only works for
-  // admins (for now) and only for uploading (uploader.ts).
+  // The Windows uploader signs in with its key, which only works while the
+  // uploader is open to the account (admins, or everyone in Beta) and only
+  // for uploading (uploader.ts).
   const key = bearerKey(req);
   if (key) {
     const owner = await keyUser(env, key);
     if (!owner) throw new HttpError(401, "This PC was disconnected. Connect it again from the uploader.");
-    if (!isAdmin(env, owner)) throw new HttpError(404, "Not found");
+    const sw = await uploaderSwitches(env);
+    if (!canUseUploader(env, owner, sw)) throw new HttpError(404, "Not found");
     if (!keyAllows(req.method, url.pathname)) throw new HttpError(403, "The uploader can't do that");
+    if (outdatedBlocked(sw, owner.app_version, req.method, url.pathname)) {
+      throw new HttpError(426, "This uploader is out of date. Choose Check for updates in its tray menu, or download it again from the site.");
+    }
   }
   // Changes are limited per account when signed in, so look the account up
   // for those (reads are limited by IP only).
@@ -33,8 +38,9 @@ async function route(req: Request, env: Env, url: URL, seen: Seen): Promise<Resp
   if (url.pathname === "/api/me") {
     const me = await currentUser(req, env);
     const admin = isAdmin(env, me);
+    const uploader = me ? await uploaderFor(env, me) : undefined;
     return json({
-      user: me && { id: me.id, battletag: me.battletag, lastUploadAt: me.last_upload_at, isAdmin: admin },
+      user: me && { id: me.id, battletag: me.battletag, lastUploadAt: me.last_upload_at, isAdmin: admin, uploader },
       reviewCount: admin ? await reviewCount(env) : undefined,
       authMode: authMode(env, url),
     });
@@ -70,3 +76,12 @@ export default {
     return own ? withSecurityHeaders(res) : res;
   },
 } satisfies ExportedHandler<Env>;
+
+// Whether this account can use the Windows uploader, and how many PCs it has
+// connected (the site stops offering the download once there's one).
+async function uploaderFor(env: Env, user: User): Promise<{ allowed: boolean; beta: boolean; pcs: number }> {
+  const sw = await uploaderSwitches(env);
+  const allowed = canUseUploader(env, user, sw);
+  const n = allowed ? await env.DB.prepare("SELECT COUNT(*) AS n FROM upload_keys WHERE user_id = ?").bind(user.id).first<{ n: number }>() : null;
+  return { allowed, beta: sw.beta, pcs: n?.n ?? 0 };
+}

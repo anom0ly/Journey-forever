@@ -14,6 +14,7 @@ import { setFriends } from "../friends";
 import { prepareImage, previewUrl, sha256Hex } from "../images";
 import { reportUpload } from "../report";
 import { navigate } from "../router";
+import { UploaderNudge, UploaderPromo } from "./GetUploader";
 
 const ADDON_NAMES: Record<string, string> = { rts: "Road to Sixty", jt: "Journey Tracker", jf: "Journey Forever" };
 const MISSING_MEANS: Record<string, string> = {
@@ -255,6 +256,7 @@ export function UploadPage() {
           screenshots from this session.
         </p>
       </div>
+      <UploaderPromo />
 
       <div
         class={`dropzone${over ? " over" : ""}`}
@@ -326,6 +328,7 @@ export function UploadPage() {
           {done} <a href="/characters">See your characters</a>.
         </div>
       )}
+      {done && <UploaderNudge />}
 
       {preview && (
         <section class="stack-lg">

@@ -1,5 +1,8 @@
 // Install links for the addons the site reads. Road to Sixty is the only
 // one the site needs; the other two add detail, so they're shown smaller.
+
+import { UploaderStripLink } from "./pages/GetUploader";
+
 const ADDONS = {
   rts: { name: "Road to Sixty", url: "https://www.curseforge.com/wow/addons/road-to-sixty" },
   jf: { name: "Journey Forever", url: "https://www.curseforge.com/wow/addons/journey-forever" },
@@ -81,6 +84,7 @@ export function AddonsStrip() {
         </span>
         <Out href={ADDONS.jt.url}>{ADDONS.jt.name}</Out>
       </span>
+      <UploaderStripLink />
     </div>
   );
 }
