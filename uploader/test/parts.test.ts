@@ -215,9 +215,9 @@ describe("the status page and notifications", () => {
     expect(await (await h("/host/state?visible=1")).json()).toMatchObject({ dot: "live", paused: false, show: 0, quit: false });
     expect(win.visible).toBe(true);
     calls.length = 0;
-    for (const cmd of ["sync", "pause", "journey"]) expect((await h("/host/cmd", { method: "POST", body: JSON.stringify({ cmd }) })).status).toBe(200);
+    for (const cmd of ["sync", "pause", "journey", "check-update"]) expect((await h("/host/cmd", { method: "POST", body: JSON.stringify({ cmd }) })).status).toBe(200);
     expect((await h("/host/cmd", { method: "POST", body: JSON.stringify({ cmd: "rm -rf" }) })).status).toBe(400);
-    expect(calls).toEqual(["sync", "pause", "journey"]);
+    expect(calls).toEqual(["sync", "pause", "journey", "check-update"]);
     // Double-click while running: the window opens (the next poll sees show go up).
     await h("/show", { method: "POST" });
     expect(((await (await h("/host/state")).json()) as { show: number }).show).toBe(1);

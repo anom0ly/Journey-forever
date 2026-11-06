@@ -69,6 +69,7 @@ export function handler(h: ServerHooks, port: () => number) {
         else if (cmd === "pause") u.setPaused(true);
         else if (cmd === "resume") u.setPaused(false);
         else if (cmd === "journey") await h.openJourney();
+        else if (cmd === "check-update") u.checkForUpdates();
         else if (cmd === "quit") setTimeout(() => h.quit(), 100);
         else if (cmd === "nowebview") {
           h.window.noWebView = true;
