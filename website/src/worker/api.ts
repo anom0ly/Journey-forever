@@ -12,7 +12,7 @@ import { board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, rank
 import type { Env, User } from "./env";
 import { summaryProblem } from "../lib/checks";
 import { HttpError, json, now, readBody, sha256 } from "./http";
-import { claimKey, handleUploader } from "./uploader";
+import { claimKey, handleUploader, handleUploaderHealth } from "./uploader";
 
 const JOURNEY_LIMIT = 30e6;
 const IMAGE_LIMIT = 25e6;
@@ -268,6 +268,8 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
 
   if (parts[0] === "uploader") return handleUploader(req, env, user, (user as User & { key_id?: string }).key_id, parts);
 
+  // The Uploader health page (admins only, like review).
+  if (parts[0] === "admin" && parts[1] === "uploader") return handleUploaderHealth(req, env, user, parts);
   // The review page: only for the accounts in ADMIN_BNET_IDS. Anyone else
   // gets the same "Not found" as a page that doesn't exist.
   if (parts[0] === "review") {
@@ -304,6 +306,7 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         env.DB.prepare("DELETE FROM flags WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM ignored_reporters WHERE reporter_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM friend_tags WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM upload_errors WHERE key_id IN (SELECT id FROM upload_keys WHERE user_id = ?)").bind(user.id),
         env.DB.prepare("DELETE FROM upload_keys WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM upload_codes WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM screenshots WHERE user_id = ?").bind(user.id),

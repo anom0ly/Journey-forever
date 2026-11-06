@@ -29,7 +29,7 @@ async function route(req: Request, env: Env, url: URL, seen: Seen): Promise<Resp
   const user = req.method === "GET" || req.method === "HEAD" ? null : await currentUser(req, env);
   seen.userId = user?.id ?? null;
   await checkRate(env, req, seen.userId);
-  if (url.pathname === "/api/errors" && req.method === "POST") return await handleErrorReport(req, seen.userId);
+  if (url.pathname === "/api/errors" && req.method === "POST") return await handleErrorReport(req, env, user);
   if (url.pathname === "/api/me") {
     const me = await currentUser(req, env);
     const admin = isAdmin(env, me);

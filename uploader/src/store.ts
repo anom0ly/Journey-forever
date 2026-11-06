@@ -19,6 +19,7 @@ export interface Config {
   forever?: string; // ...\World of Warcraft\_forever_
   paused?: boolean;
   startup?: boolean; // start with Windows (undefined = yes)
+  pcId?: string; // random, for error reports (report.ts)
 }
 
 export interface LogLine {
@@ -37,6 +38,7 @@ export interface State {
   addonVersion?: string;
   updateCheckedAt?: number;
   shortcutVersion?: string; // the Start menu entry was made by this version
+  reported?: Record<string, number>; // error reports sent in the last day (report.ts)
   log: LogLine[];
 }
 

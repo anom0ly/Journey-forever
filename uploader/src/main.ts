@@ -14,6 +14,7 @@ import { basename, join } from "node:path";
 import { UPLOADER_EXE, UPLOADER_VERSION } from "../../website/src/lib/uploader";
 import { Uploader } from "./app";
 import { prepareHost, startHost } from "./host";
+import { Reporter } from "./report";
 import { removeOldExe } from "./update";
 import { WindowControl } from "./window";
 import { APP_NAME, handler } from "./server";
@@ -220,6 +221,8 @@ async function main(): Promise<void> {
 
   await uploader.loadKey();
   uploader.start();
+  // Crashed last time? Say so now (once the key is loaded, so it counts for this PC).
+  void uploader.reporter.sendCrash();
 
   if (!uploader.isConnected) {
     if (background) await notify("Journey Forever uploader isn't connected", "Click its tray icon to connect this PC.");
@@ -232,11 +235,18 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((e) => {
+// Anything that stops the uploader is written down and reported on the
+// next start (report.ts).
+function crashed(e: unknown): never {
   try {
-    new Store(SITE).debug(`Crashed: ${(e as Error).stack ?? String(e)}`);
+    const store = new Store(SITE);
+    store.debug(`Crashed: ${(e as Error)?.stack ?? String(e)}`);
+    Reporter.saveCrash(store.dir, e);
   } catch {
     // nowhere to write
   }
   process.exit(1);
-});
+}
+process.on("uncaughtException", crashed);
+process.on("unhandledRejection", crashed);
+main().catch(crashed);

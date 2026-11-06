@@ -6,6 +6,7 @@ import { UPLOADER_SETTINGS_DEFAULT, UPLOADER_VERSION, type UploaderSettings } fr
 import { installedVersion, keepAddonCurrent } from "./addon";
 import { claimKey, SiteClient, SiteError } from "./client";
 import { prepareImage, shotId } from "./images";
+import { isSecurity, Reporter, windowsPrivate, type Problem } from "./report";
 import type { Store } from "./store";
 import { sync, type ShotSource, type SyncResult } from "./sync";
 import { downloadUploader, latestUploader, swapExe } from "./update";
@@ -76,6 +77,7 @@ export interface Status {
   addonNote?: string;
   error?: string;
   startup: boolean;
+  reports: boolean; // error reports are sent (Account page switch)
   update?: { note: string; auto: boolean; canCheck: boolean };
   log: { t: number; text: string; ok: boolean }[];
 }
@@ -99,8 +101,20 @@ export class Uploader {
   private updateNote: string | undefined;
   private checkUpdateNow = false;
   private readonly startedAt = Date.now();
+  readonly reporter: Reporter;
 
-  constructor(readonly store: Store, readonly port: () => number, readonly updater?: SelfUpdater) {}
+  constructor(readonly store: Store, readonly port: () => number, readonly updater?: SelfUpdater) {
+    this.reporter = new Reporter(store, {
+      key: () => this.key,
+      enabled: () => this.settings.reports !== false,
+      private: () => ({ ...windowsPrivate(), account: store.config.account, forever: store.config.forever, characters: this.characters }),
+    });
+  }
+
+  // Sent in the background; the reporter never throws.
+  report(p: Problem): void {
+    void this.reporter.report(p);
+  }
 
   get client(): SiteClient | undefined {
     return this.key ? new SiteClient(this.store.config.site, this.key) : undefined;
@@ -148,6 +162,7 @@ export class Uploader {
       addonNote: this.addonNote,
       error: this.error,
       startup: c.startup !== false,
+      reports: this.settings.reports !== false,
       update: this.updater
         ? { note: this.updateNote ?? (s.updateCheckedAt ? "Up to date" : "Checks for updates soon"), auto: this.settings.update, canCheck: !this.busy }
         : undefined,
@@ -194,6 +209,7 @@ export class Uploader {
       const message = (e as Error).message || String(e);
       this.updateNote = `Couldn't update: ${message}`;
       this.store.log(`Couldn't update the uploader: ${message}`, false);
+      this.report({ area: "update", message, security: isSecurity(message) });
       if (manual) await notify("Couldn't update the uploader", message);
       return false;
     } finally {
@@ -348,6 +364,7 @@ export class Uploader {
       if (msg) st.lastUploadAt = Math.floor(Date.now() / 1000);
       this.store.log(msg?.log ?? "Checked, nothing new to upload");
       for (const n of notes) this.store.log(`Couldn't read ${n}`, false);
+      for (const n of r.notes) this.report({ area: "read", file: n.path.split("/").pop(), message: n.message });
       this.failing = false;
       this.error = undefined;
       if (msg && this.settings.notify) await notify(msg.title, msg.body, msg.url);
@@ -365,6 +382,7 @@ export class Uploader {
       }
       const message = (e as Error).message || String(e);
       this.store.log(`Upload failed: ${message}`, false);
+      this.report({ area: "upload", message, stack: (e as Error).stack });
       this.error = `Upload failed: ${message}. Trying again in 5 minutes.`;
       this.retryAt = Date.now() + RETRY_MS;
       // One notification per run of failures, not one every 5 minutes.
@@ -412,7 +430,9 @@ export class Uploader {
         st.addonVersion = r.installed;
       }
     } catch (e) {
-      this.store.log(`Couldn't update the addon: ${(e as Error).message}`, false);
+      const message = (e as Error).message || String(e);
+      this.store.log(`Couldn't update the addon: ${message}`, false);
+      this.report({ area: "addon", message, security: isSecurity(message) });
       this.addonRetryAt = Date.now() + ADDON_RETRY_MS * 3;
     } finally {
       this.store.saveState();

@@ -150,6 +150,21 @@ export interface UploaderPc {
   addonVersion: string | null;
 }
 
+// The admin Uploader health page: every connected PC, with its owner.
+export interface UploaderHealthPc extends UploaderPc {
+  battletag: string;
+  osVersion: string | null;
+  weekErrors: number;
+  lastError: { t: number; area: string; message: string } | null;
+}
+
+export interface UploaderProblem {
+  t: number;
+  area: string;
+  message: string;
+  appVersion: string | null;
+}
+
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -254,6 +269,8 @@ export const api = {
   uploader: () => call<{ pcs: UploaderPc[]; settings: UploaderSettings }>("/api/uploader"),
   setUploaderSettings: (s: Partial<UploaderSettings>) =>
     call<UploaderSettings>("/api/uploader/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(s) }),
+  uploaderHealth: () => call<{ pcs: UploaderHealthPc[] }>("/api/admin/uploader"),
+  uploaderProblems: (id: string) => call<{ errors: UploaderProblem[] }>(`/api/admin/uploader/${encodeURIComponent(id)}/errors`),
   disconnectPc: (id: string) => call<{ pcs: UploaderPc[] }>(`/api/uploader/pcs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   connectPc: (name: string, challenge: string) =>
     call<{ code: string }>("/api/uploader/connect", {

@@ -126,7 +126,7 @@ ${s.error ? `<div class="err">${esc(s.error)}</div>` : ""}
   <label><input type="checkbox" id="startup" ${s.startup ? "checked" : ""}> Start with Windows</label>
   <span>Version ${esc(s.version)}${s.update ? ` · ${esc(s.update.note)}${s.update.auto ? "" : " (automatic updates are off)"} · <button class="link" data-action="check-update" ${s.update.canCheck ? "" : "disabled"}>Check for updates</button>` : ""}</span>
 </div>
-<p class="note">Settings for screenshots, notifications and updates are on your Account page on the site.</p>`;
+<p class="note">${s.reports ? "Problems are reported to Journey Forever without your names or files. " : "Error reports are off. "}Settings for screenshots, notifications, updates and error reports are on your Account page on the site.</p>`;
 
   const script = `<script>
 const token = ${scriptJson(token)};

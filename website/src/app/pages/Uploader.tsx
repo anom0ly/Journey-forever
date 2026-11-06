@@ -13,6 +13,11 @@ const SWITCHES: { key: keyof UploaderSettings; label: string; hint?: string }[] 
   { key: "notify", label: "Show a notification after each upload" },
   { key: "addon", label: "Keep the Journey Forever addon installed and up to date", hint: "Installs it if it's missing and updates it when a new version is out. Only while WoW is closed." },
   { key: "update", label: "Keep the uploader up to date", hint: "Installs new versions of this program by itself and restarts it. From version 1.1.0." },
+  {
+    key: "reports",
+    label: "Send error reports",
+    hint: "When something goes wrong in the uploader, send a report (no names, files or screenshots) so it can be fixed. From version 1.2.0.",
+  },
 ];
 
 function pcState(pc: UploaderPc): { tag: string; cls: string; line: string } {
