@@ -2,12 +2,15 @@
 // uploader (see lib/errorReport.ts). The report is checked, then logged with
 // console.error, which is what Workers Issues groups and alerts on. Signed in
 // or not, since a crash on a public journey matters as much; the usual rate
-// limits apply. An uploader's report sent with its key is also kept (the
-// last 10 per PC) for the admin Uploader health page.
+// limits apply, plus a tighter one for reports. Uploader reports must come
+// with a PC's upload key (so nobody can fake one, or a "security" one, to
+// set off alerts); they're also kept (the last 10 per PC) for the admin
+// Uploader health page.
 
 import { cleanReport, headline, MAX_BODY, type ErrorReport } from "../lib/errorReport";
 import type { Env, User } from "./env";
 import { HttpError, json, now, readBody } from "./http";
+import { checkReportRate } from "./limits";
 
 export const KEEP_PER_PC = 10;
 
@@ -22,6 +25,8 @@ export async function handleErrorReport(req: Request, env: Env, user: (User & { 
   const report = cleanReport(raw);
   if (!report) throw new HttpError(400, "Not an error report");
   const uploader = report.kind === "uploader";
+  if (uploader && !user?.key_id) throw new HttpError(401, "Uploader reports need this PC's key");
+  await checkReportRate(env, req, user?.key_id ? `pc:${user.key_id}` : user ? `user:${user.id}` : null);
   // An Error named for where it happened, carrying the sender's own stack, so
   // Issues groups by the problem rather than by this line.
   const name = uploader ? "UploaderError" : "BrowserError";

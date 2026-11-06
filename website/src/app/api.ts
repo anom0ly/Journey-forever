@@ -158,6 +158,21 @@ export interface UploaderHealthPc extends UploaderPc {
   lastError: { t: number; area: string; message: string } | null;
 }
 
+// Uploader builds on GitHub and which ones an admin approved for self-update.
+export interface UploaderBuild {
+  version: string;
+  publishedAt: string | null;
+  sha256: string | null;
+  size: number | null;
+  approvedAt: number | null;
+  changed: boolean; // approved, but GitHub's file is no longer the one approved
+}
+export interface UploaderBuilds {
+  latest: string | null;
+  error?: string;
+  builds: UploaderBuild[];
+}
+
 export interface UploaderProblem {
   t: number;
   area: string;
@@ -270,6 +285,9 @@ export const api = {
   setUploaderSettings: (s: Partial<UploaderSettings>) =>
     call<UploaderSettings>("/api/uploader/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(s) }),
   uploaderHealth: () => call<{ pcs: UploaderHealthPc[] }>("/api/admin/uploader"),
+  uploaderBuilds: () => call<UploaderBuilds>("/api/admin/uploader/releases"),
+  approveUploader: (version: string) => call<UploaderBuilds>(`/api/admin/uploader/releases/${encodeURIComponent(version)}`, { method: "POST" }),
+  withdrawUploader: (version: string) => call<UploaderBuilds>(`/api/admin/uploader/releases/${encodeURIComponent(version)}`, { method: "DELETE" }),
   uploaderProblems: (id: string) => call<{ errors: UploaderProblem[] }>(`/api/admin/uploader/${encodeURIComponent(id)}/errors`),
   disconnectPc: (id: string) => call<{ pcs: UploaderPc[] }>(`/api/uploader/pcs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   connectPc: (name: string, challenge: string) =>

@@ -15,6 +15,7 @@ export interface Env {
   // Rate limits (wrangler.jsonc "ratelimits"); see limits.ts.
   RL_REQUESTS?: RateLimit;
   RL_CHANGES?: RateLimit;
+  RL_ERRORS?: RateLimit;
 }
 
 export interface User {

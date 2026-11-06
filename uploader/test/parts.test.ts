@@ -241,3 +241,14 @@ describe("the status page and notifications", () => {
     for (const s of [status, { ...status, connected: false }, { ...status, forever: undefined }]) expect(trayState(s).tip.length).toBeLessThanOrEqual(63);
   });
 });
+
+describe("uploading while WoW is open", () => {
+  it("waits 10 minutes between uploads while playing, and not once the game closes", async () => {
+    const { holdWhilePlaying, PLAYING_GAP_MS } = await import("../src/app");
+    const t = 1_000_000_000;
+    expect(holdWhilePlaying(t, t - 60_000, true)).toBe(true);
+    expect(holdWhilePlaying(t, t - PLAYING_GAP_MS, true)).toBe(false);
+    expect(holdWhilePlaying(t, t - 60_000, false)).toBe(false);
+    expect(holdWhilePlaying(t, 0, true)).toBe(false); // first upload after starting
+  });
+});

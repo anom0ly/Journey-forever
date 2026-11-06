@@ -17,15 +17,27 @@ const rel = (v: string, asset = {}, more = {}) => ({
 });
 
 describe("updating the uploader", () => {
-  it("picks the newest release our workflow published, newer than this one", () => {
-    expect(pickUploaderRelease([rel("1.0.0"), rel("1.2.0"), rel("1.1.0")], "1.1.0")).toEqual({ version: "1.2.0", url: url("1.2.0"), sha256: HASH, size: 1000 });
-    expect(pickUploaderRelease([rel("1.0.0"), rel("1.1.0")], "1.1.0")).toBeUndefined();
-    expect(pickUploaderRelease([rel("1.3.0", {}, { prerelease: true })], "1.1.0")).toBeUndefined();
-    expect(pickUploaderRelease([{ ...rel("1.2.0"), tag_name: "addon-v1.2.0" }], "1.1.0")).toBeUndefined();
+  const ok = (v: string) => ({ version: v, sha256: HASH, size: 1000 });
+
+  it("installs only the build the site approved, when it's newer", () => {
+    const list = [rel("1.0.0"), rel("1.2.0"), rel("1.3.0"), rel("1.1.0")];
+    expect(pickUploaderRelease(list, "1.1.0", ok("1.2.0"))).toEqual({ version: "1.2.0", url: url("1.2.0"), sha256: HASH, size: 1000 });
+    // 1.3.0 is on GitHub but not approved.
+    expect(pickUploaderRelease(list, "1.2.0", ok("1.2.0"))).toBeUndefined();
+    expect(pickUploaderRelease(list, "1.1.0", { version: null })).toBeUndefined();
+    expect(pickUploaderRelease(list, "1.3.0", ok("1.2.0"))).toBeUndefined(); // never back
+    expect(pickUploaderRelease([rel("1.3.0", {}, { prerelease: true })], "1.1.0", ok("1.3.0"))).toBeUndefined();
+    expect(pickUploaderRelease([{ ...rel("1.2.0"), tag_name: "addon-v1.2.0" }], "1.1.0", ok("1.2.0"))).toBeUndefined();
+  });
+
+  it("refuses a file that isn't the one approved", async () => {
+    expect(pickUploaderRelease([rel("1.2.0", { digest: `sha256:${"b".repeat(64)}` })], "1.1.0", ok("1.2.0"))).toBeUndefined();
+    expect(pickUploaderRelease([rel("1.2.0", { size: 999 })], "1.1.0", ok("1.2.0"))).toBeUndefined();
+    expect(pickUploaderRelease([rel("1.2.0")], "1.1.0", { version: "1.2.0", sha256: "not a hash" })).toBeUndefined();
   });
 
   it("refuses anything else", () => {
-    const none = (asset = {}, more = {}) => expect(pickUploaderRelease([rel("9.0.0", asset, more)], "1.1.0")).toBeUndefined();
+    const none = (asset = {}, more = {}) => expect(pickUploaderRelease([rel("9.0.0", asset, more)], "1.1.0", ok("9.0.0"))).toBeUndefined();
     none({}, { author: { login: "someone" } });
     none({ uploader: { login: "someone" } });
     none({ browser_download_url: "https://evil.example/JourneyForeverUploader.exe" });

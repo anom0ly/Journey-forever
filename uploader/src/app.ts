@@ -16,6 +16,9 @@ import { addonDir, listSaved, listScreenshots, readSaved, signature } from "./wo
 const TICK_MS = 5_000;
 const SETTLE_MS = 15_000; // the game writes several files; wait for it to finish
 const RETRY_MS = 5 * 60_000;
+// While WoW is open, every /reload writes the saved files again: upload at
+// most this often then, and always once the game has closed.
+export const PLAYING_GAP_MS = 10 * 60_000;
 const ADDON_EVERY_MS = 6 * 3600_000;
 const ADDON_RETRY_MS = 10 * 60_000; // while WoW is open
 const SETTINGS_EVERY_MS = 10 * 60_000;
@@ -63,6 +66,11 @@ export function uploadMessage(r: SyncResult, site: string): { title: string; bod
   return undefined;
 }
 
+// A settled change waits when the last upload was recent and WoW is still running.
+export function holdWhilePlaying(now: number, lastTry: number, wowOpen: boolean): boolean {
+  return wowOpen && now - lastTry < PLAYING_GAP_MS;
+}
+
 export interface Status {
   version: string;
   site: string;
@@ -87,6 +95,7 @@ export class Uploader {
   private pendingSig: string | undefined;
   private pendingSince = 0;
   private retryAt = 0;
+  private lastTry = 0; // when the last upload started
   private failing = false;
   private busy: string | undefined;
   private settings: UploaderSettings = { ...UPLOADER_SETTINGS_DEFAULT };
@@ -176,7 +185,8 @@ export class Uploader {
   }
 
   // New versions: when it's switched on (Account page), every 6 hours, or
-  // when asked. Never in the middle of an upload.
+  // when asked. Never in the middle of an upload. Only the build the site
+  // approved (update.ts).
   private async maybeUpdate(): Promise<boolean> {
     const u = this.updater;
     if (!u) return false;
@@ -187,9 +197,15 @@ export class Uploader {
     this.checkUpdateNow = false;
     this.store.state.updateCheckedAt = Math.floor(now / 1000);
     this.store.saveState();
+    const client = this.client;
+    if (!client) {
+      this.updateNote = "Connect this PC to get updates";
+      if (manual) await notify("Connect the uploader first", "Updates come once this PC is connected to your account.");
+      return false;
+    }
     this.busy = "Checking for updates";
     try {
-      const rel = await latestUploader(UPLOADER_VERSION);
+      const rel = await latestUploader(UPLOADER_VERSION, await client.latest());
       if (!rel) {
         this.updateNote = "Up to date";
         if (manual) {
@@ -313,7 +329,7 @@ export class Uploader {
         this.pendingSig = sig;
         this.pendingSince = now;
       } else if (now - this.pendingSince >= SETTLE_MS) {
-        due = true;
+        due = !holdWhilePlaying(now, this.lastTry, await wowRunning());
       }
     }
     if (due) {
@@ -332,6 +348,7 @@ export class Uploader {
     const { forever } = this.store.config;
     if (!forever) return;
     this.busy = "Uploading";
+    this.lastTry = Date.now();
     try {
       if (!(await this.loadSettings(client, true))) return;
       const files = await listSaved(forever);
@@ -346,6 +363,7 @@ export class Uploader {
       };
       const r = await sync(client, saved, shots, {
         shots: this.settings.shots,
+        manualShots: this.settings.manualShots,
         known: new Set(st.known),
         idOf,
         prepare: async (f) => prepareImage(f.name, await f.read()),
