@@ -13,7 +13,7 @@ import { deathStats, goldStats, journeyEnd, journeyStart, levelFraction, levelSt
 // ---------------------------------------------------------------- entries
 
 const HOUR = 3600;
-const RUN_MIN_KILLS = 10;
+const RUN_MIN_SECONDS = 60;
 const ZONE_MIN_SECONDS = 600;
 
 export function boardEntries(j: Journey): BoardEntry[] {
@@ -113,11 +113,12 @@ export function boardEntries(j: Journey): BoardEntry[] {
   if (visited.size) add("zones", visited.size);
 
   // Dungeons
-  const runs = dungeonRuns(j);
+  // Full clears only: the dungeon's end boss died inside.
+  const runs = dungeonRuns(j).filter((r) => r.cleared);
   const fastest = new Map<string, number>(), lowest = new Map<string, number>();
   for (const r of runs) {
-    const d = r.run?.duration;
-    if (!d || d < 60 || (r.run?.kills ?? 0) < RUN_MIN_KILLS) continue;
+    const d = r.duration;
+    if (!d || d < RUN_MIN_SECONDS) continue;
     fastest.set(r.name, Math.min(fastest.get(r.name) ?? Infinity, d));
     const level = Math.floor(levelFraction(j, r.t, times));
     lowest.set(r.name, Math.min(lowest.get(r.name) ?? Infinity, level));

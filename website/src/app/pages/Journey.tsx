@@ -229,7 +229,10 @@ function Moments({ j }: { j: Journey }) {
         <div class="moment" key={`${m.t}${m.title}`}>
           <span class="muted">{m.level ? `Level ${m.level}` : ""}</span>
           <div class="stack" style={{ gap: "2px" }}>
-            <span style={{ fontWeight: 600, color: m.quality !== undefined ? QUALITY_COLORS[m.quality] : "var(--text)" }}>{m.title}</span>
+            <span style={{ fontWeight: 600, color: m.quality !== undefined ? QUALITY_COLORS[m.quality] : "var(--text)" }}>
+              {m.title}
+              {m.tag && <span class={`pill moment-tag ${m.tag.tone}`}>{m.tag.text}</span>}
+            </span>
             <span class="muted">{[m.where, day(m.t)].filter(Boolean).join(" · ")}</span>
           </div>
         </div>

@@ -99,7 +99,7 @@ export function headToHead(a: Journey, b: Journey, level?: number): H2HRow[] {
       kills: killCount(j) ?? snap?.kills,
       money: level ? snap?.money ?? g.now?.money : g.now?.money,
       distance: distanceByMode(j.segments).w || snap?.distance || j.stats.travel?.ground || undefined,
-      dungeons: dungeonRuns(j).length,
+      dungeons: dungeonRuns(j).filter((r) => r.cleared).length,
     };
   };
   const x = side(a), y = side(b);
@@ -115,7 +115,7 @@ export function headToHead(a: Journey, b: Journey, level?: number): H2HRow[] {
     { label: "Mobs killed", a: x.kills, b: y.kills, better: "none", kind: "count" },
     { label: level ? `Gold at level ${level}` : "Gold now", a: x.money, b: y.money, better: "high", kind: "gold" },
     { label: "Distance", sub: "on foot and mounted", a: x.distance, b: y.distance, better: "none", kind: "km" },
-    { label: "Dungeon runs", a: x.dungeons, b: y.dungeons, better: "none", kind: "count" },
+    { label: "Dungeons cleared", a: x.dungeons, b: y.dungeons, better: "none", kind: "count" },
   );
   return rows;
 }
