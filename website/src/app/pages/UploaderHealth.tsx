@@ -4,8 +4,8 @@
 // "Not found" to anyone else.
 
 import { useEffect, useState } from "preact/hooks";
-import { UPLOADER_VERSION } from "../../lib/uploader";
-import { api, type UploaderBuilds, type UploaderHealthPc, type UploaderProblem } from "../api";
+import { BETA_MAX_PCS, UPLOADER_VERSION } from "../../lib/uploader";
+import { api, type UploaderBuilds, type UploaderHealthPc, type UploaderProblem, type UploaderSwitches } from "../api";
 import { dateTime, plural } from "../format";
 
 const WEEK = 7 * 86400;
@@ -105,6 +105,102 @@ function UploaderBuildsCard() {
   );
 }
 
+// Who can use the uploader, and the brakes if a release goes wrong.
+function UploaderSwitchesCard() {
+  const [sw, setSw] = useState<UploaderSwitches>();
+  const [approved, setApproved] = useState<string[]>([]);
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.uploaderSwitches().then(setSw, (e: Error) => setError(e.message));
+    api.uploaderBuilds().then(
+      (d) => setApproved(d.builds.filter((b) => b.approvedAt && !b.changed).map((b) => b.version)),
+      () => undefined,
+    );
+  }, []);
+
+  const set = async (s: Partial<UploaderSwitches>) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      setSw(await api.setUploaderSwitches(s));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rows: { key: "beta" | "connect"; label: string; hint: string }[] = [
+    {
+      key: "beta",
+      label: "Open the Beta to everyone",
+      hint: `Every signed-in account can download and connect the uploader (up to ${BETA_MAX_PCS} PCs each). Off: admins only. Turning it off also stops other accounts' PCs uploading.`,
+    },
+    {
+      key: "connect",
+      label: "Let new PCs connect",
+      hint: "Off: PCs already connected keep working, but nobody else can connect one. Admins still can.",
+    },
+  ];
+
+  return (
+    <section class="card flat stack">
+      <div class="stack" style={{ gap: "4px" }}>
+        <h2>Release switches</h2>
+        <p class="small muted">These take effect at once, no deploy needed.</p>
+      </div>
+      {error && <div class="notice err">{error}</div>}
+      {!sw && !error && <p class="muted small">Loading…</p>}
+      {sw && (
+        <div class="stack" style={{ gap: "0" }}>
+          {rows.map((r) => (
+            <label class="row between" key={r.key} style={{ gap: "16px", padding: "12px 0", borderTop: "1px solid var(--line)", cursor: "pointer", flexWrap: "nowrap" }}>
+              <span class="stack" style={{ gap: "2px", minWidth: 0 }}>
+                <span class="small">{r.label}</span>
+                <span class="tiny muted">{r.hint}</span>
+              </span>
+              <input
+                type="checkbox"
+                id={`switch-${r.key}`}
+                checked={sw[r.key]}
+                disabled={busy}
+                onChange={(e) => set({ [r.key]: (e.target as HTMLInputElement).checked })}
+                style={{ width: "18px", height: "18px", flex: "none", accentColor: "var(--accent)" }}
+              />
+            </label>
+          ))}
+          <div class="row between" style={{ gap: "16px", padding: "12px 0", borderTop: "1px solid var(--line)", flexWrap: "wrap" }}>
+            <span class="stack" style={{ gap: "2px", minWidth: 0, flex: "1 1 260px" }}>
+              <label class="small" for="switch-min">
+                Minimum version
+              </label>
+              <span class="tiny muted">
+                Older uploaders can still update themselves but can't upload until they do. Pick an approved build; use it when an old version
+                is sending bad data.
+              </span>
+            </span>
+            <select
+              id="switch-min"
+              value={sw.minVersion ?? ""}
+              disabled={busy}
+              onChange={(e) => set({ minVersion: (e.target as HTMLSelectElement).value || null })}
+            >
+              <option value="">None</option>
+              {[...new Set([...approved, ...(sw.minVersion ? [sw.minVersion] : [])])].map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function UploaderHealthPage() {
   const [pcs, setPcs] = useState<UploaderHealthPc[]>();
   const [error, setError] = useState<string>();
@@ -145,6 +241,7 @@ export function UploaderHealthPage() {
           </p>
         </div>
       </section>
+      <UploaderSwitchesCard />
       <UploaderBuildsCard />
       {error && <div class="notice err">{error}</div>}
       {!pcs && !error && <p class="muted">Loading…</p>}

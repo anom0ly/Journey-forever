@@ -10,13 +10,47 @@
 // plus secret for a key (POST /api/uploader/claim). A code sent anywhere
 // else is useless without the secret, and the key never shows in a URL.
 
-import { UPLOADER_EXE, UPLOADER_REPO, UPLOADER_SETTINGS_DEFAULT, type ApprovedUploader, type UploaderSettings } from "../lib/uploader";
+import { BETA_MAX_PCS, UPLOADER_EXE, UPLOADER_REPO, UPLOADER_SETTINGS_DEFAULT, type ApprovedUploader, type UploaderSettings } from "../lib/uploader";
 import { isAdmin } from "./boards";
 import type { Env, User } from "./env";
 import { HttpError, json, now, randomToken, sha256 } from "./http";
 
 const CODE_SECONDS = 600;
 const MAX_PCS = 10;
+
+// The uploader's site switches (site_flags, set on the admin Uploaders page).
+export interface UploaderSwitches {
+  beta: boolean; // every signed-in account can use it, not just admins
+  connect: boolean; // new PCs can connect
+  minVersion: string | null; // older uploaders may only update themselves
+}
+
+export async function uploaderSwitches(env: Env): Promise<UploaderSwitches> {
+  const { results } = await env.DB.prepare("SELECT name, value FROM site_flags WHERE name IN ('uploader_beta', 'uploader_connect', 'uploader_min')").all<{
+    name: string;
+    value: string;
+  }>();
+  const v = new Map(results.map((r) => [r.name, r.value]));
+  const min = v.get("uploader_min");
+  return { beta: v.get("uploader_beta") === "1", connect: v.get("uploader_connect") !== "0", minVersion: min && VERSION_RE.test(min) ? min : null };
+}
+
+export function canUseUploader(env: Env, user: User | null, sw: UploaderSwitches): boolean {
+  return !!user && (sw.beta || isAdmin(env, user));
+}
+
+const CONNECT_CLOSED = "New PCs can't be connected right now. Try again later, or keep using the Upload page.";
+
+const VERSION_RE = /^\d+\.\d+\.\d+$/;
+
+// Routes an uploader older than the minimum version may still use: enough
+// to update itself, say how it's doing, or remove itself.
+const OUTDATED_ROUTES = new Set(["GET /api/uploader/latest", "GET /api/uploader/settings", "POST /api/uploader/status", "DELETE /api/uploader/self", "POST /api/errors"]);
+
+export function outdatedBlocked(sw: UploaderSwitches, appVersion: string | null | undefined, method: string, path: string): boolean {
+  if (!sw.minVersion || !appVersion || !VERSION_RE.test(appVersion)) return false;
+  return isNewerVersion(sw.minVersion, appVersion) && !OUTDATED_ROUTES.has(`${method} ${path}`);
+}
 const KEY_PREFIX = "jfu_";
 
 // What a key may do: read its own characters and upload. Nothing that
@@ -50,15 +84,15 @@ export function bearerKey(req: Request): string | undefined {
 export const KEY_IDLE_SECONDS = 60 * 86400;
 
 // The account behind an upload key, and which PC it is.
-export async function keyUser(env: Env, key: string): Promise<(User & { key_id: string }) | null> {
+export async function keyUser(env: Env, key: string): Promise<(User & { key_id: string; app_version: string | null }) | null> {
   const t = now();
   const row = await env.DB.prepare(
-    `SELECT u.id, u.bnet_id, u.battletag, u.last_upload_at, k.id AS key_id, COALESCE(k.last_seen_at, k.created_at) AS seen
+    `SELECT u.id, u.bnet_id, u.battletag, u.last_upload_at, k.id AS key_id, k.app_version, COALESCE(k.last_seen_at, k.created_at) AS seen
      FROM upload_keys k JOIN users u ON u.id = k.user_id
      WHERE k.key_hash = ? AND COALESCE(k.last_seen_at, k.created_at) > ?`,
   )
     .bind(await sha256(key), t - KEY_IDLE_SECONDS)
-    .first<User & { key_id: string; seen: number }>();
+    .first<User & { key_id: string; app_version: string | null; seen: number }>();
   if (!row) return null;
   // Being used keeps it alive (written at most hourly).
   if (t - row.seen > 3600) await env.DB.prepare("UPDATE upload_keys SET last_seen_at = ? WHERE id = ?").bind(t, row.key_id).run();
@@ -142,7 +176,9 @@ export async function claimKey(env: Env, body: unknown): Promise<Response> {
     throw new HttpError(400, "That connect link has expired. Start the uploader again to get a new one.");
   }
   const user = await env.DB.prepare("SELECT id, bnet_id, battletag, last_upload_at FROM users WHERE id = ?").bind(row.user_id).first<User>();
-  if (!user || !isAdmin(env, user)) throw new HttpError(404, "Not found");
+  const sw = await uploaderSwitches(env);
+  if (!user || !canUseUploader(env, user, sw)) throw new HttpError(404, "Not found");
+  if (!sw.connect && !isAdmin(env, user)) throw new HttpError(403, CONNECT_CLOSED);
   const key = KEY_PREFIX + randomToken(32);
   await env.DB.prepare("INSERT INTO upload_keys (id, key_hash, user_id, name, created_at) VALUES (?, ?, ?, ?, ?)")
     .bind(crypto.randomUUID(), await sha256(key), user.id, row.name, now())
@@ -153,7 +189,9 @@ export async function claimKey(env: Env, body: unknown): Promise<Response> {
 // Everything else under /api/uploader. keyId is set when the request came
 // with an upload key (the uploader), and unset for the signed-in site.
 export async function handleUploader(req: Request, env: Env, user: User, keyId: string | undefined, parts: string[]): Promise<Response> {
-  if (!isAdmin(env, user)) throw new HttpError(404, "Not found");
+  const sw = await uploaderSwitches(env);
+  if (!canUseUploader(env, user, sw)) throw new HttpError(404, "Not found");
+  const admin = isAdmin(env, user);
   const m = req.method;
   const body = async () => (m === "GET" || m === "DELETE" ? null : await req.json().catch(() => null));
 
@@ -199,8 +237,10 @@ export async function handleUploader(req: Request, env: Env, user: User, keyId: 
   if (parts.length === 2 && parts[1] === "connect" && m === "POST") {
     const b = ((await body()) ?? {}) as { name?: unknown; challenge?: unknown };
     if (typeof b.challenge !== "string" || !/^[0-9a-f]{64}$/.test(b.challenge)) throw new HttpError(400, "This connect link is broken. Start the uploader again.");
+    if (!sw.connect && !admin) throw new HttpError(403, CONNECT_CLOSED);
+    const max = admin ? MAX_PCS : BETA_MAX_PCS;
     const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM upload_keys WHERE user_id = ?").bind(user.id).first<{ n: number }>();
-    if ((count?.n ?? 0) >= MAX_PCS) throw new HttpError(413, `You can connect up to ${MAX_PCS} PCs. Disconnect one first.`);
+    if ((count?.n ?? 0) >= max) throw new HttpError(413, `You can connect up to ${max} PCs. Disconnect one on your Account page first.`);
     const code = randomToken(24);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM upload_codes WHERE expires_at <= ?").bind(now()),
@@ -226,6 +266,7 @@ export async function handleUploader(req: Request, env: Env, user: User, keyId: 
 export async function handleUploaderHealth(req: Request, env: Env, user: User, parts: string[]): Promise<Response> {
   if (!isAdmin(env, user)) throw new HttpError(404, "Not found");
   if (parts[2] === "releases") return handleReleases(req, env, user, parts);
+  if (parts[2] === "switches" && parts.length === 3) return handleSwitches(req, env, user);
   if (req.method !== "GET") throw new HttpError(404, "Not found");
   if (parts.length === 2) {
     const week = now() - 7 * 86400;
@@ -376,7 +417,43 @@ async function handleReleases(req: Request, env: Env, user: User, parts: string[
   }
   if (m === "DELETE") {
     await env.DB.prepare("DELETE FROM uploader_releases WHERE version = ?").bind(version).run();
+    // A withdrawn build can't be the minimum any more: nobody could update to it.
+    await env.DB.prepare("DELETE FROM site_flags WHERE name = 'uploader_min' AND value = ?").bind(version).run();
     return list();
   }
   throw new HttpError(404, "Not found");
+}
+
+// /api/admin/uploader/switches: GET them, PATCH { beta?, connect?, minVersion? }.
+async function handleSwitches(req: Request, env: Env, user: User): Promise<Response> {
+  if (req.method === "PATCH") {
+    const b = ((await req.json().catch(() => null)) ?? {}) as { beta?: unknown; connect?: unknown; minVersion?: unknown };
+    const set: [string, string][] = [];
+    if (typeof b.beta === "boolean") set.push(["uploader_beta", b.beta ? "1" : "0"]);
+    if (typeof b.connect === "boolean") set.push(["uploader_connect", b.connect ? "1" : "0"]);
+    if (b.minVersion === null || b.minVersion === "") set.push(["uploader_min", ""]);
+    else if (b.minVersion !== undefined) {
+      if (typeof b.minVersion !== "string" || !VERSION_RE.test(b.minVersion)) throw new HttpError(400, "The minimum version looks like 1.3.0");
+      // Only an approved build can be the minimum, or nobody could update to it.
+      const ok = await env.DB.prepare("SELECT 1 AS x FROM uploader_releases WHERE version = ?").bind(b.minVersion).first();
+      if (!ok) throw new HttpError(400, `Approve uploader ${b.minVersion} first, so older ones can update to it`);
+      set.push(["uploader_min", b.minVersion]);
+    }
+    for (const [name, value] of set) {
+      await env.DB.prepare(
+        `INSERT INTO site_flags (name, value, updated_at, updated_by) VALUES (?, ?, ?, ?)
+         ON CONFLICT (name) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      )
+        .bind(name, value, now(), user.id)
+        .run();
+    }
+  } else if (req.method !== "GET") throw new HttpError(404, "Not found");
+  return json(await uploaderSwitches(env));
+}
+
+// /api/uploader/download: what the /uploader page offers. No sign-in.
+export async function uploaderDownload(env: Env): Promise<Response> {
+  const sw = await uploaderSwitches(env);
+  const build = await approvedUploader(env);
+  return json({ beta: sw.beta, connect: sw.connect, ...build });
 }
