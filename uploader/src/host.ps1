@@ -113,6 +113,7 @@ $miSync = $menu.Items.Add('Upload now')
 $miPause = $menu.Items.Add('Pause uploads')
 $miJourney = $menu.Items.Add('Open my journey')
 [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+$miUpdate = $menu.Items.Add('Check for updates')
 $miQuit = $menu.Items.Add('Quit')
 $tray.ContextMenuStrip = $menu
 
@@ -218,6 +219,7 @@ $miOpen.add_Click({ Show-Window })
 $miSync.add_Click({ Send-Command 'sync' })
 $miPause.add_Click({ Send-Command $(if ($script:paused) { 'resume' } else { 'pause' }) })
 $miJourney.add_Click({ Send-Command 'journey' })
+$miUpdate.add_Click({ Send-Command 'check-update' })
 $miQuit.add_Click({ Send-Command 'quit'; Stop-Host })
 
 # ---- keeping up with the uploader --------------------------------------------

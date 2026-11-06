@@ -22,7 +22,7 @@ While it runs it has a tray icon by the clock. The dot on it shows the
 state: green watching, red uploading, amber needs you, grey paused. Click it
 (or double-click the program, or use the Start menu) to open the window:
 Upload now, Pause, Change WoW folder, Start with Windows, Check for updates,
-Remove from this PC. Closing the window minimizes it; **Quit** is in the tray
+Remove from this PC. The tray menu also has Check for updates. Closing the window minimizes it; **Quit** is in the tray
 icon's right-click menu. Started with Windows, it's in the tray only.
 
 The switches for screenshots, notifications, addon updates and uploader

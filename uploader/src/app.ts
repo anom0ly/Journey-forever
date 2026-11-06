@@ -177,7 +177,10 @@ export class Uploader {
       const rel = await latestUploader(UPLOADER_VERSION);
       if (!rel) {
         this.updateNote = "Up to date";
-        if (manual) this.store.log(`Checked for updates: ${UPLOADER_VERSION} is the newest`);
+        if (manual) {
+          this.store.log(`Checked for updates: ${UPLOADER_VERSION} is the newest`);
+          await notify("Journey Forever uploader is up to date", `Version ${UPLOADER_VERSION} is the newest.`);
+        }
         return false;
       }
       this.busy = `Downloading version ${rel.version}`;
@@ -191,6 +194,7 @@ export class Uploader {
       const message = (e as Error).message || String(e);
       this.updateNote = `Couldn't update: ${message}`;
       this.store.log(`Couldn't update the uploader: ${message}`, false);
+      if (manual) await notify("Couldn't update the uploader", message);
       return false;
     } finally {
       this.busy = undefined;
