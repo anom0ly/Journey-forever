@@ -353,10 +353,18 @@ export function uploaderBuild(r: GhRelease): UploaderBuild | undefined {
   return { version, publishedAt: r.published_at ?? null, sha256: ok ? sha256! : null, size: ok ? a!.size! : null };
 }
 
-export async function githubBuilds(get: typeof fetch = fetch): Promise<UploaderBuild[]> {
-  const res = await get(`https://api.github.com/repos/${UPLOADER_REPO}/releases?per_page=50`, {
-    headers: { accept: "application/vnd.github+json", "user-agent": "JourneyForeverSite" },
-  });
+// Without a token GitHub allows 60 requests an hour per address, and Workers
+// share their addresses with many other sites, so that's often used up
+// already (403). A GITHUB_TOKEN secret (read-only, public repos) gets the
+// site its own allowance.
+export async function githubBuilds(token?: string, get: typeof fetch = fetch): Promise<UploaderBuild[]> {
+  const headers: Record<string, string> = { accept: "application/vnd.github+json", "user-agent": "JourneyForeverSite" };
+  if (token) headers.authorization = `Bearer ${token}`;
+  const res = await get(`https://api.github.com/repos/${UPLOADER_REPO}/releases?per_page=50`, { headers });
+  if ((res.status === 403 || res.status === 429) && !token) {
+    throw new HttpError(502, "GitHub is limiting requests from the site's shared address. Add a GITHUB_TOKEN secret to the Worker (see website/README.md), then try again.");
+  }
+  if (res.status === 401) throw new HttpError(502, "GitHub refused the site's GITHUB_TOKEN. It may have expired: make a new one and update the secret.");
   if (!res.ok) throw new HttpError(502, `GitHub answered ${res.status}. Try again in a minute.`);
   return ((await res.json()) as GhRelease[]).map(uploaderBuild).filter((b): b is UploaderBuild => !!b);
 }
@@ -384,7 +392,7 @@ async function handleReleases(req: Request, env: Env, user: User, parts: string[
     let builds: UploaderBuild[] = [];
     let error: string | undefined;
     try {
-      builds = await githubBuilds();
+      builds = await githubBuilds(env.GITHUB_TOKEN);
     } catch (e) {
       error = (e as Error).message;
     }
@@ -405,7 +413,7 @@ async function handleReleases(req: Request, env: Env, user: User, parts: string[
   if (parts.length !== 4 || !/^\d+\.\d+\.\d+$/.test(version)) throw new HttpError(404, "Not found");
   if (m === "POST") {
     // The SHA-256 comes from GitHub now, never from the page.
-    const build = (await githubBuilds()).find((b) => b.version === version);
+    const build = (await githubBuilds(env.GITHUB_TOKEN)).find((b) => b.version === version);
     if (!build?.sha256 || !build.size) throw new HttpError(400, `GitHub has no usable uploader ${version} from the release workflow`);
     await env.DB.prepare(
       `INSERT INTO uploader_releases (version, sha256, size, approved_at, approved_by) VALUES (?, ?, ?, ?, ?)
