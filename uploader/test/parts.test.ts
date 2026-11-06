@@ -151,7 +151,7 @@ describe("finding WoW", () => {
 describe("the status page and notifications", () => {
   const status: Status = {
     version: "1.0.0", site: "https://site", connected: true, account: "Justin#1234", forever: "C:\\WoW\\_forever_", paused: false,
-    characters: ["Adom"], log: [{ t: 1793900000, text: "<b>Adom</b> uploaded", ok: true }], startup: true,
+    characters: ["Adom"], log: [{ t: 1793900000, text: "<b>Adom</b> uploaded", ok: true }], startup: true, reports: true,
     update: { note: "Up to date", auto: true, canCheck: true },
   };
   const calls: string[] = [];

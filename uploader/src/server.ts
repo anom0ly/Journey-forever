@@ -63,7 +63,7 @@ export function handler(h: ServerHooks, port: () => number) {
         return Response.json({ ...trayState(s), paused: s.paused, ...h.window.polled(url.searchParams.get("visible") === "1") });
       }
       if (url.pathname === "/host/cmd" && req.method === "POST") {
-        const { cmd } = (await req.json().catch(() => ({}))) as { cmd?: string };
+        const { cmd, message, webview } = (await req.json().catch(() => ({}))) as { cmd?: string; message?: unknown; webview?: unknown };
         const u = h.uploader;
         if (cmd === "sync") u.uploadNow();
         else if (cmd === "pause") u.setPaused(true);
@@ -71,7 +71,12 @@ export function handler(h: ServerHooks, port: () => number) {
         else if (cmd === "journey") await h.openJourney();
         else if (cmd === "check-update") u.checkForUpdates();
         else if (cmd === "quit") setTimeout(() => h.quit(), 100);
-        else if (cmd === "nowebview") {
+        else if (cmd === "error") {
+          // Something went wrong in the window or tray (host.ps1).
+          const text = typeof message === "string" && message.trim() ? message.trim().slice(0, 300) : "Unknown window problem";
+          h.uploader.store.debug(`Window: ${text}`);
+          h.uploader.report({ area: "window", message: text, webview: typeof webview === "string" ? webview.slice(0, 40) : undefined });
+        } else if (cmd === "nowebview") {
           h.window.noWebView = true;
           await h.openInBrowser();
         } else return new Response("Unknown command", { status: 400 });

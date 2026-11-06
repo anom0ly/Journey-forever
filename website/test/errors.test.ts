@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanReport, headline, redact, REPORT_FILES, routeOf, splitLine } from "../src/lib/errorReport";
 import { SAVED_FILES } from "../src/lib/parse/upload";
 import { handleErrorReport } from "../src/worker/errors";
+import type { Env, User } from "../src/worker/env";
 import { HttpError } from "../src/worker/http";
+
+const env = {} as Env;
 
 describe("error reports", () => {
   it("never keeps quoted text from a saved file", () => {
@@ -45,6 +48,20 @@ describe("error reports", () => {
   it("titles a report by where it happened", () => {
     expect(headline({ kind: "upload", step: "read", file: "JourneyTracker.lua", message: "bad" })).toBe("Browser upload read JourneyTracker.lua: bad");
     expect(headline({ kind: "render", message: "TypeError: x is undefined" })).toBe("Browser render: TypeError: x is undefined");
+    expect(headline({ kind: "uploader", area: "update", security: true, message: "checksum" })).toBe("Uploader update (security): checksum");
+  });
+
+  it("takes BattleTags and Windows user names out", () => {
+    expect(redact("Not your account: Kaelra#2210")).toBe("Not your account: <battletag>");
+    expect(redact("EPERM C:\\Users\\Justin Smith\\AppData\\Local\\x")).toBe("EPERM %USERPROFILE%\\AppData\\Local\\x");
+    expect(redact("at /home/justin/x.ts")).toBe("at /home/<user>/x.ts");
+  });
+
+  it("cleans the uploader's reports", () => {
+    expect(cleanReport({ kind: "uploader", message: "x" })).toBeNull();
+    expect(
+      cleanReport({ kind: "uploader", area: "read", file: "RoadToSixty.lua", line: 4120, message: "bad", app: "1.2.0", os: "10.0.26100", pc: "pc_0123abcd", account: "Kaelra#2210", security: "yes", webview: "<script>" }),
+    ).toEqual({ kind: "uploader", area: "read", file: "RoadToSixty.lua", line: 4120, message: "bad", app: "1.2.0", os: "10.0.26100", pc: "pc_0123abcd" });
   });
 });
 
@@ -54,7 +71,7 @@ describe("POST /api/errors", () => {
 
   it("logs a cleaned report as an error", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const res = await handleErrorReport(post(JSON.stringify({ kind: "crash", message: 'TypeError: "Brannoc" is not a function', stack: "at x (/assets/a.js:1:2)" })), "u1");
+    const res = await handleErrorReport(post(JSON.stringify({ kind: "crash", message: 'TypeError: "Brannoc" is not a function', stack: "at x (/assets/a.js:1:2)" })), env, { id: "u1" } as User);
     expect(res.status).toBe(200);
     const [err, details] = log.mock.calls[0];
     expect((err as Error).name).toBe("BrowserError");
@@ -65,8 +82,8 @@ describe("POST /api/errors", () => {
 
   it("refuses what isn't a report", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await expect(handleErrorReport(post("not json"), null)).rejects.toBeInstanceOf(HttpError);
-    await expect(handleErrorReport(post(JSON.stringify({ kind: "crash" })), null)).rejects.toBeInstanceOf(HttpError);
-    await expect(handleErrorReport(post(JSON.stringify({ kind: "crash", message: "x".repeat(5000) })), null)).rejects.toMatchObject({ status: 413 });
+    await expect(handleErrorReport(post("not json"), env, null)).rejects.toBeInstanceOf(HttpError);
+    await expect(handleErrorReport(post(JSON.stringify({ kind: "crash" })), env, null)).rejects.toBeInstanceOf(HttpError);
+    await expect(handleErrorReport(post(JSON.stringify({ kind: "crash", message: "x".repeat(5000) })), env, null)).rejects.toMatchObject({ status: 413 });
   });
 });

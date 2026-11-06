@@ -11,6 +11,7 @@ import { isTab } from "./pages/JourneyTabs";
 import { Landing } from "./pages/Landing";
 import { BoardPageView, isGroup, LeaderboardsPage } from "./pages/Leaderboards";
 import { ReviewPage } from "./pages/Review";
+import { UploaderHealthPage } from "./pages/UploaderHealth";
 import { MeContext } from "./me";
 import { ReplayPage } from "./pages/Replay";
 import { UploadPage } from "./pages/Upload";
@@ -38,6 +39,7 @@ function Header({ me, path, onSignOut }: { me: Me | null; path: string; onSignOu
             Review{me.reviewCount ? <span class="nav-count">{me.reviewCount}</span> : null}
           </a>
         )}
+        {me?.user?.isAdmin && link("/admin/uploader", "Uploaders", path === "/admin/uploader")}
         <span class="push" />
         {signedIn && link("/account", me?.user?.battletag ?? "Account", path === "/account")}
         {signedIn ? (
@@ -155,6 +157,7 @@ function App() {
   else if ((m = match("/leaderboards/:group", path)) && isGroup(m.group)) page = <LeaderboardsPage group={m.group} />;
   else if ((m = match("/leaderboards/board/:board", path))) page = <BoardPageView id={m.board} />;
   else if ((m = match("/leaderboards/board/:board/:param", path))) page = <BoardPageView id={m.board} param={m.param} />;
+  else if (path === "/admin/uploader") page = !loaded ? null : me?.user?.isAdmin ? <UploaderHealthPage /> : <NotFound />;
   else if (path === "/review") page = !loaded ? null : me?.user?.isAdmin ? <ReviewPage onCount={(n) => setMe((x) => (x ? { ...x, reviewCount: n } : x))} /> : <NotFound />;
   else if ((m = match("/compare/:a", path))) page = loaded ? <ComparePage a={m.a} signedIn={signedIn} /> : null;
   else if ((m = match("/compare/:a/:b", path))) page = <ComparePage a={m.a} b={m.b} signedIn={signedIn} />;

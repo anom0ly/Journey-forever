@@ -31,6 +31,7 @@ const UPLOADER_ROUTES: [string, RegExp][] = [
   ["GET", /^\/api\/uploader\/settings$/],
   ["POST", /^\/api\/uploader\/status$/],
   ["DELETE", /^\/api\/uploader\/self$/],
+  ["POST", /^\/api\/errors$/],
 ];
 
 export function keyAllows(method: string, path: string): boolean {
@@ -212,5 +213,50 @@ export async function handleUploader(req: Request, env: Env, user: User, keyId: 
     return json({ pcs: await pcs(env, user) });
   }
 
+  throw new HttpError(404, "Not found");
+}
+
+// /api/admin/uploader: every connected PC, for the admin Uploader health
+// page. Built from what each PC reports after an upload plus the problems it
+// sent (errors.ts keeps the last 10 per PC).
+export async function handleUploaderHealth(req: Request, env: Env, user: User, parts: string[]): Promise<Response> {
+  if (!isAdmin(env, user) || req.method !== "GET") throw new HttpError(404, "Not found");
+  if (parts.length === 2) {
+    const week = now() - 7 * 86400;
+    const { results } = await env.DB.prepare(
+      `SELECT k.id, k.name, u.battletag, k.created_at, k.last_seen_at, k.last_upload_at, k.last_ok, k.last_message,
+         k.app_version, k.addon_version, k.os_version,
+         (SELECT COUNT(*) FROM upload_errors e WHERE e.key_id = k.id AND e.t > ?) AS week_errors,
+         e.t AS error_t, e.area AS error_area, e.message AS error_message
+       FROM upload_keys k JOIN users u ON u.id = k.user_id
+       LEFT JOIN upload_errors e ON e.id = (SELECT MAX(id) FROM upload_errors WHERE key_id = k.id)
+       ORDER BY COALESCE(k.last_seen_at, k.created_at) DESC`,
+    )
+      .bind(week)
+      .all<KeyRow & { battletag: string; os_version: string | null; week_errors: number; error_t: number | null; error_area: string | null; error_message: string | null }>();
+    return json({
+      pcs: results.map((r) => ({
+        id: r.id,
+        name: r.name,
+        battletag: r.battletag,
+        createdAt: r.created_at,
+        lastSeenAt: r.last_seen_at,
+        lastUploadAt: r.last_upload_at,
+        ok: r.last_ok === null ? null : !!r.last_ok,
+        message: r.last_message,
+        appVersion: r.app_version,
+        addonVersion: r.addon_version,
+        osVersion: r.os_version,
+        weekErrors: r.week_errors,
+        lastError: r.error_t === null ? null : { t: r.error_t, area: r.error_area, message: r.error_message },
+      })),
+    });
+  }
+  if (parts.length === 4 && parts[3] === "errors") {
+    const { results } = await env.DB.prepare("SELECT t, area, message, app_version FROM upload_errors WHERE key_id = ? ORDER BY id DESC")
+      .bind(parts[2])
+      .all<{ t: number; area: string; message: string; app_version: string | null }>();
+    return json({ errors: results.map((e) => ({ t: e.t, area: e.area, message: e.message, appVersion: e.app_version })) });
+  }
   throw new HttpError(404, "Not found");
 }

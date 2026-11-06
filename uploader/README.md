@@ -25,8 +25,8 @@ Upload now, Pause, Change WoW folder, Start with Windows, Check for updates,
 Remove from this PC. The tray menu also has Check for updates. Closing the window minimizes it; **Quit** is in the tray
 icon's right-click menu. Started with Windows, it's in the tray only.
 
-The switches for screenshots, notifications, addon updates and uploader
-updates are on the site's Account page, which also lists each connected PC
+The switches for screenshots, notifications, addon updates, uploader
+updates and error reports are on the site's Account page, which also lists each connected PC
 and can disconnect it.
 
 ## How it works
@@ -60,6 +60,14 @@ and can disconnect it.
 - Addon updates: every 6 hours it compares `Interface\AddOns\JourneyForever\
   JourneyForever.toc` with the newest `addon-v*` release on GitHub and, while
   no WoW game is running, swaps in the new folder.
+- Error reports (`src/report.ts`, from 1.2.0): failed uploads, unreadable
+  saved files, failed addon or uploader updates, window problems and crashes
+  (written to `crash.json`, sent on the next start) go to `POST /api/errors`
+  with kind `uploader`. Before sending it swaps out the BattleTag, character
+  names, Windows user and PC name and the user's folders, and sends each
+  distinct problem at most once a day. The site logs it for Workers Issues
+  and keeps the last 10 per PC for the admin Uploader health page
+  (`/admin/uploader`). Off with "Send error reports" on the Account page.
 - Notifications go through Windows PowerShell (built into Windows 10 and 11).
 - `uploader.log` in the same folder records what it did.
 

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { connectPort } from "../src/lib/uploader";
 import { returnPath } from "../src/worker/auth";
 import type { Env } from "../src/worker/env";
@@ -88,7 +88,7 @@ describe("auto-uploader keys", () => {
     const { call, connect } = await setup();
     const { key } = (await call("/api/uploader/claim", { method: "POST", body: { code: await connect(), verifier: "a-secret-only-the-pc-knows" } })).body as { key: string };
     expect((await call("/api/characters", { key })).status).toBe(200);
-    expect((await call("/api/uploader/settings", { key })).body).toEqual({ shots: true, notify: true, addon: true, update: true });
+    expect((await call("/api/uploader/settings", { key })).body).toEqual({ shots: true, notify: true, addon: true, update: true, reports: true });
     expect((await call("/api/account", { key })).status).toBe(403);
     expect((await call("/api/account", { key, method: "DELETE", body: { confirm: "admin#1" } })).status).toBe(403);
     expect((await call("/api/characters/Adom-Toretto", { key, method: "PATCH", body: { isPublic: true } })).status).toBe(403);
@@ -109,7 +109,7 @@ describe("auto-uploader keys", () => {
 
   it("keeps the switches the Account page sets", async () => {
     const { call } = await setup();
-    expect((await call("/api/uploader/settings", { method: "PATCH", session: "admin", body: { shots: false, addon: "yes" } })).body).toEqual({ shots: false, notify: true, addon: true, update: true });
+    expect((await call("/api/uploader/settings", { method: "PATCH", session: "admin", body: { shots: false, addon: "yes" } })).body).toEqual({ shots: false, notify: true, addon: true, update: true, reports: true });
     expect(((await call("/api/uploader", { session: "admin" })).body.settings as Record<string, boolean>).shots).toBe(false);
   });
 
@@ -143,6 +143,33 @@ describe("auto-uploader keys", () => {
     expect(seen.t).toBeGreaterThan(old);
     await env.DB.prepare("UPDATE upload_keys SET last_seen_at = ?").bind(old - 2 * 86400).run();
     expect((await call("/api/uploader/settings", { key })).status).toBe(401);
+  });
+
+  it("keeps each PC's last 10 problems for the health page, admins only", async () => {
+    const { env, call, connect } = await setup();
+    const { key } = (await call("/api/uploader/claim", { method: "POST", body: { code: await connect(), verifier: "a-secret-only-the-pc-knows" } })).body as { key: string };
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    for (let i = 0; i < 12; i++) {
+      const r = await call("/api/errors", { key, method: "POST", body: { kind: "uploader", area: "upload", message: `failure ${i}`, app: "1.2.0", os: "10.0.26100" } });
+      expect(r.status).toBe(200);
+    }
+    await call("/api/errors", { key, method: "POST", body: { kind: "uploader", area: "update", security: true, message: "checksum mismatch" } });
+    // Not connected: logged, not kept.
+    expect((await call("/api/errors", { method: "POST", body: { kind: "uploader", area: "crash", message: "boom" } })).status).toBe(200);
+    expect(((await env.DB.prepare("SELECT COUNT(*) AS n FROM upload_errors").first()) as { n: number }).n).toBe(10);
+
+    expect((await call("/api/admin/uploader", { session: "player" })).status).toBe(404);
+    expect((await call("/api/admin/uploader", { key })).status).toBe(403);
+    const h = (await call("/api/admin/uploader", { session: "admin" })).body as { pcs: { id: string; battletag: string; osVersion: string; appVersion: string; weekErrors: number; lastError: { area: string; message: string } }[] };
+    expect(h.pcs).toHaveLength(1);
+    expect(h.pcs[0]).toMatchObject({ battletag: "admin#1", osVersion: "10.0.26100", appVersion: "1.2.0", weekErrors: 10, lastError: { area: "update-security", message: "checksum mismatch" } });
+    const list = (await call(`/api/admin/uploader/${h.pcs[0].id}/errors`, { session: "admin" })).body as { errors: { message: string }[] };
+    expect(list.errors).toHaveLength(10);
+    expect(list.errors[0].message).toBe("checksum mismatch");
+    expect(list.errors[9].message).toBe("failure 3");
+    // Disconnecting the PC takes its problems with it.
+    await call(`/api/uploader/pcs/${h.pcs[0].id}`, { method: "DELETE", session: "admin" });
+    expect(((await env.DB.prepare("SELECT COUNT(*) AS n FROM upload_errors").first()) as { n: number }).n).toBe(0);
   });
 
   it("knows which routes a key may use", () => {

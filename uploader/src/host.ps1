@@ -41,7 +41,9 @@ public static class JfNative {
 [System.Windows.Forms.Application]::EnableVisualStyles()
 # A failure inside a click or a timer tick must not pop up an error box.
 [System.Windows.Forms.Application]::SetUnhandledExceptionMode([System.Windows.Forms.UnhandledExceptionMode]::CatchException)
-[System.Windows.Forms.Application]::add_ThreadException({ param($s, $e) })
+# It's reported instead (see Send-Error), a few times per run at most.
+$script:errorsSent = 0
+[System.Windows.Forms.Application]::add_ThreadException({ param($s, $e) Send-Error $e.Exception.Message })
 
 $iconPath = Join-Path $dir 'icon.ico'
 $appIcon = New-Object System.Drawing.Icon($iconPath)
@@ -70,6 +72,21 @@ function Invoke-Uploader([string]$method, [string]$path, [string]$body) {
 
 function Send-Command([string]$cmd) {
   try { [void](Invoke-Uploader 'POST' '/host/cmd' ("{""cmd"":""$cmd""}")) } catch {}
+}
+
+# The installed Edge WebView2 version, or $null when there's none.
+function Get-WebViewVersion {
+  try { return [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::GetAvailableBrowserVersionString() } catch { return $null }
+}
+
+# A problem in the window or tray: the uploader cleans it and reports it.
+function Send-Error([string]$message) {
+  if ($test -or $script:errorsSent -ge 3) { return }
+  $script:errorsSent++
+  try {
+    $body = ConvertTo-Json -Compress @{ cmd = 'error'; message = "$message"; webview = (Get-WebViewVersion) }
+    [void](Invoke-Uploader 'POST' '/host/cmd' $body)
+  } catch {}
 }
 
 # ---- tray icon ---------------------------------------------------------------
@@ -154,6 +171,7 @@ function New-WebView([string]$url) {
     if (-not $e.IsSuccess) {
       if ($test) { [Console]::Out.WriteLine('webview-fail ' + $e.InitializationException.Message); $script:quitting = $true; [System.Windows.Forms.Application]::Exit(); return }
       # No WebView2 on this PC: the uploader opens its page in the browser instead.
+      Send-Error ('WebView2 could not start: ' + $e.InitializationException.Message)
       Send-Command 'nowebview'
       $script:noWebView = $true
       $form.Hide()
