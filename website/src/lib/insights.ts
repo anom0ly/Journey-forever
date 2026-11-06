@@ -4,6 +4,8 @@
 
 import type { Item, JEvent, Journey, RunSummary } from "./journey";
 import { deathCount, firstSeen, questCount, sessionsPlayed } from "./merge";
+import { dungeonRuns } from "./clears";
+export { dungeonRuns };
 import { decodeSegment, distanceByMode } from "./path";
 import { QUALITY_NAMES } from "./wow";
 
@@ -21,6 +23,7 @@ export interface Moment {
   where?: string;
   quality?: number;
   kind: string;
+  tag?: { text: string; tone: "teal" | "grey" };
 }
 
 export function zoneName(j: Journey, mapID: unknown): string | undefined {
@@ -71,19 +74,6 @@ export function killCount(j: Journey): number | undefined {
   return fromRts || fromJt ? Math.max(fromRts, fromJt) : undefined;
 }
 
-export function dungeonRuns(j: Journey): { t: number; name: string; run?: RunSummary }[] {
-  const out: { t: number; name: string; run?: RunSummary }[] = [];
-  for (const e of j.events) {
-    if (e.k !== "out") continue;
-    const run = e.run as RunSummary | undefined;
-    if (run?.pvp || run?.type === "pvp") continue; // battlegrounds have their own tab
-    const name = run?.name ?? (typeof e.instanceID === "number" ? j.zones[`i${e.instanceID}`] : undefined);
-    if (name) out.push({ t: e.t, name, run });
-  }
-  if (!out.length) for (const r of j.stats.runs ?? []) out.push({ t: r.start, name: r.name, run: { name: r.name, duration: r.duration, deaths: r.deaths } });
-  return out;
-}
-
 // XP an hour in the last session, from quest turn-ins and kills.
 export function xpPerHour(j: Journey): number | undefined {
   const s = j.sessions.at(-1);
@@ -114,7 +104,7 @@ export function tiles(j: Journey): Tile[] {
   const rares = j.events.filter((e) => e.k === "rare").length || j.stats.kills?.byClass?.rare || 0;
   const elites = j.stats.kills?.byClass?.elite ?? 0;
   const deaths = j.events.filter((e) => e.k === "die");
-  const runs = dungeonRuns(j);
+  const runs = dungeonRuns(j).filter((r) => r.cleared);
   const money = j.stats.money;
   const xph = xpPerHour(j);
   const meters = walked * 0.9144;
@@ -151,7 +141,7 @@ export function tiles(j: Journey): Tile[] {
       sub: deaths.at(-1)?.killerKind === "player" ? "last: another player" : deaths.length && typeof deaths.at(-1)!.killer === "string" ? `last: ${deaths.at(-1)!.killer}` : undefined,
     },
     {
-      label: "Dungeons",
+      label: "Dungeons cleared",
       value: runs.length,
       sub: [...new Set(runs.map((r) => r.name))].slice(0, 3).join(", ") || undefined,
     },
@@ -237,19 +227,24 @@ export function moments(j: Journey): Moment[] {
   const out: Moment[] = [];
   const start = firstSeen(j);
   if (start) out.push({ t: start, level: levelAt(j, start), title: "Journey began", where: zoneAt(j, start + 60), kind: "start" });
-  let firstRide = true, firstMount = true, firstRare = true, firstDungeon = true, firstGuild = true;
+  let firstRide = true, firstMount = true, firstRare = true, firstGuild = true;
+  dungeonRuns(j).forEach((r, i) => {
+    const mins = r.duration ? `${Math.round(r.duration / 60)} min` : undefined;
+    const group = r.groupSize ? `group of ${r.groupSize}` : undefined;
+    out.push({
+      t: r.t,
+      level: levelAt(j, r.t),
+      title: `${i === 0 ? "First dungeon: " : "Dungeon: "}${r.name}`,
+      where: [mins, group].filter(Boolean).join(", ") || undefined,
+      kind: "dungeon",
+      tag: r.cleared === undefined ? undefined : r.cleared ? { text: "Cleared", tone: "teal" } : { text: "Left early", tone: "grey" },
+    });
+  });
   for (const e of j.events) {
     const level = levelAt(j, e.t);
     const where = zoneAt(j, e.t);
     if (e.k === "lvl" && typeof e.level === "number" && e.level % 10 === 0) {
       out.push({ t: e.t, level: e.level, title: `Reached level ${e.level}`, where, kind: "level" });
-    } else if (e.k === "out") {
-      const run = e.run as RunSummary | undefined;
-      if (!run?.name || run.pvp || run.type === "pvp") continue;
-      const mins = run.duration ? `${Math.round(run.duration / 60)} min` : undefined;
-      const group = run.groupSize ? `group of ${run.groupSize}` : undefined;
-      out.push({ t: e.t, level, title: `${firstDungeon ? "First dungeon: " : "Dungeon: "}${run.name}`, where: [mins, group].filter(Boolean).join(", ") || undefined, kind: "dungeon" });
-      firstDungeon = false;
     } else if (e.k === "loot") {
       const item = e.item as Item | undefined;
       if ((item?.quality ?? 0) < 3) continue;
@@ -272,7 +267,7 @@ export function moments(j: Journey): Moment[] {
       out.push({ t: e.t, level, title: `“${String(e.text)}”`, where: (e.zone as string | undefined) ?? where, kind: "note" });
     }
   }
-  return out.reverse();
+  return out.sort((a, b) => b.t - a.t);
 }
 
 // The journal lines the replay shows as it goes.

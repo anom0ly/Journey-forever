@@ -3,7 +3,7 @@
 
 // Bumped when the numbers are worked out differently, so stored characters
 // are worked out again by their owner's browser.
-export const BOARDS_VERSION = 1;
+export const BOARDS_VERSION = 2;
 
 export type GroupId = "leveling" | "survival" | "gold" | "professions" | "world" | "dungeons" | "pvp";
 export const GROUPS: { id: GroupId; label: string }[] = [
@@ -69,9 +69,9 @@ export const BOARDS: BoardDef[] = [
   { id: "flown", group: "world", title: "Farthest flown", sub: "By flight path", fmt: "distance", dir: "desc" },
   { id: "zones", group: "world", title: "Most zones visited", sub: "Zones entered", fmt: "count", dir: "desc" },
 
-  { id: "dungeonrun", group: "dungeons", title: "Fastest run: {p}", sub: "Time inside, runs with 10 or more kills", fmt: "duration", dir: "asc", param: "dungeon" },
-  { id: "youngclear", group: "dungeons", title: "Lowest level run: {p}", sub: "Character level, runs with 10 or more kills", fmt: "level", dir: "asc", param: "dungeon" },
-  { id: "runs", group: "dungeons", title: "Most dungeon runs", sub: "Dungeon runs", fmt: "count", dir: "desc" },
+  { id: "dungeonrun", group: "dungeons", title: "Fastest run: {p}", sub: "Time inside, full clears (end boss killed)", fmt: "duration", dir: "asc", param: "dungeon" },
+  { id: "youngclear", group: "dungeons", title: "Lowest level run: {p}", sub: "Character level, full clears (end boss killed)", fmt: "level", dir: "asc", param: "dungeon" },
+  { id: "runs", group: "dungeons", title: "Most dungeon clears", sub: "Full clears (end boss killed)", fmt: "count", dir: "desc" },
   { id: "epics", group: "dungeons", title: "Most epics looted", sub: "Epic items looted", fmt: "count", dir: "desc" },
 
   { id: "hk", group: "pvp", title: "Most honorable kills", sub: "In battlegrounds", fmt: "count", dir: "desc" },

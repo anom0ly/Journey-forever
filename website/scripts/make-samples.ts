@@ -99,8 +99,9 @@ function brannoc() {
       distance: walked, flown, played: level * 2400, skills: structuredClone(skills), gear: {}, links: {},
     };
   };
-  const kill = (t: number, xp: number) => {
-    const n = Math.floor(rand() * killNames.length);
+  const kill = (t: number, xp: number, name?: string) => {
+    if (name && !killNames.includes(name)) killNames.push(name);
+    const n = name ? killNames.indexOf(name) : Math.floor(rand() * killNames.length);
     kills.push(`${t - lastKill},${xp},${n + 1};`);
     lastKill = t;
     killXP += xp;
@@ -185,6 +186,9 @@ function brannoc() {
   ev(t, "grp", pos, "party", [["Player-0000-0000AAAA", "Groupmate-Elsewhere", "Human", "Female", "PRIEST", 12, null, null]], null, null);
   ev(t + 60, "in", pos, 90, "Gnomeregan", "party");
   const runEnd = t + 60 + 3900;
+  // The end boss dies near the end, so the run is a full clear.
+  for (let k = 0; k < 5; k++) kill(t + 300 + k * 400, 120, "Leprous Technician");
+  kill(runEnd - 120, 900, "Mekgineer Thermaplugg");
   ev(runEnd - 1500, "die", pos, "Sample Boss", null, "Sample Smash");
   deathsAt.push(runEnd - 1500);
   deaths++;

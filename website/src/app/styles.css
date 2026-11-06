@@ -496,3 +496,5 @@ dialog textarea { width: 100%; background: var(--bg); color: var(--text); border
 .uploader-steps b { color: var(--text); font-weight: 600; }
 .uploader-faq { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 14px 24px; }
 .uploader-faq > div { display: flex; flex-direction: column; gap: 2px; }
+.pill.moment-tag { margin-left: 8px; vertical-align: 2px; border-color: transparent; }
+.pill.moment-tag.grey { background: transparent; color: var(--muted); border-color: var(--line-2); }
