@@ -9,7 +9,12 @@ import { dateTime } from "../format";
 import { useMe } from "../me";
 
 const SWITCHES: { key: keyof UploaderSettings; label: string; hint?: string }[] = [
-  { key: "shots", label: "Upload screenshots", hint: "Addon shots and Print Screen shots taken during a session, the same as a manual upload" },
+  { key: "shots", label: "Upload the addon's screenshots", hint: "Dungeon clears, epic loot, level-ups and the other moments the addon captures" },
+  {
+    key: "manualShots",
+    label: "Also upload Print Screen shots",
+    hint: "Screenshots you take yourself during a session. Off by default: they can catch chat or other windows, and they show on public journeys. From version 1.3.0.",
+  },
   { key: "notify", label: "Show a notification after each upload" },
   { key: "addon", label: "Keep the Journey Forever addon installed and up to date", hint: "Installs it if it's missing and updates it when a new version is out. Only while WoW is closed." },
   { key: "update", label: "Keep the uploader up to date", hint: "Installs new versions of this program by itself and restarts it. From version 1.1.0." },

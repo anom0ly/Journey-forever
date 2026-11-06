@@ -112,6 +112,21 @@ describe("one upload", () => {
     expect(fourth.shotIds.length).toBe(second.shots);
   });
 
+  it("sends Print Screen shots only when they're switched on", async () => {
+    const saved = await readSaved(await listSaved(FOREVER));
+    const { readUpload } = await import("../../website/src/lib/parse/upload");
+    const brannoc = readUpload(saved).journeys.find((j) => j.character.name === "Brannoc")!;
+    const logged = brannoc.events.filter((e) => e.k === "shot" && !e.failed && typeof e.shot === "string").map((e) => `${e.shot}.jpg`);
+    // A hand-taken shot a minute after one the addon logged: inside the session.
+    const m = /^WoWScrnShot_(\d{6})_(\d{2})(\d{2})(\d{2})\.jpg$/.exec(logged[0])!;
+    const byHand = `WoWScrnShot_${m[1]}_${m[2]}${String((Number(m[3]) + 1) % 60).padStart(2, "0")}${m[4]}.jpg`;
+    const shots = await shotFiles([...logged, byHand]);
+    const off = await sync(new FakeSite(), saved, shots, options());
+    expect(off.shots).toBe(new Set(logged).size);
+    const on = await sync(new FakeSite(), saved, shots, { ...options(), manualShots: true });
+    expect(on.shots).toBe(new Set(logged).size + 1);
+  });
+
   it("leaves screenshots alone when they're switched off", async () => {
     const saved = await readSaved(await listSaved(FOREVER));
     const site = new FakeSite();

@@ -16,7 +16,8 @@ in the site's `ADMIN_BNET_IDS` can connect a PC.
 
 From then on it works in the background. When you log out, /reload or quit,
 WoW writes the saved files; 15 seconds later the uploader reads them, merges
-them with what's on the site and uploads, then shows a notification.
+them with what's on the site and uploads, then shows a notification. While
+WoW is running it uploads at most every 10 minutes, and always once WoW closes.
 
 While it runs it has a tray icon by the clock. The dot on it shows the
 state: green watching, red uploading, amber needs you, grey paused. Click it
@@ -25,7 +26,8 @@ Upload now, Pause, Change WoW folder, Start with Windows, Check for updates,
 Remove from this PC. The tray menu also has Check for updates. Closing the window minimizes it; **Quit** is in the tray
 icon's right-click menu. Started with Windows, it's in the tray only.
 
-The switches for screenshots, notifications, addon updates, uploader
+The switches for screenshots (the addon's, and Print Screen ones, which are
+off by default), notifications, addon updates, uploader
 updates and error reports are on the site's Account page, which also lists each connected PC
 and can disconnect it.
 
@@ -53,10 +55,15 @@ and can disconnect it.
   instance token and exits when the uploader stops. Without WebView2 the
   page opens in the browser instead. CI opens it for real on a Windows
   runner (`scripts/host-smoke.ts`).
-- Self-update: a minute after starting and then every 6 hours it looks for a
-  newer `uploader-v*` release published by `github-actions[bot]`, downloads
-  the .exe, checks its SHA-256 against the digest GitHub records, renames
-  the running .exe to `.old`, puts the new one in place and restarts into it.
+- Self-update: a minute after starting and then every 6 hours it asks the
+  site which build is approved (`GET /api/uploader/latest`). An admin
+  approves each build on the Uploaders page (`/admin/uploader`) after trying
+  it; the site records the SHA-256 GitHub had for it then. The uploader
+  installs that build only if it's newer, was published by
+  `github-actions[bot]`, and the .exe's SHA-256 matches the approved one. It
+  renames the running .exe to `.old`, puts the new one in place and restarts
+  into it. Withdrawing an approval stops a build reaching more PCs. Not
+  connected: no updates.
 - Addon updates: every 6 hours it compares `Interface\AddOns\JourneyForever\
   JourneyForever.toc` with the newest `addon-v*` release on GitHub and, while
   no WoW game is running, swaps in the new folder.
@@ -91,8 +98,10 @@ Off Windows, notifications and opening the browser are printed instead.
 Bump `UPLOADER_VERSION` in `website/src/lib/uploader.ts` (the Account page
 links to that version), merge, then **Actions → Uploader → Run workflow** on
 `main`. It builds the .exe on Windows and publishes release
-`uploader-v<version>`. Installed copies from 1.1.0 on pick it up within 6
-hours (or at once with Check for updates); 1.0.0 needs the new one
+`uploader-v<version>`. Try it, then **Approve** it on the Uploaders page:
+installed copies from 1.3.0 on pick it up within 6 hours (or at once with
+Check for updates). 1.1.0 to 1.2.0 update to the newest workflow release
+without approval (that's how they reach 1.3.0); 1.0.0 needs the new one
 downloaded and double-clicked once.
 
 `assets/icon.ico` is the site's `favicon.svg` (also in `assets/`) at 16–256

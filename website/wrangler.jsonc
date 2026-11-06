@@ -34,7 +34,9 @@
   // RL_CHANGES: uploads and other changes, per account.
   "ratelimits": [
     { "name": "RL_REQUESTS", "namespace_id": "4101", "simple": { "limit": 600, "period": 60 } },
-    { "name": "RL_CHANGES", "namespace_id": "4102", "simple": { "limit": 240, "period": 60 } }
+    { "name": "RL_CHANGES", "namespace_id": "4102", "simple": { "limit": 240, "period": 60 } },
+    // RL_ERRORS: error reports, per uploader PC, else per account, else per IP.
+    { "name": "RL_ERRORS", "namespace_id": "4103", "simple": { "limit": 10, "period": 60 } }
   ],
   // Sign-in: "battlenet" needs the BNET_CLIENT_ID and BNET_CLIENT_SECRET
   // secrets (wrangler secret put, or type "Secret" in the dashboard). For local

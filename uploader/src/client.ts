@@ -4,7 +4,7 @@
 import type { StoredCharacter } from "../../website/src/app/api";
 import type { BoardEntry } from "../../website/src/lib/boardDefs";
 import type { CharacterSummary, Journey } from "../../website/src/lib/journey";
-import type { UploaderSettings } from "../../website/src/lib/uploader";
+import type { ApprovedUploader, UploaderSettings } from "../../website/src/lib/uploader";
 import type { PreparedImage } from "./images";
 import type { Client, ShotMeta } from "./sync";
 
@@ -104,6 +104,11 @@ export class SiteClient implements Client {
 
   settings(): Promise<UploaderSettings> {
     return this.call<UploaderSettings>("/api/uploader/settings");
+  }
+
+  // The build an admin approved for self-update.
+  latest(): Promise<ApprovedUploader> {
+    return this.call<ApprovedUploader>("/api/uploader/latest");
   }
 
   async forget(): Promise<void> {

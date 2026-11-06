@@ -88,7 +88,7 @@ describe("auto-uploader keys", () => {
     const { call, connect } = await setup();
     const { key } = (await call("/api/uploader/claim", { method: "POST", body: { code: await connect(), verifier: "a-secret-only-the-pc-knows" } })).body as { key: string };
     expect((await call("/api/characters", { key })).status).toBe(200);
-    expect((await call("/api/uploader/settings", { key })).body).toEqual({ shots: true, notify: true, addon: true, update: true, reports: true });
+    expect((await call("/api/uploader/settings", { key })).body).toEqual({ shots: true, manualShots: false, notify: true, addon: true, update: true, reports: true });
     expect((await call("/api/account", { key })).status).toBe(403);
     expect((await call("/api/account", { key, method: "DELETE", body: { confirm: "admin#1" } })).status).toBe(403);
     expect((await call("/api/characters/Adom-Toretto", { key, method: "PATCH", body: { isPublic: true } })).status).toBe(403);
@@ -109,7 +109,7 @@ describe("auto-uploader keys", () => {
 
   it("keeps the switches the Account page sets", async () => {
     const { call } = await setup();
-    expect((await call("/api/uploader/settings", { method: "PATCH", session: "admin", body: { shots: false, addon: "yes" } })).body).toEqual({ shots: false, notify: true, addon: true, update: true, reports: true });
+    expect((await call("/api/uploader/settings", { method: "PATCH", session: "admin", body: { shots: false, addon: "yes" } })).body).toEqual({ shots: false, manualShots: false, notify: true, addon: true, update: true, reports: true });
     expect(((await call("/api/uploader", { session: "admin" })).body.settings as Record<string, boolean>).shots).toBe(false);
   });
 
@@ -154,8 +154,11 @@ describe("auto-uploader keys", () => {
       expect(r.status).toBe(200);
     }
     await call("/api/errors", { key, method: "POST", body: { kind: "uploader", area: "update", security: true, message: "checksum mismatch" } });
-    // Not connected: logged, not kept.
-    expect((await call("/api/errors", { method: "POST", body: { kind: "uploader", area: "crash", message: "boom" } })).status).toBe(200);
+    // Without a PC's key an uploader report is refused, so nobody can fake one (or a "security" one).
+    expect((await call("/api/errors", { method: "POST", body: { kind: "uploader", area: "update", security: true, message: "boom" } })).status).toBe(401);
+    expect((await call("/api/errors", { method: "POST", session: "admin", body: { kind: "uploader", area: "crash", message: "boom" } })).status).toBe(401);
+    // A page's own report needs no sign-in.
+    expect((await call("/api/errors", { method: "POST", body: { kind: "crash", message: "boom" } })).status).toBe(200);
     expect(((await env.DB.prepare("SELECT COUNT(*) AS n FROM upload_errors").first()) as { n: number }).n).toBe(10);
 
     expect((await call("/api/admin/uploader", { session: "player" })).status).toBe(404);
@@ -170,6 +173,45 @@ describe("auto-uploader keys", () => {
     // Disconnecting the PC takes its problems with it.
     await call(`/api/uploader/pcs/${h.pcs[0].id}`, { method: "DELETE", session: "admin" });
     expect(((await env.DB.prepare("SELECT COUNT(*) AS n FROM upload_errors").first()) as { n: number }).n).toBe(0);
+  });
+
+  it("updates PCs only to a build an admin approved, with GitHub's checksum at that moment", async () => {
+    const { call, connect } = await setup();
+    const { key } = (await call("/api/uploader/claim", { method: "POST", body: { code: await connect(), verifier: "a-secret-only-the-pc-knows" } })).body as { key: string };
+    const bot = { login: "github-actions[bot]" };
+    let digest = "a".repeat(64);
+    const release = (v: string, more = {}) => ({
+      tag_name: `uploader-v${v}`, draft: false, prerelease: false, published_at: "2026-11-06T10:00:00Z", author: bot,
+      assets: [{ name: "JourneyForeverUploader.exe", size: 1000, digest: `sha256:${digest}`, uploader: bot,
+        browser_download_url: `https://github.com/anom0ly/Journey-forever/releases/download/uploader-v${v}/JourneyForeverUploader.exe` }],
+      ...more,
+    });
+    const github = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json([release("1.3.0"), release("1.2.0"), release("1.4.0", { author: { login: "someone" } }), { ...release("1.1.0"), tag_name: "addon-v1.1.0" }]),
+    );
+
+    expect((await call("/api/uploader/latest", { key })).body).toEqual({ version: null });
+    const list = (await call("/api/admin/uploader/releases", { session: "admin" })).body as { builds: { version: string; sha256: string | null }[] };
+    expect(list.builds.map((b) => [b.version, !!b.sha256])).toEqual([["1.4.0", false], ["1.3.0", true], ["1.2.0", true]]);
+
+    // Players, keys and other people's builds can't approve.
+    expect((await call("/api/admin/uploader/releases/1.3.0", { method: "POST", session: "player" })).status).toBe(404);
+    expect((await call("/api/admin/uploader/releases/1.3.0", { method: "POST", key })).status).toBe(403);
+    expect((await call("/api/admin/uploader/releases/1.4.0", { method: "POST", session: "admin" })).status).toBe(400);
+
+    expect((await call("/api/admin/uploader/releases/1.3.0", { method: "POST", session: "admin" })).status).toBe(200);
+    expect((await call("/api/uploader/latest", { key })).body).toEqual({ version: "1.3.0", sha256: digest, size: 1000 });
+
+    // GitHub's file replaced after approval: shown as changed, and PCs still get the approved checksum.
+    digest = "b".repeat(64);
+    const after = (await call("/api/admin/uploader/releases", { session: "admin" })).body as { builds: { version: string; changed: boolean }[] };
+    expect(after.builds.find((b) => b.version === "1.3.0")!.changed).toBe(true);
+    expect(((await call("/api/uploader/latest", { key })).body as { sha256: string }).sha256).toBe("a".repeat(64));
+
+    // Withdrawn: no build is offered.
+    expect((await call("/api/admin/uploader/releases/1.3.0", { method: "DELETE", session: "admin" })).status).toBe(200);
+    expect((await call("/api/uploader/latest", { key })).body).toEqual({ version: null });
+    github.mockRestore();
   });
 
   it("knows which routes a key may use", () => {

@@ -41,7 +41,8 @@ export interface ShotSource {
 }
 
 export interface SyncOptions {
-  shots: boolean; // upload screenshots at all
+  shots: boolean; // upload the addon's screenshots
+  manualShots?: boolean; // and Print Screen shots from a session (off unless switched on)
   known: Set<string>; // screenshot ids this PC uploaded before
   idOf(file: ShotSource): Promise<string>; // the id the site gives it (a hash of its bytes)
   prepare(file: ShotSource): Promise<PreparedImage>;
@@ -115,8 +116,8 @@ export async function sync(client: Client, saved: InputFile[], shots: ShotSource
     characters.push({ key, name: j.character.name, fromLevel: d.fromLevel, toLevel: d.toLevel, played: d.played, isNew: d.isNew, fillsGap: !!d.fillsGap });
   }
 
-  // Screenshots: the ones logged by our addon and the ones taken by hand
-  // during a session, that weren't uploaded before.
+  // Screenshots: the ones logged by our addon (and, when switched on, the
+  // ones taken by hand during a session) that weren't uploaded before.
   const shotIds: string[] = [];
   let uploaded = 0;
   if (o.shots && shots.length) {
@@ -127,7 +128,8 @@ export async function sync(client: Client, saved: InputFile[], shots: ShotSource
     }
     const m = matchShots(files, active);
     const saveable = new Set([...stored.keys(), ...toSave.map((j) => j.character.key)]);
-    const candidates = [...m.matched, ...m.manual].filter((s) => saveable.has(s.charKey));
+    // Print Screen shots only when switched on: unlike the Upload page, there's no preview to check them first.
+    const candidates = [...m.matched, ...(o.manualShots ? m.manual : [])].filter((s) => saveable.has(s.charKey));
     const fresh: Matched<Found>[] = [];
     for (const s of candidates) {
       s.file.id = await o.idOf(s.file.file);

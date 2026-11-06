@@ -10,7 +10,7 @@
 // plus secret for a key (POST /api/uploader/claim). A code sent anywhere
 // else is useless without the secret, and the key never shows in a URL.
 
-import { UPLOADER_SETTINGS_DEFAULT, type UploaderSettings } from "../lib/uploader";
+import { UPLOADER_EXE, UPLOADER_REPO, UPLOADER_SETTINGS_DEFAULT, type ApprovedUploader, type UploaderSettings } from "../lib/uploader";
 import { isAdmin } from "./boards";
 import type { Env, User } from "./env";
 import { HttpError, json, now, randomToken, sha256 } from "./http";
@@ -29,6 +29,7 @@ const UPLOADER_ROUTES: [string, RegExp][] = [
   ["PUT", /^\/api\/characters\/[^/]+\/screenshots\/[0-9a-f]+(\/thumb)?$/],
   ["PUT", /^\/api\/friends$/],
   ["GET", /^\/api\/uploader\/settings$/],
+  ["GET", /^\/api\/uploader\/latest$/],
   ["POST", /^\/api\/uploader\/status$/],
   ["DELETE", /^\/api\/uploader\/self$/],
   ["POST", /^\/api\/errors$/],
@@ -167,6 +168,9 @@ export async function handleUploader(req: Request, env: Env, user: User, keyId: 
     }
   }
 
+  // The build to update to: the newest one an admin approved.
+  if (parts.length === 2 && parts[1] === "latest" && m === "GET") return json(await approvedUploader(env));
+
   // The uploader saying how its last try went.
   if (parts.length === 2 && parts[1] === "status" && m === "POST" && keyId) {
     const b = ((await body()) ?? {}) as { ok?: unknown; message?: unknown; uploaded?: unknown; appVersion?: unknown; addonVersion?: unknown };
@@ -220,7 +224,9 @@ export async function handleUploader(req: Request, env: Env, user: User, keyId: 
 // page. Built from what each PC reports after an upload plus the problems it
 // sent (errors.ts keeps the last 10 per PC).
 export async function handleUploaderHealth(req: Request, env: Env, user: User, parts: string[]): Promise<Response> {
-  if (!isAdmin(env, user) || req.method !== "GET") throw new HttpError(404, "Not found");
+  if (!isAdmin(env, user)) throw new HttpError(404, "Not found");
+  if (parts[2] === "releases") return handleReleases(req, env, user, parts);
+  if (req.method !== "GET") throw new HttpError(404, "Not found");
   if (parts.length === 2) {
     const week = now() - 7 * 86400;
     const { results } = await env.DB.prepare(
@@ -257,6 +263,120 @@ export async function handleUploaderHealth(req: Request, env: Env, user: User, p
       .bind(parts[2])
       .all<{ t: number; area: string; message: string; app_version: string | null }>();
     return json({ errors: results.map((e) => ({ t: e.t, area: e.area, message: e.message, appVersion: e.app_version })) });
+  }
+  throw new HttpError(404, "Not found");
+}
+
+// Approving uploader builds. The release workflow publishes each build on
+// GitHub; uploaders install one only after an admin approves it here, and
+// only when the file still has the SHA-256 recorded at approval. Anyone who
+// can get a release onto GitHub (another workflow, a replaced file, a stolen
+// GitHub sign-in) still can't reach players' PCs without this step, and
+// withdrawing an approval stops a bad build from spreading.
+
+const RELEASE_BOT = "github-actions[bot]";
+const DOWNLOAD_PREFIX = `https://github.com/${UPLOADER_REPO}/releases/download/`;
+
+interface GhAsset {
+  name: string;
+  browser_download_url: string;
+  size?: number;
+  digest?: string | null;
+  uploader?: { login?: string } | null;
+}
+interface GhRelease {
+  tag_name: string;
+  draft: boolean;
+  prerelease: boolean;
+  published_at?: string | null;
+  author?: { login?: string } | null;
+  assets: GhAsset[];
+}
+
+export interface UploaderBuild {
+  version: string;
+  publishedAt: string | null;
+  sha256: string | null; // null: GitHub has no usable file for it
+  size: number | null;
+}
+
+// An uploader build as GitHub lists it, checked the same way the uploader
+// checks it: published by our release workflow, with a SHA-256 digest.
+export function uploaderBuild(r: GhRelease): UploaderBuild | undefined {
+  if (r.draft || r.prerelease || !r.tag_name.startsWith("uploader-v")) return undefined;
+  const version = r.tag_name.slice("uploader-v".length);
+  if (!/^\d+\.\d+\.\d+$/.test(version)) return undefined;
+  const a = r.assets.find((x) => x.name === UPLOADER_EXE);
+  const sha256 = /^sha256:([0-9a-f]{64})$/.exec(a?.digest ?? "")?.[1];
+  const ok = !!a && !!sha256 && r.author?.login === RELEASE_BOT && a.uploader?.login === RELEASE_BOT && a.browser_download_url.startsWith(DOWNLOAD_PREFIX) && !!a.size;
+  return { version, publishedAt: r.published_at ?? null, sha256: ok ? sha256! : null, size: ok ? a!.size! : null };
+}
+
+export async function githubBuilds(get: typeof fetch = fetch): Promise<UploaderBuild[]> {
+  const res = await get(`https://api.github.com/repos/${UPLOADER_REPO}/releases?per_page=50`, {
+    headers: { accept: "application/vnd.github+json", "user-agent": "JourneyForeverSite" },
+  });
+  if (!res.ok) throw new HttpError(502, `GitHub answered ${res.status}. Try again in a minute.`);
+  return ((await res.json()) as GhRelease[]).map(uploaderBuild).filter((b): b is UploaderBuild => !!b);
+}
+
+function isNewerVersion(a: string, b: string): boolean {
+  const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
+  return false;
+}
+
+export async function approvedUploader(env: Env): Promise<ApprovedUploader> {
+  const row = await env.DB.prepare("SELECT version, sha256, size FROM uploader_releases ORDER BY approved_at DESC, version DESC LIMIT 1").first<{
+    version: string;
+    sha256: string;
+    size: number;
+  }>();
+  return row ? { version: row.version, sha256: row.sha256, size: row.size } : { version: null };
+}
+
+async function handleReleases(req: Request, env: Env, user: User, parts: string[]): Promise<Response> {
+  const m = req.method;
+  const list = async () => {
+    const { results } = await env.DB.prepare("SELECT version, sha256, approved_at FROM uploader_releases").all<{ version: string; sha256: string; approved_at: number }>();
+    const approved = new Map(results.map((r) => [r.version, r]));
+    let builds: UploaderBuild[] = [];
+    let error: string | undefined;
+    try {
+      builds = await githubBuilds();
+    } catch (e) {
+      error = (e as Error).message;
+    }
+    const latest = await approvedUploader(env);
+    const out = builds.map((b) => {
+      const a = approved.get(b.version);
+      return { ...b, approvedAt: a?.approved_at ?? null, changed: !!a && a.sha256 !== b.sha256 };
+    });
+    // Approved but gone from GitHub (or GitHub didn't answer): still listed, so it can be withdrawn.
+    for (const a of results) {
+      if (!builds.some((b) => b.version === a.version)) out.push({ version: a.version, publishedAt: null, sha256: null, size: null, approvedAt: a.approved_at, changed: false });
+    }
+    out.sort((x, y) => (isNewerVersion(x.version, y.version) ? -1 : isNewerVersion(y.version, x.version) ? 1 : 0));
+    return json({ latest: latest.version, error, builds: out });
+  };
+  if (parts.length === 3 && m === "GET") return list();
+  const version = parts[3] ?? "";
+  if (parts.length !== 4 || !/^\d+\.\d+\.\d+$/.test(version)) throw new HttpError(404, "Not found");
+  if (m === "POST") {
+    // The SHA-256 comes from GitHub now, never from the page.
+    const build = (await githubBuilds()).find((b) => b.version === version);
+    if (!build?.sha256 || !build.size) throw new HttpError(400, `GitHub has no usable uploader ${version} from the release workflow`);
+    await env.DB.prepare(
+      `INSERT INTO uploader_releases (version, sha256, size, approved_at, approved_by) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (version) DO UPDATE SET sha256 = excluded.sha256, size = excluded.size, approved_at = excluded.approved_at, approved_by = excluded.approved_by`,
+    )
+      .bind(version, build.sha256, build.size, now(), user.id)
+      .run();
+    return list();
+  }
+  if (m === "DELETE") {
+    await env.DB.prepare("DELETE FROM uploader_releases WHERE version = ?").bind(version).run();
+    return list();
   }
   throw new HttpError(404, "Not found");
 }

@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { UPLOADER_VERSION } from "../../lib/uploader";
-import { api, type UploaderHealthPc, type UploaderProblem } from "../api";
+import { api, type UploaderBuilds, type UploaderHealthPc, type UploaderProblem } from "../api";
 import { dateTime, plural } from "../format";
 
 const WEEK = 7 * 86400;
@@ -26,6 +26,83 @@ function state(pc: UploaderHealthPc, nowS: number): { tag: string; cls: string }
   if (pc.ok === null) return { tag: "Waiting", cls: "" };
   if (!pc.lastSeenAt || nowS - pc.lastSeenAt > WEEK) return { tag: "Quiet", cls: "" };
   return { tag: "OK", cls: "teal" };
+}
+
+// Self-update approvals: uploaders install a new build only after it's
+// approved here, and only the exact file GitHub had at that moment.
+function UploaderBuildsCard() {
+  const [data, setData] = useState<UploaderBuilds>();
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState<string>();
+
+  useEffect(() => {
+    api.uploaderBuilds().then(setData, (e: Error) => setError(e.message));
+  }, []);
+
+  const run = async (version: string, fn: () => Promise<UploaderBuilds>) => {
+    setBusy(version);
+    setError(undefined);
+    try {
+      setData(await fn());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const builds = data?.builds.slice(0, 6) ?? [];
+  return (
+    <section class="card flat stack">
+      <div class="stack" style={{ gap: "4px" }}>
+        <h2>Self-update approvals</h2>
+        <p class="small muted">
+          Connected PCs update only to a build approved here, and only if GitHub's file still has the checksum it had when you approved it.
+          Approve a build after you've tried it. Withdraw it to stop it reaching more PCs.{" "}
+          {data && (data.latest ? <>PCs are offered <b>{data.latest}</b>.</> : <>No build is approved, so PCs don't update themselves.</>)}
+        </p>
+      </div>
+      {(error || data?.error) && <div class="notice err">{error ?? data?.error}</div>}
+      {!data && !error && <p class="muted small">Loading…</p>}
+      {builds.length > 0 && (
+        <div class="list">
+          {builds.map((b) => (
+            <div class="item" key={b.version}>
+              <div class="stack" style={{ flex: "1 1 260px", gap: "2px" }}>
+                <span>
+                  <b>{b.version}</b>{" "}
+                  {b.changed ? (
+                    <span class="pill red">File changed since approval</span>
+                  ) : b.approvedAt ? (
+                    <span class="pill teal">Approved</span>
+                  ) : (
+                    <span class="pill">Not approved</span>
+                  )}
+                </span>
+                <span class="tiny muted" style={{ wordBreak: "break-all" }}>
+                  {b.publishedAt ? `Published ${dateTime(Date.parse(b.publishedAt) / 1000)}` : ""}
+                  {b.approvedAt ? ` · approved ${dateTime(b.approvedAt)}` : ""}
+                  {b.sha256 ? ` · SHA-256 ${b.sha256}` : b.approvedAt ? " · not found on GitHub now" : " · not from the release workflow, can't be approved"}
+                </span>
+              </div>
+              <div class="row" style={{ gap: "8px" }}>
+                {b.sha256 && (!b.approvedAt || b.changed) && (
+                  <button type="button" class="btn primary" disabled={!!busy} onClick={() => run(b.version, () => api.approveUploader(b.version))}>
+                    {busy === b.version ? "Approving…" : b.changed ? "Approve new file" : "Approve"}
+                  </button>
+                )}
+                {b.approvedAt && (
+                  <button type="button" class="btn" disabled={!!busy} onClick={() => run(b.version, () => api.withdrawUploader(b.version))}>
+                    Withdraw
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function UploaderHealthPage() {
@@ -68,6 +145,7 @@ export function UploaderHealthPage() {
           </p>
         </div>
       </section>
+      <UploaderBuildsCard />
       {error && <div class="notice err">{error}</div>}
       {!pcs && !error && <p class="muted">Loading…</p>}
       {pcs && (
