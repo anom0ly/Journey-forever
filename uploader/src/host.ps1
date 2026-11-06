@@ -31,6 +31,8 @@ public static class JfNative {
   [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string id);
   [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
 }
 '@
 # The window and its taskbar button belong to Journey Forever, not PowerShell
@@ -126,6 +128,10 @@ $form.ClientSize = New-Object System.Drawing.Size(920, 680)
 $form.MinimumSize = New-Object System.Drawing.Size(480, 420)
 $form.BackColor = [System.Drawing.Color]::FromArgb(18, 13, 13)
 $script:webview = $null
+# The uploader starts this process hidden, and Windows applies that to the
+# first window the process shows, whatever it asks for. Spend that first
+# show on a hide now, so the real one later actually appears.
+[void][JfNative]::ShowWindow($form.Handle, 0)
 
 function Test-OwnUrl([string]$u) {
   return $u -eq $base -or $u.StartsWith("$base/") -or $u.StartsWith("$base?")
@@ -166,7 +172,9 @@ function New-WebView([string]$url) {
     if ($test) {
       $c.add_NavigationCompleted({
         param($s2, $e2)
-        [Console]::Out.WriteLine($(if ($e2.IsSuccess) { 'webview-ok' } else { 'webview-fail navigation' }))
+        # The window must really be on screen, not just loaded.
+        $shown = [JfNative]::IsWindowVisible($form.Handle)
+        [Console]::Out.WriteLine($(if (-not $e2.IsSuccess) { 'webview-fail navigation' } elseif (-not $shown) { 'webview-fail hidden' } else { 'webview-ok' }))
         $script:quitting = $true
         [System.Windows.Forms.Application]::Exit()
       })
@@ -184,6 +192,7 @@ function Show-Window {
   }
   if (-not $form.Visible) { $form.Show() }
   if ($form.WindowState -eq 'Minimized') { $form.WindowState = 'Normal' }
+  [void][JfNative]::ShowWindow($form.Handle, 5) # SW_SHOW, in case Windows hid it anyway
   $form.Activate()
   [void][JfNative]::SetForegroundWindow($form.Handle)
 }
