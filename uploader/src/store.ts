@@ -59,6 +59,10 @@ function writeJson(file: string, v: unknown): void {
   renameSync(`${file}.tmp`, file);
 }
 
+// The site's first address. Battle.net only signs people in on the site's
+// main address now, so PCs set up with this one move to the new default.
+export const OLD_SITE = "https://journey-forever.hi-anomoly.workers.dev";
+
 export class Store {
   readonly dir: string;
   config: Config;
@@ -68,6 +72,10 @@ export class Store {
     this.dir = dir;
     mkdirSync(dir, { recursive: true });
     this.config = readJson<Config>(join(dir, "config.json"), { site: defaultSite });
+    if (this.config.site === OLD_SITE && defaultSite !== OLD_SITE) {
+      this.config.site = defaultSite;
+      this.saveConfig();
+    }
     this.state = readJson<State>(join(dir, "state.json"), { known: [], ids: {}, log: [] });
   }
 

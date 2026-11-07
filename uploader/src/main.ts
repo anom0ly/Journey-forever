@@ -22,7 +22,7 @@ import { Store } from "./store";
 import { deleteAfterExit, IS_WINDOWS, notify, openUrl, pickFolder, registryWowPaths, setStartMenu, setStartup } from "./windows";
 import { candidateRoots, existingDrives, findForever, foreverIn } from "./wow";
 
-const SITE = process.env.JF_SITE ?? "https://journey-forever.hi-anomoly.workers.dev";
+const SITE = process.env.JF_SITE ?? "https://journey.wowhub.net";
 const PORTS = Array.from({ length: 10 }, (_, i) => 47213 + i);
 const updatedFrom = process.argv.find((a) => a.startsWith("--updated-from="))?.slice("--updated-from=".length);
 const background = process.argv.includes("--background") || (!!updatedFrom && !process.argv.includes("--show"));
