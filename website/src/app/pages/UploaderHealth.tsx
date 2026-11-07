@@ -4,7 +4,7 @@
 // "Not found" to anyone else.
 
 import { useEffect, useState } from "preact/hooks";
-import { BETA_MAX_PCS, UPLOADER_VERSION } from "../../lib/uploader";
+import { BETA_MAX_PCS, fixedSince, UPLOADER_VERSION, uploaderPcState } from "../../lib/uploader";
 import { api, type UploaderBuilds, type UploaderHealthPc, type UploaderProblem, type UploaderSwitches } from "../api";
 import { dateTime, plural } from "../format";
 
@@ -19,14 +19,7 @@ const AREAS: Record<string, string> = {
   window: "window",
 };
 
-function state(pc: UploaderHealthPc, nowS: number): { tag: string; cls: string } {
-  if (pc.ok === false) return { tag: "Failing", cls: "red" };
-  if (pc.appVersion && pc.appVersion !== UPLOADER_VERSION) return { tag: "Old version", cls: "gold" };
-  if (pc.weekErrors) return { tag: "Problems", cls: "gold" };
-  if (pc.ok === null) return { tag: "Waiting", cls: "" };
-  if (!pc.lastSeenAt || nowS - pc.lastSeenAt > WEEK) return { tag: "Quiet", cls: "" };
-  return { tag: "OK", cls: "teal" };
-}
+const state = (pc: UploaderHealthPc, nowS: number) => uploaderPcState(pc, nowS, WEEK);
 
 // Self-update approvals: uploaders install a new build only after it's
 // approved here, and only the exact file GitHub had at that moment.
@@ -283,7 +276,7 @@ export function UploaderHealthPage() {
                     <th>App</th>
                     <th>Addon</th>
                     <th>Windows</th>
-                    <th>Last upload</th>
+                    <th>Last check-in</th>
                     <th>State</th>
                     <th>Last problem</th>
                   </tr>
@@ -306,12 +299,24 @@ export function UploaderHealthPage() {
                         <td>{pc.appVersion ?? "–"}</td>
                         <td>{pc.addonVersion ?? "–"}</td>
                         <td>{pc.osVersion ?? "–"}</td>
-                        <td>{pc.lastUploadAt ? dateTime(pc.lastUploadAt) : "Never"}</td>
+                        <td>
+                          {pc.lastOkAt ? dateTime(pc.lastOkAt) : "Never"}
+                          {pc.lastUploadAt && pc.lastUploadAt !== pc.lastOkAt && (
+                            <div class="tiny muted">uploaded {dateTime(pc.lastUploadAt)}</div>
+                          )}
+                        </td>
                         <td>
                           <span class={`pill ${s.cls}`}>{s.tag}</span>
                         </td>
                         <td style={{ whiteSpace: "normal", minWidth: "220px" }}>
-                          {pc.lastError ? (
+                          {pc.lastError && fixedSince(pc, pc.lastError.t) ? (
+                            <span class="muted">
+                              <span class="pill" style={{ fontSize: "12px", padding: "2px 8px", marginRight: "6px", background: "transparent", color: "var(--muted)", border: "1px solid var(--line-2)" }}>
+                                Fixed since
+                              </span>
+                              {AREAS[pc.lastError.area] ?? pc.lastError.area} · {pc.lastError.message} · {dateTime(pc.lastError.t)}
+                            </span>
+                          ) : pc.lastError ? (
                             <>
                               {AREAS[pc.lastError.area] ?? pc.lastError.area} · {pc.lastError.message}
                               <span class="tiny muted">
@@ -342,6 +347,7 @@ export function UploaderHealthPage() {
                                   <li key={i} class="small">
                                     <span class="muted">{dateTime(e.t)}</span> · {AREAS[e.area] ?? e.area}
                                     {e.appVersion ? ` · ${e.appVersion}` : ""} · {e.message}
+                                    {fixedSince(pc, e.t) && <span class="tiny" style={{ color: "var(--teal-hi)" }}> · fixed since (checked in fine afterwards)</span>}
                                   </li>
                                 ))}
                               </ul>

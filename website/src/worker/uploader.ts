@@ -215,9 +215,10 @@ export async function handleUploader(req: Request, env: Env, user: User, keyId: 
     const t = now();
     await env.DB.prepare(
       `UPDATE upload_keys SET last_seen_at = ?, last_ok = ?, last_message = ?, app_version = ?, addon_version = ?,
-         last_upload_at = CASE WHEN ? THEN ? ELSE last_upload_at END WHERE id = ?`,
+         last_upload_at = CASE WHEN ? THEN ? ELSE last_upload_at END,
+         last_ok_at = CASE WHEN ? THEN ? ELSE last_ok_at END WHERE id = ?`,
     )
-      .bind(t, b.ok === false ? 0 : 1, text(b.message, 200), text(b.appVersion, 20), text(b.addonVersion, 20), b.uploaded === true ? 1 : 0, t, keyId)
+      .bind(t, b.ok === false ? 0 : 1, text(b.message, 200), text(b.appVersion, 20), text(b.addonVersion, 20), b.uploaded === true ? 1 : 0, t, b.ok === false ? 0 : 1, t, keyId)
       .run();
     return json({ ok: true });
   }
@@ -272,7 +273,7 @@ export async function handleUploaderHealth(req: Request, env: Env, user: User, p
     const week = now() - 7 * 86400;
     const { results } = await env.DB.prepare(
       `SELECT k.id, k.name, u.battletag, k.created_at, k.last_seen_at, k.last_upload_at, k.last_ok, k.last_message,
-         k.app_version, k.addon_version, k.os_version,
+         k.app_version, k.addon_version, k.os_version, k.last_ok_at,
          (SELECT COUNT(*) FROM upload_errors e WHERE e.key_id = k.id AND e.t > ?) AS week_errors,
          e.t AS error_t, e.area AS error_area, e.message AS error_message
        FROM upload_keys k JOIN users u ON u.id = k.user_id
@@ -280,7 +281,7 @@ export async function handleUploaderHealth(req: Request, env: Env, user: User, p
        ORDER BY COALESCE(k.last_seen_at, k.created_at) DESC`,
     )
       .bind(week)
-      .all<KeyRow & { battletag: string; os_version: string | null; week_errors: number; error_t: number | null; error_area: string | null; error_message: string | null }>();
+      .all<KeyRow & { battletag: string; os_version: string | null; last_ok_at: number | null; week_errors: number; error_t: number | null; error_area: string | null; error_message: string | null }>();
     return json({
       pcs: results.map((r) => ({
         id: r.id,
@@ -294,6 +295,7 @@ export async function handleUploaderHealth(req: Request, env: Env, user: User, p
         appVersion: r.app_version,
         addonVersion: r.addon_version,
         osVersion: r.os_version,
+        lastOkAt: r.last_ok_at,
         weekErrors: r.week_errors,
         lastError: r.error_t === null ? null : { t: r.error_t, area: r.error_area, message: r.error_message },
       })),
