@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
-import { connectPort } from "../src/lib/uploader";
+import { connectPort, fixedSince, UPLOADER_VERSION, uploaderPcState, type PcHealth } from "../src/lib/uploader";
 import { returnPath } from "../src/worker/auth";
 import type { Env } from "../src/worker/env";
 import { sha256 } from "../src/worker/http";
@@ -166,6 +166,16 @@ describe("auto-uploader keys", () => {
     const h = (await call("/api/admin/uploader", { session: "admin" })).body as { pcs: { id: string; battletag: string; osVersion: string; appVersion: string; weekErrors: number; lastError: { area: string; message: string } }[] };
     expect(h.pcs).toHaveLength(1);
     expect(h.pcs[0]).toMatchObject({ battletag: "admin#1", osVersion: "10.0.26100", appVersion: "1.2.0", weekErrors: 10, lastError: { area: "update-security", message: "checksum mismatch" } });
+    // Problems until the PC checks in fine after its newest one.
+    const pc = () => call("/api/admin/uploader", { session: "admin" }).then((r) => (r.body as { pcs: PcHealth[] }).pcs[0]);
+    expect(uploaderPcState({ ...(await pc()), appVersion: UPLOADER_VERSION }, Date.now() / 1000).tag).toBe("Problems");
+    await call("/api/uploader/status", { key, method: "POST", body: { ok: true, message: "Nothing new", appVersion: UPLOADER_VERSION } });
+    const fixed = await pc();
+    expect(fixed.lastOkAt).toBeGreaterThan(0);
+    expect(fixedSince(fixed, fixed.lastError!.t)).toBe(true);
+    expect(uploaderPcState(fixed, Date.now() / 1000).tag).toBe("OK");
+    await call("/api/uploader/status", { key, method: "POST", body: { ok: false, message: "Site down", appVersion: UPLOADER_VERSION } });
+    expect((await pc()).lastOkAt).toBe(fixed.lastOkAt);
     const list = (await call(`/api/admin/uploader/${h.pcs[0].id}/errors`, { session: "admin" })).body as { errors: { message: string }[] };
     expect(list.errors).toHaveLength(10);
     expect(list.errors[0].message).toBe("checksum mismatch");

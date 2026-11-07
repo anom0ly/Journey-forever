@@ -161,6 +161,7 @@ export interface UploaderPc {
 export interface UploaderHealthPc extends UploaderPc {
   battletag: string;
   osVersion: string | null;
+  lastOkAt: number | null; // last good check-in (an upload attempt that went well)
   weekErrors: number;
   lastError: { t: number; area: string; message: string } | null;
 }

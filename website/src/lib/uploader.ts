@@ -39,3 +39,26 @@ export interface ApprovedUploader {
   sha256?: string;
   size?: number;
 }
+
+// The admin Uploaders page: how a PC is doing. A problem counts until the PC
+// checks in fine (an upload attempt that went well) after it.
+export interface PcHealth {
+  ok: boolean | null; // how the last upload attempt went
+  appVersion: string | null;
+  lastSeenAt: number | null;
+  lastOkAt: number | null;
+  lastError: { t: number } | null;
+}
+
+export function fixedSince(pc: Pick<PcHealth, "lastOkAt">, t: number): boolean {
+  return pc.lastOkAt !== null && pc.lastOkAt >= t;
+}
+
+export function uploaderPcState(pc: PcHealth, nowS: number, quietAfter = 7 * 86400): { tag: string; cls: string } {
+  if (pc.ok === false) return { tag: "Failing", cls: "red" };
+  if (pc.appVersion && pc.appVersion !== UPLOADER_VERSION) return { tag: "Old version", cls: "gold" };
+  if (pc.lastError && !fixedSince(pc, pc.lastError.t)) return { tag: "Problems", cls: "gold" };
+  if (pc.ok === null) return { tag: "Waiting", cls: "" };
+  if (!pc.lastSeenAt || nowS - pc.lastSeenAt > quietAfter) return { tag: "Quiet", cls: "" };
+  return { tag: "OK", cls: "teal" };
+}
