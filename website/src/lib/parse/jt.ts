@@ -10,6 +10,7 @@
 import type { Death, DungeonRun, LevelInfo, Session, Stats } from "../journey";
 import { entries, isObj, list, num, str, type LuaObject, type LuaValue } from "../lua";
 import type { Contribution, FileContext } from "./types";
+import { collapseDeaths } from "../merge";
 
 export const JT_KNOWN_VERSION = 1;
 
@@ -118,7 +119,8 @@ export function parseJourneyTracker(db: LuaValue | undefined, ctx: FileContext):
   }
   levels.sort((a, b) => a.level - b.level);
 
-  const deaths = deathsOf(db.deaths);
+  // Journey Tracker saves a death twice when the client fires PLAYER_DEAD twice.
+  const deaths = collapseDeaths(deathsOf(db.deaths));
   for (const d of list(db.deaths)) {
     if (isObj(d) && typeof d.mapID === "number" && typeof d.zone === "string") zones[d.mapID] = d.zone;
   }

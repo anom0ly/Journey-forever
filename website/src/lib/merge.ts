@@ -26,6 +26,50 @@ const ADDONS: AddonId[] = ["rts", "jt", "jf"];
 // the realm's, so the same death can be this far apart.
 const DEATH_MATCH_SECONDS = 180;
 
+// The client can fire PLAYER_DEAD twice for one death, a few seconds apart
+// (seen up to 6). Road to Sixty skips a second one in the same second;
+// Journey Tracker saves both. Deaths closer than this are one death. A
+// shaman's Reincarnation then a second death this fast would count once.
+export const DEATH_TWIN_SECONDS = 10;
+
+// One death per twin pair (or run of them): the copy `prefer` picks is kept,
+// and the other's fields fill its blanks. Returns the deaths sorted by time.
+export function collapseDeaths<T extends { t: number }>(list: T[], prefer: (a: T, b: T) => boolean = () => false): T[] {
+  const out: T[] = [];
+  for (const d of [...list].sort((a, b) => a.t - b.t)) {
+    const kept = out.at(-1);
+    if (!kept || d.t - kept.t >= DEATH_TWIN_SECONDS) {
+      out.push(d);
+      continue;
+    }
+    const [win, other] = prefer(d, kept) ? [d, kept] : [kept, d];
+    const w: Record<string, unknown> = { ...win };
+    for (const [k, v] of Object.entries(other)) if (w[k] === undefined && v !== undefined && k !== "approx") w[k] = v;
+    // The first moment stays, so a run of twins can't stretch the window on.
+    w.t = kept.t;
+    out[out.length - 1] = w as T;
+  }
+  return out;
+}
+
+// Road to Sixty's copy of a death (it has the killer's kind, or a place of
+// its own) wins over a Journey Tracker leftover.
+function rtsDeath(a: JEvent, b: JEvent): boolean {
+  const score = (e: JEvent) => (e.killerKind !== undefined ? 2 : 0) + (e.mapX === undefined && !e.approx ? 1 : 0);
+  return score(a) > score(b);
+}
+
+// A journey's timeline with each death once.
+function collapseDeathEvents(events: JEvent[]): JEvent[] {
+  const deaths = collapseDeaths(events.filter((e) => e.k === "die"), rtsDeath);
+  return [...events.filter((e) => e.k !== "die"), ...deaths].sort((a, b) => a.t - b.t);
+}
+
+// Journey Tracker's death list with each death once.
+function collapseStatDeaths(stats: Stats): Stats {
+  return stats.deaths ? { ...stats, deaths: collapseDeaths(stats.deaths) } : stats;
+}
+
 // How Journey Tracker names a player who killed the character.
 const PVP_KILLER = "Player (PvP)";
 
@@ -179,13 +223,13 @@ export function buildJourney(parts: Contribution[], now = Math.floor(Date.now() 
   const segments = rts?.segments ?? [];
   const events: JEvent[] = [...(rts?.events ?? []), ...(jf?.events ?? [])];
   mergeDeaths(events, jt?.stats?.deaths);
-  events.sort((a, b) => a.t - b.t);
-  placeEvents(events, segments);
+  const timeline = collapseDeathEvents(events);
+  placeEvents(timeline, segments);
 
   const levels = mergeLevels([rts?.levels, jt?.levels]);
   const sessions = rts?.sessions?.length ? rts.sessions : jt?.sessions ?? [];
   fillLevelTimes(levels, sessions);
-  for (const e of events) {
+  for (const e of timeline) {
     if (e.k === "die" && e.level === undefined) {
       const lv = levelAt(levels, e.t);
       if (lv !== undefined) e.level = lv;
@@ -196,18 +240,18 @@ export function buildJourney(parts: Contribution[], now = Math.floor(Date.now() 
   for (const [id, name] of Object.entries(ZONE_NAMES)) zones[id] = name;
   for (const m of MAPS) zones[m.id] = m.name;
   Object.assign(zones, jt?.zones, jf?.zones);
-  for (const e of events) if (e.k === "in" && typeof e.instanceID === "number" && typeof e.name === "string") zones[`i${e.instanceID}`] = e.name;
+  for (const e of timeline) if (e.k === "in" && typeof e.instanceID === "number" && typeof e.name === "string") zones[`i${e.instanceID}`] = e.name;
 
   return {
     format: JOURNEY_FORMAT,
     character,
     sources,
-    events,
+    events: timeline,
     segments,
     ...(rts?.kills ? { kills: rts.kills } : {}),
     levels,
     sessions,
-    stats: jt?.stats ?? {},
+    stats: collapseStatDeaths(jt?.stats ?? {}),
     ...(jt?.stats && Object.keys(jt.stats).length ? { pcStats: { [pcKey(jt.stats)]: jt.stats } } : {}),
     zones,
     items: { ...rts?.items, ...jf?.items },
@@ -404,12 +448,13 @@ export function mergeJourneys(old: Journey | undefined, next: Journey): Journey 
     ...next,
     character,
     sources,
-    events: [...events.values()].sort((a, b) => a.t - b.t),
+    // Twins kept by an upload from before this fix go here too.
+    events: collapseDeathEvents([...events.values()]),
     segments: [...segs.values()].sort((a, b) => a.t - b.t),
     ...(kills ? { kills } : {}),
     levels: mergeLevels([next.levels, old.levels]),
     sessions: [...sessions.values()].sort((a, b) => a.start - b.start),
-    stats,
+    stats: collapseStatDeaths(stats),
     ...(slots.length ? { pcStats } : {}),
     zones: { ...old.zones, ...next.zones },
     items: { ...old.items, ...next.items },
