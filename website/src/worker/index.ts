@@ -2,7 +2,7 @@ import { handleApi, handleMedia } from "./api";
 import { authMode, currentUser, handleAuth } from "./auth";
 import { isAdmin, reviewCount } from "./boards";
 import type { Env, User } from "./env";
-import { checkSameOrigin, HttpError, json, withSecurityHeaders } from "./http";
+import { checkSameOrigin, HttpError, isLocal, json, withSecurityHeaders } from "./http";
 import { checkRate } from "./limits";
 import { handleMapTile } from "./maps";
 import { handleErrorReport } from "./errors";
@@ -55,6 +55,13 @@ async function route(req: Request, env: Env, url: URL, seen: Seen): Promise<Resp
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    // workers.dev also answers plain http. Signing in from there would send
+    // Battle.net an http:// callback, which it rejects ("callback URL is not
+    // valid"), so sign-in always moves to https first.
+    if (url.protocol === "http:" && url.pathname.startsWith("/auth/") && !isLocal(url)) {
+      url.protocol = "https:";
+      return Response.redirect(url.toString(), 308);
+    }
     const own = /^\/(api|auth|media|maps)\//.test(url.pathname);
     const seen: Seen = { userId: null };
     let res: Response;
