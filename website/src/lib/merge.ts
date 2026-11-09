@@ -402,6 +402,15 @@ export function mergeKills(a: Journey["kills"], b: Journey["kills"]): Journey["k
   return { d, names };
 }
 
+// Road to Sixty 1.20.3 saves Forever's "First Last" in its account file; an
+// upload without that file (picked files only) brings the first name alone.
+// A stored full name that starts with it stays.
+export function keptName(old: string | undefined, next: string | undefined): string {
+  if (!next || next === "Unknown") return old ?? next ?? "Unknown";
+  if (old && old.startsWith(`${next} `)) return old;
+  return next;
+}
+
 // Folds a newly uploaded journey into the stored one. Saved files are
 // cumulative, so the new one usually holds everything; the union keeps what
 // a wiped or reset file no longer has (the beta's files were deleted once),
@@ -443,7 +452,12 @@ export function mergeJourneys(old: Journey | undefined, next: Journey): Journey 
     return { ...before, message: s.status === "missing" ? "Not in the latest upload; showing what was uploaded before." : s.message };
   });
 
-  const character = { ...old.character, ...next.character, level: Math.max(old.character.level, next.character.level) };
+  const character = {
+    ...old.character,
+    ...next.character,
+    name: keptName(old.character.name, next.character.name),
+    level: Math.max(old.character.level, next.character.level),
+  };
   return {
     ...next,
     character,

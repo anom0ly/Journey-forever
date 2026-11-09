@@ -152,6 +152,38 @@ describe("mergeJourneys", () => {
   });
 });
 
+describe("Forever last names", () => {
+  const brannoc = () => readUpload(sampleFiles()).journeys.find((j) => j.character.name === "Brannoc")!;
+
+  it("takes the full name when an upload brings it", () => {
+    const old = brannoc();
+    const next = structuredClone(old);
+    next.character.name = "Brannoc Ashford";
+    expect(mergeJourneys(old, next).character.name).toBe("Brannoc Ashford");
+  });
+
+  it("keeps a stored full name when an upload brings the first name only", () => {
+    const old = brannoc();
+    old.character.name = "Brannoc Ashford";
+    expect(mergeJourneys(old, brannoc()).character.name).toBe("Brannoc Ashford");
+  });
+
+  it("takes a new name after a rename", () => {
+    const old = brannoc();
+    old.character.name = "Brannoc Ashford";
+    const next = brannoc();
+    next.character.name = "Bran";
+    expect(mergeJourneys(old, next).character.name).toBe("Bran");
+  });
+
+  it("reads the full name from Road to Sixty 1.20.3's roster", () => {
+    const files = sampleFiles().map((f) =>
+      f.path === "SAMPLEACCOUNT/SavedVariables/RoadToSixty.lua" ? { ...f, text: f.text.replace('["name"] = "Brannoc"', '["name"] = "Brannoc Ashford"') } : f,
+    );
+    expect(readUpload(files).journeys.some((j) => j.character.name === "Brannoc Ashford")).toBe(true);
+  });
+});
+
 describe("the addon's own sample file", () => {
   it("reads addon/samples/JourneyForever.lua", async () => {
     const { readFileSync } = await import("node:fs");
