@@ -3,7 +3,7 @@
 // The uploader's version. Bump it to release a new build: the Uploader
 // workflow (Actions tab, Run workflow) tags uploader-v<version> and attaches
 // the .exe, and the Account page links to that release.
-export const UPLOADER_VERSION = "1.3.2";
+export const UPLOADER_VERSION = "1.3.3";
 export const UPLOADER_EXE = "JourneyForeverUploader.exe";
 export const UPLOADER_REPO = "anom0ly/Journey-forever";
 
