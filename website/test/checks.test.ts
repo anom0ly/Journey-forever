@@ -17,6 +17,10 @@ describe("upload checks", () => {
     expect(summaryProblem(summary())).toBeUndefined();
     expect(summaryProblem(summary({ realm: "Pyrewood Village" }))).toBeUndefined();
     expect(summaryProblem(summary({ name: "Visit my site.com" }))).toMatch(/name/);
+    expect(summaryProblem(summary({ name: "Adom Ashford" }))).toBeUndefined();
+    expect(summaryProblem(summary({ name: "Âura Ëlwyn" }))).toBeUndefined();
+    expect(summaryProblem(summary({ name: "Adom  Ashford" }))).toMatch(/name/);
+    expect(summaryProblem(summary({ name: "Adom Ashford Smith" }))).toMatch(/name/);
     expect(summaryProblem(summary({ className: "Buy gold here" }))).toMatch(/class/);
     expect(summaryProblem(summary({ level: 9000 }))).toMatch(/level/);
     expect(summaryProblem(summary({ deaths: -1 }))).toMatch(/numbers/);
