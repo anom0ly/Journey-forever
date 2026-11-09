@@ -75,7 +75,8 @@ export function valueInRange(fmt: Fmt, v: number): boolean {
   return Number.isFinite(v) && v >= lo && v <= hi;
 }
 
-const NAME = /^[\p{L}\p{M}]{2,24}$/u;
+// One word, or Forever's "First Last" (Road to Sixty 1.20.3 saves the surname).
+const NAME = /^[\p{L}\p{M}]{2,24}(?: [\p{L}\p{M}]{2,24})?$/u;
 const REALM = /^[\p{L}\p{M}\p{N} '’-]{1,48}$/u;
 const RACE = /^[A-Za-z]{2,32}$/;
 const ZONE = /^[\p{L}\p{M}\p{N} '’:,.()-]{1,64}$/u;
