@@ -6,6 +6,7 @@
 import type { Journey, LevelInfo, Segment } from "./journey";
 import { dungeonRuns, killCount, played } from "./insights";
 import { deathCount, questCount } from "./merge";
+import type { KillStats } from "./kills";
 import { distanceByMode } from "./path";
 import { deathStats, goldStats, journeyStart, levelStats, levelTimes, playedBetween } from "./stats";
 
@@ -187,4 +188,23 @@ export function deathsByLevel(j: Journey, max: number): number[] {
   const out = new Array<number>(max).fill(0);
   for (const r of deathStats(j).byLevel) if (r.level >= 1 && r.level <= max) out[r.level - 1] += r.world + r.instance;
   return out;
+}
+
+// ---------------------------------------------------------------- kills
+
+// The Kills tab's head-to-head rows. Rows neither character has are left out.
+export function killsHeadToHead(a: KillStats, b: KillStats, level?: number): H2HRow[] {
+  const rows: H2HRow[] = [
+    { label: "Kills", sub: level ? `up to level ${level}` : undefined, a: a.total, b: b.total, better: "high", kind: "count" },
+    { label: "Kills per hour", sub: "played", a: a.perHour, b: b.perHour, better: "high", kind: "count" },
+    { label: "Different creatures", a: a.different, b: b.different, better: "high", kind: "count" },
+    { label: "Busiest hour", sub: "kills", a: a.busiest?.count, b: b.busiest?.count, better: "high", kind: "count" },
+    { label: "Elites killed", a: a.elites, b: b.elites, better: "high", kind: "count" },
+    { label: "Rares killed", a: a.rares, b: b.rares, better: "high", kind: "count" },
+  ];
+  return rows.filter((r) => r.a !== undefined || r.b !== undefined);
+}
+
+export function killsByLevel(k: KillStats, max: number): number[] {
+  return Array.from({ length: max }, (_, i) => k.byLevel[i] ?? 0);
 }

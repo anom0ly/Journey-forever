@@ -26,7 +26,7 @@ import { useJourney, type JourneySource } from "../source";
 import { mapArt } from "../mapArt";
 import { PublicToggle, shareUrl } from "./Characters";
 import { draw, fitView, type Fade, type LayerId } from "./Replay";
-import { DeathsTab, GoldTab, LevelsTab, ProfessionsTab, PvpTab, TabNav, type TabId } from "./JourneyTabs";
+import { DeathsTab, GoldTab, KillsTab, LevelsTab, ProfessionsTab, PvpTab, TabNav, type TabId } from "./JourneyTabs";
 
 const THUMB_LAYERS = new Set<LayerId>(["w", "t", "g"]);
 const DEATH_LAYERS = new Set<LayerId>(["w", "t", "g", "die"]);
@@ -457,6 +457,8 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
 
       {tab === "deaths" ? (
         <DeathsTab j={j} map={<a href={`${base}/replay`} style={{ textDecoration: "none", color: "var(--text)" }}><RouteThumb j={j} layers={DEATH_LAYERS} caption={false} /></a>} />
+      ) : tab === "kills" ? (
+        <KillsTab j={j} />
       ) : tab === "gold" ? (
         <GoldTab j={j} />
       ) : tab === "professions" ? (

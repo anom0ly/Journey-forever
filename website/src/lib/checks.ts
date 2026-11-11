@@ -22,10 +22,22 @@ export const PROFESSIONS = [
   "Tailoring", "Cooking", "First Aid", "Fishing", "Lockpicking", "Riding",
 ];
 
-const KNOWN: Record<"zone" | "dungeon" | "profession", Set<string>> = {
+// Creature types as the game names them (UnitCreatureType).
+export const CREATURE_TYPES = [
+  "Beast", "Humanoid", "Undead", "Elemental", "Demon", "Dragonkin", "Giant", "Mechanical", "Critter",
+  "Aberration", "Totem", "Non-combat Pet", "Gas Cloud", "Not specified",
+];
+
+export type FreeParam = "zone" | "dungeon" | "profession" | "creature" | "ctype";
+
+// Creatures have no list here: a creature shows on its board once several
+// accounts have killed it.
+const KNOWN: Record<FreeParam, Set<string>> = {
   zone: new Set([...mapData.zones.map((z) => z.name), ...Object.values(ZONE_NAMES), ...DUNGEONS]),
   dungeon: new Set(DUNGEONS),
   profession: new Set(PROFESSIONS),
+  creature: new Set(),
+  ctype: new Set(CREATURE_TYPES),
 };
 
 // A zone, dungeon or profession nobody listed here knows yet (Forever's new
@@ -34,15 +46,15 @@ const KNOWN: Record<"zone" | "dungeon" | "profession", Set<string>> = {
 export const NEW_PARAM_ACCOUNTS = 3;
 
 // How many different zones, dungeons or professions one character can send.
-const PARAMS_PER_CHARACTER: Record<"zone" | "dungeon" | "profession", number> = { zone: 120, dungeon: 60, profession: 20 };
+const PARAMS_PER_CHARACTER: Record<FreeParam, number> = { zone: 120, dungeon: 60, profession: 20, creature: 200, ctype: 20 };
 
 const PARAM_TEXT = /^[\p{L}\p{M}\p{N} '’:,.()-]{2,48}$/u;
 
-export function isFreeParam(kind: ParamKind | undefined): kind is "zone" | "dungeon" | "profession" {
-  return kind === "zone" || kind === "dungeon" || kind === "profession";
+export function isFreeParam(kind: ParamKind | undefined): kind is FreeParam {
+  return kind === "zone" || kind === "dungeon" || kind === "profession" || kind === "creature" || kind === "ctype";
 }
 
-export function knownParam(kind: "zone" | "dungeon" | "profession", p: string): boolean {
+export function knownParam(kind: FreeParam, p: string): boolean {
   return KNOWN[kind].has(p);
 }
 
@@ -51,7 +63,7 @@ export function paramLooksRight(p: string): boolean {
   return PARAM_TEXT.test(p) && !/https?:|www\.|\.(com|net|org|gg|io)\b/i.test(p);
 }
 
-export function paramsPerCharacter(kind: "zone" | "dungeon" | "profession"): number {
+export function paramsPerCharacter(kind: FreeParam): number {
   return PARAMS_PER_CHARACTER[kind];
 }
 
@@ -68,6 +80,7 @@ const RANGES: Record<Fmt, [number, number]> = {
   percent: [0, 100],
   level: [1, 100],
   deaths: [0, 1e6],
+  gap: [1, 100],
 };
 
 export function valueInRange(fmt: Fmt, v: number): boolean {

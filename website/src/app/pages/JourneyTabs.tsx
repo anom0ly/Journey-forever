@@ -1,4 +1,4 @@
-// The journey page's stats tabs: Deaths, Gold, Professions, PvP and Levels
+// The journey page's stats tabs: Deaths, Kills, Gold, Professions, PvP and Levels
 // (the Overview is Journey.tsx). Each reads its numbers from lib/stats.ts.
 
 import { useState } from "preact/hooks";
@@ -17,12 +17,14 @@ import {
   tierName,
   type LevelRow,
 } from "../../lib/stats";
+import { killStats } from "../../lib/kills";
 import { QUALITY_COLORS } from "../../lib/wow";
 import { day, dateTime, plural } from "../format";
 
 export const TABS = [
   { id: "", label: "Overview" },
   { id: "deaths", label: "Deaths" },
+  { id: "kills", label: "Kills" },
   { id: "gold", label: "Gold" },
   { id: "professions", label: "Professions" },
   { id: "pvp", label: "PvP" },
@@ -352,6 +354,190 @@ function lateShare(byLevel: { level: number; world: number; instance: number }[]
   const cut = Math.max(1, top - 11);
   const late = byLevel.filter((b) => b.level >= cut).reduce((a, b) => a + b.world + b.instance, 0);
   return `${late} of ${total} deaths came in the last ${top - cut + 1} levels.`;
+}
+
+// ---------------------------------------------------------------- kills
+
+const levelSpan = (a?: number, b?: number) => (a === undefined ? undefined : a === b || b === undefined ? `level ${a}` : `levels ${a} to ${b}`);
+
+export function KillsTab({ j }: { j: Journey }) {
+  const k = killStats(j);
+  if (!k.total && !k.creatures.length) {
+    return (
+      <div class="card">
+        <h2>No kills yet</h2>
+        <Empty>Every creature you kill for XP shows up here: which ones you killed most, where, and at what level.</Empty>
+      </div>
+    );
+  }
+  const top = k.creatures[0];
+  const most = k.creatures.slice(0, 10);
+  const mostMax = Math.max(1, ...most.map((c) => c.count));
+  const typeSum = (k.byType ?? []).reduce((a, t) => a + t.count, 0);
+  const zoneMax = Math.max(1, ...k.byZone.map((z) => z.count));
+  const tiles = [
+    <Tile key="k" label="Kills" value={k.total !== undefined ? n(k.total) : undefined} sub={k.perHour ? `${n(k.perHour)} an hour played` : undefined} />,
+    <Tile key="m" label="Most killed" value={top?.name} sub={top ? [plural(top.count, "kill"), levelSpan(top.minLevel, top.maxLevel)].filter(Boolean).join(", ") : undefined} />,
+    k.different !== undefined && <Tile key="d" label="Different creatures" value={n(k.different)} sub="killed at least once" />,
+    k.busiest && <Tile key="b" label="Busiest hour" value={n(k.busiest.count)} sub={[k.busiest.zone, day(k.busiest.t)].filter(Boolean).join(", ")} />,
+    (k.elites !== undefined || k.rares !== undefined) && (
+      <Tile key="e" label="Elites and rares" value={k.elites !== undefined ? n(k.elites) : n(k.rares ?? 0)} sub={k.elites !== undefined ? `elites · ${plural(k.rares ?? 0, "rare")}` : "rares killed"} />
+    ),
+    k.toughest && <Tile key="t" label="Toughest kill" value={k.toughest.name} sub={`level ${k.toughest.mobLevel}, you were ${k.toughest.level} (+${k.toughest.diff})`} />,
+  ].filter(Boolean);
+  const byLevelMax = Math.max(1, ...k.byLevel);
+  const busiestLevel = k.byLevel.indexOf(Math.max(...k.byLevel)) + 1;
+  const CW = 1000, H = 200, step = (CW - 40) / Math.max(1, k.byLevel.length);
+  const every = labelEvery(k.byLevel.length);
+  return (
+    <>
+      <section class={`tiles ${["", "", "", "three", "four", "five", "six"][tiles.length] ?? "six"}`}>{tiles}</section>
+
+      <section class="split">
+        <div class="card wide">
+          <div class="row between" style={{ alignItems: "baseline" }}>
+            <h2>Most killed</h2>
+            {k.creatures.length > most.length && <span class="tiny muted">Top 10 of {n(k.creatures.length)}</span>}
+          </div>
+          <ol class="kill-list">
+            {most.map((c) => (
+              <li key={c.name}>
+                <div class="row between small">
+                  <span>
+                    {c.name}
+                    {c.rare && <span class="tone-gold"> (rare)</span>}
+                  </span>
+                  <span class="num">{n(c.count)}</span>
+                </div>
+                <div class="meter teal">
+                  <div style={{ width: `${(c.count / mostMax) * 100}%` }} />
+                </div>
+                {(c.zone || c.minLevel !== undefined) && (
+                  <span class="tiny muted">
+                    {[c.zone ? `${c.zone}${c.dungeon ? " (dungeon)" : ""}` : undefined, levelSpan(c.minLevel, c.maxLevel)].filter(Boolean).join(" · ")}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
+        {(k.byType || k.byZone.length > 0) && (
+          <div class="stack" style={{ gap: "24px" }}>
+            {k.byType && (
+              <div class="card">
+                <h2>By creature type</h2>
+                {k.byType.slice(0, 6).map((t) => (
+                  <div class="stack small" style={{ gap: "4px" }} key={t.type}>
+                    <div class="row between">
+                      <span>{t.type}</span>
+                      <span class="num">{n(t.count)}</span>
+                    </div>
+                    <div class="meter">
+                      <div style={{ width: `${(t.count / k.byType![0].count) * 100}%`, background: "var(--accent)" }} />
+                    </div>
+                  </div>
+                ))}
+                <p class="tiny muted">
+                  Favourite prey: <b style={{ color: "var(--text)" }}>{k.byType[0].type}</b>, {pct(k.byType[0].count / typeSum)} of kills.
+                </p>
+              </div>
+            )}
+            {k.byZone.length > 0 && (
+              <div class="card">
+                <h2>Kills by zone</h2>
+                {k.byZone.slice(0, 8).map((z) => (
+                  <div class="stack small" style={{ gap: "4px" }} key={z.zone}>
+                    <div class="row between">
+                      <span>
+                        {z.zone}
+                        {z.dungeon && <span class="tone-gold"> (dungeon)</span>}
+                      </span>
+                      <span class="num">{n(z.count)}</span>
+                    </div>
+                    <div class="meter teal">
+                      <div style={{ width: `${(z.count / zoneMax) * 100}%`, background: z.dungeon ? "var(--gold)" : undefined }} />
+                    </div>
+                  </div>
+                ))}
+                <p class="tiny muted">Where you were when each kill happened.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {k.byLevel.length > 0 && (
+        <section class="card">
+          <div class="row between" style={{ alignItems: "baseline" }}>
+            <h2>Kills by level</h2>
+            <span class="tiny muted">
+              Most at level {busiestLevel} · {plural(k.byLevel[busiestLevel - 1], "kill")}
+            </span>
+          </div>
+          <svg viewBox={`0 0 ${CW} ${H}`} class="chart" role="img" aria-label={`Kills at each level; most at level ${busiestLevel}`}>
+            {k.byLevel.map((v, i) => {
+              const x = 30 + i * step + step * 0.15, w = Math.max(2, step * 0.7), h = (v / byLevelMax) * (H - 50);
+              return (
+                <g key={i}>
+                  <title>{`Level ${i + 1}: ${plural(v, "kill")}`}</title>
+                  {v > 0 && <rect x={x} y={H - 30 - h} width={w} height={h} rx="2" fill={i + 1 === busiestLevel ? "var(--accent)" : "var(--teal)"} />}
+                </g>
+              );
+            })}
+            <line x1="30" x2={CW - 10} y1={H - 30} y2={H - 30} class="axis" />
+            {k.byLevel.map((_, i) =>
+              i === 0 || (i + 1) % every === 0 ? (
+                <text key={`t${i}`} x={30 + i * step + step / 2} y={H - 10} text-anchor="middle">
+                  {i + 1}
+                </text>
+              ) : null,
+            )}
+          </svg>
+        </section>
+      )}
+
+      {k.fromLog && (
+        <section class="card">
+          <div class="row between" style={{ alignItems: "baseline" }}>
+            <h2>Every creature</h2>
+            <span class="tiny muted">Most killed first · {plural(k.creatures.length, "creature")}</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data nowrap">
+              <thead>
+                <tr>
+                  <th>Creature</th>
+                  <th>Where</th>
+                  <th>Your level</th>
+                  <th style={{ textAlign: "right" }}>Kills</th>
+                  <th>First killed</th>
+                </tr>
+              </thead>
+              <tbody>
+                <ShowMore
+                  rows={k.creatures}
+                  first={15}
+                  render={(c) => (
+                    <tr key={c.name}>
+                      <td>
+                        {c.name}
+                        {c.rare && <span class="tone-gold"> (rare)</span>}
+                      </td>
+                      <td>{c.zone ? `${c.zone}${c.dungeon ? " (dungeon)" : ""}` : "—"}</td>
+                      <td>{c.minLevel === undefined ? "—" : c.minLevel === c.maxLevel ? c.minLevel : `${c.minLevel}–${c.maxLevel}`}</td>
+                      <td class="num" style={{ textAlign: "right" }}>{n(c.count)}</td>
+                      <td>{c.first !== undefined ? day(c.first) : "—"}</td>
+                    </tr>
+                  )}
+                />
+              </tbody>
+            </table>
+          </div>
+          <span class="tiny muted">Kills that give no XP aren't saved by the addons, so grey creatures don't show.</span>
+        </section>
+      )}
+    </>
+  );
 }
 
 // ---------------------------------------------------------------- gold

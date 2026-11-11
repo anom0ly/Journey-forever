@@ -4,7 +4,8 @@
 // sorts them. Also the automatic checks that are shown to the reviewer next
 // to reports: they never hide anything by themselves.
 
-import { dungeonRuns, killCount, lootCounts } from "./insights";
+import { dungeonRuns, lootCounts } from "./insights";
+import { killStats } from "./kills";
 import type { Journey } from "./journey";
 import { GOLD_LEVELS, MILESTONES, type BoardEntry } from "./boardDefs";
 import { distanceByMode } from "./path";
@@ -15,6 +16,7 @@ import { deathStats, goldStats, journeyEnd, journeyStart, levelFraction, levelSt
 const HOUR = 3600;
 const RUN_MIN_SECONDS = 60;
 const ZONE_MIN_SECONDS = 600;
+const CREATURE_BOARDS = 200; // a character's most killed creatures that go on the boards
 
 export function boardEntries(j: Journey): BoardEntry[] {
   const out: BoardEntry[] = [];
@@ -52,8 +54,17 @@ export function boardEntries(j: Journey): BoardEntry[] {
   add("xph", bestXpPerHour(j));
   const quests = j.events.filter((e) => e.k === "qd").length || j.stats.quests?.completed;
   if (quests) add("quests", quests);
-  const kills = killCount(j);
-  if (kills) add("kills", kills);
+
+  // Kills
+  const ks = killStats(j);
+  if (ks.total) add("kills", ks.total);
+  for (const c of ks.creatures.slice(0, CREATURE_BOARDS)) if (c.count > 0) add("creature", c.count, c.name);
+  if (ks.different) add("creatures", ks.different);
+  if (ks.busiest) add("killhour", ks.busiest.count);
+  if (ks.elites) add("elites", ks.elites);
+  if (ks.rares) add("rares", ks.rares);
+  for (const t of ks.byType ?? []) add("ctype", t.count, t.type);
+  if (ks.toughest) add("toughest", ks.toughest.diff);
 
   // Survival
   const deaths = j.events.filter((e) => e.k === "die");

@@ -3,8 +3,9 @@
 // against each other. Numbers come from lib/compare.ts and lib/stats.ts.
 
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { cutAtLevel, deathsByLevel, headToHead, levelRace, routeByLevel, routeFacts, sharedLevel, winner, type H2HRow } from "../../lib/compare";
+import { cutAtLevel, deathsByLevel, headToHead, killsByLevel, killsHeadToHead, levelRace, routeByLevel, routeFacts, sharedLevel, winner, type H2HRow } from "../../lib/compare";
 import type { Journey } from "../../lib/journey";
+import { killStats, sharedPrey, typeShares } from "../../lib/kills";
 import { slugFromLink } from "../../lib/search";
 import { duration, gold, played } from "../../lib/insights";
 import { km } from "../../lib/path";
@@ -25,7 +26,7 @@ interface Side {
   slug?: string; // undefined for the samples
 }
 
-const TABS = ["Overview", "Route", "Replay", "Levels", "Deaths", "Gold", "Professions", "PvP"] as const;
+const TABS = ["Overview", "Route", "Replay", "Levels", "Deaths", "Kills", "Gold", "Professions", "PvP"] as const;
 type Tab = (typeof TABS)[number];
 
 // ---------------------------------------------------------------- loading
@@ -361,6 +362,8 @@ function CompareView({ a, b, demo }: { a: Side; b: Side; demo?: boolean }) {
         <LevelsTab {...props} />
       ) : tab === "Deaths" ? (
         <DeathsTab {...props} />
+      ) : tab === "Kills" ? (
+        <KillsTab {...props} />
       ) : tab === "Gold" ? (
         <GoldTab {...props} />
       ) : tab === "Professions" ? (
@@ -417,6 +420,148 @@ function fmt(r: H2HRow, v: number | undefined): string {
   }
 }
 
+// The head-to-head rows: a bar out from the middle for each of the two.
+function H2H({ rows }: { rows: H2HRow[] }) {
+  return (
+    <div class="h2h">
+      {rows.map((r) => {
+        const w = winner(r);
+        const max = Math.max(r.a ?? 0, r.b ?? 0) || 1;
+        return (
+          <div class="h2h-row" key={r.label}>
+            <span class={`h2h-v left${w === "a" ? " win" : ""}`}>{fmt(r, r.a)}</span>
+            <div class={`h2h-bar left${w === "b" ? " lose" : ""}`}>
+              <div style={{ width: `${((r.a ?? 0) / max) * 100}%` }} />
+            </div>
+            <span class="h2h-what">
+              <b>{r.label}</b>
+              {r.sub && <span>{r.sub}</span>}
+            </span>
+            <div class={`h2h-bar right${w === "a" ? " lose" : ""}`}>
+              <div style={{ width: `${((r.b ?? 0) / max) * 100}%` }} />
+            </div>
+            <span class={`h2h-v right${w === "b" ? " win" : ""}`}>{fmt(r, r.b)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function KillsTab({ ja, jb, names, cut }: TabProps) {
+  const ka = killStats(ja), kb = killStats(jb);
+  const rows = killsHeadToHead(ka, kb, cut);
+  const shared = sharedPrey(ka, kb);
+  const [allShared, setAllShared] = useState(false);
+  const sa = typeShares(ka), sb = typeShares(kb);
+  const types = sa.size && sb.size ? [...new Set([...sa.keys(), ...sb.keys()])].sort((x, y) => (sa.get(y) ?? 0) + (sb.get(y) ?? 0) - (sa.get(x) ?? 0) - (sb.get(x) ?? 0)).slice(0, 6) : [];
+  const max = Math.max(ka.byLevel.length, kb.byLevel.length);
+  const ba = killsByLevel(ka, max), bb = killsByLevel(kb, max);
+  const top = Math.max(1, ...ba, ...bb);
+  const every = labelEvery(max);
+  const CW = 1000, H = 200, step = (CW - 40) / Math.max(1, max), bw = Math.max(2, Math.min(24, step * 0.32));
+  const most = (k: typeof ka) => (k.creatures[0] ? `${k.creatures[0].name} · ${k.creatures[0].count.toLocaleString("en-US")}` : undefined);
+  const tough = (k: typeof ka) => (k.toughest ? `${k.toughest.name} · +${k.toughest.diff}` : undefined);
+  if (!rows.length) {
+    return (
+      <div class="card">
+        <h2>No kills yet</h2>
+        <p class="muted small">Neither character has any kills saved.</p>
+      </div>
+    );
+  }
+  return (
+    <>
+      <section class="tiles" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+        <Duo label="Most killed" a={most(ka)} b={most(kb)} wordy />
+        {(ka.toughest || kb.toughest) && <Duo label="Toughest kill" a={tough(ka)} b={tough(kb)} sub="levels above them" wordy />}
+      </section>
+      <section class="card">
+        <H2H rows={rows} />
+        <p class="tiny muted">★ marks whoever has more.</p>
+      </section>
+      {(shared.length > 0 || types.length > 0) && (
+        <section class="split">
+          {shared.length > 0 && (
+            <div class="card">
+              <div class="row between" style={{ alignItems: "baseline" }}>
+                <h2>Same prey</h2>
+                <span class="tiny muted">{plural(shared.length, "creature")} both killed</span>
+              </div>
+              <div class="table-wrap">
+                <table class="data">
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "right", color: COLOR.a }}>{names.a}</th>
+                      <th style={{ textAlign: "center" }}>Creature</th>
+                      <th style={{ color: COLOR.b }}>{names.b}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(allShared ? shared : shared.slice(0, 8)).map((r) => (
+                      <tr key={r.name}>
+                        <td class="num" style={{ textAlign: "right", fontWeight: r.a > r.b ? 700 : undefined }}>{r.a.toLocaleString("en-US")}</td>
+                        <td style={{ textAlign: "center" }}>{r.name}</td>
+                        <td class="num" style={{ fontWeight: r.b > r.a ? 700 : undefined }}>{r.b.toLocaleString("en-US")}</td>
+                      </tr>
+                    ))}
+                    {shared.length > 8 && (
+                      <tr>
+                        <td colSpan={3} style={{ textAlign: "center" }}>
+                          <button type="button" class="linkish" style={{ color: "var(--accent)" }} onClick={() => setAllShared(!allShared)}>
+                            {allShared ? "Show fewer" : `Show all ${shared.length}`}
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p class="tiny muted">Bold is whoever killed more of that creature.</p>
+            </div>
+          )}
+          {types.length > 0 && (
+            <div class="card">
+              <h2>By creature type</h2>
+              <H2H rows={types.map((t) => ({ label: t, a: sa.get(t) ?? 0, b: sb.get(t) ?? 0, better: "none", kind: "pct" }))} />
+              <p class="tiny muted">Each one's share of their kills.</p>
+            </div>
+          )}
+        </section>
+      )}
+      {max > 0 && (
+        <section class="card">
+          <div class="row between" style={{ alignItems: "baseline" }}>
+            <h2>Kills at each level</h2>
+            <Key names={names} />
+          </div>
+          <svg viewBox={`0 0 ${CW} ${H}`} class="chart" role="img" aria-label={`Kills at each level: ${names.a} and ${names.b}`}>
+            {ba.map((v, i) => {
+              const cx = 30 + i * step + step / 2;
+              const ha = (v / top) * (H - 50), hb = (bb[i] / top) * (H - 50);
+              return (
+                <g key={i}>
+                  <title>{`Level ${i + 1}: ${names.a} ${plural(v, "kill")}, ${names.b} ${plural(bb[i], "kill")}`}</title>
+                  {v > 0 && <rect x={cx - bw - 1} y={H - 30 - ha} width={bw} height={ha} rx="2" fill={COLOR.a} />}
+                  {bb[i] > 0 && <rect x={cx + 1} y={H - 30 - hb} width={bw} height={hb} rx="2" fill={COLOR.b} />}
+                </g>
+              );
+            })}
+            <line x1="30" x2={CW - 10} y1={H - 30} y2={H - 30} class="axis" />
+            {ba.map((_, i) =>
+              i === 0 || (i + 1) % every === 0 ? (
+                <text key={`t${i}`} x={30 + i * step + step / 2} y={H - 10} text-anchor="middle">
+                  {i + 1}
+                </text>
+              ) : null,
+            )}
+          </svg>
+        </section>
+      )}
+    </>
+  );
+}
+
 function OverviewTab({ ja, jb, names, cut }: TabProps) {
   const rows = headToHead(ja, jb, cut);
   const ra = levelRace(ja), rb = levelRace(jb);
@@ -429,28 +574,7 @@ function OverviewTab({ ja, jb, names, cut }: TabProps) {
   return (
     <>
       <section class="card">
-        <div class="h2h">
-          {rows.map((r) => {
-            const w = winner(r);
-            const max = Math.max(r.a ?? 0, r.b ?? 0) || 1;
-            return (
-              <div class="h2h-row" key={r.label}>
-                <span class={`h2h-v left${w === "a" ? " win" : ""}`}>{fmt(r, r.a)}</span>
-                <div class={`h2h-bar left${w === "b" ? " lose" : ""}`}>
-                  <div style={{ width: `${((r.a ?? 0) / max) * 100}%` }} />
-                </div>
-                <span class="h2h-what">
-                  <b>{r.label}</b>
-                  {r.sub && <span>{r.sub}</span>}
-                </span>
-                <div class={`h2h-bar right${w === "a" ? " lose" : ""}`}>
-                  <div style={{ width: `${((r.b ?? 0) / max) * 100}%` }} />
-                </div>
-                <span class={`h2h-v right${w === "b" ? " win" : ""}`}>{fmt(r, r.b)}</span>
-              </div>
-            );
-          })}
-        </div>
+        <H2H rows={rows} />
         <p class="tiny muted">★ marks the better of the two where there is one: less time and fewer deaths, more quests and gold.</p>
       </section>
       <section class="card">
