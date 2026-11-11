@@ -111,7 +111,7 @@ function ParamPicker({ def, params, value, onChange, id }: { def: BoardDef; para
   if (!def.param) return null;
   const list = params && params.length ? params : value ? [value] : [];
   if (!list.length) return null;
-  const label = def.param === "milestone" || def.param === "goldLevel" || def.param === "level" ? "Level" : def.param === "profession" ? "Profession" : def.param === "zone" ? "Zone" : "Dungeon";
+  const label = def.param === "milestone" || def.param === "goldLevel" || def.param === "level" ? "Level" : def.param === "profession" ? "Profession" : def.param === "zone" ? "Zone" : def.param === "creature" ? "Creature" : def.param === "ctype" ? "Type" : "Dungeon";
   return (
     <label class="lb-select" for={id}>
       <span>{label}</span>
@@ -413,7 +413,7 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
               <tr>
                 <th class="lb-n">#</th>
                 <th>Character</th>
-                <th>{def.fmt === "duration" ? "Played time" : def.fmt === "date" ? "Reached on" : "Score"}</th>
+                <th>{def.fmt === "duration" ? "Played time" : def.fmt === "date" ? "Reached on" : def.fmt === "gap" ? "Levels above" : def.group === "kills" ? "Kills" : "Score"}</th>
                 <th>
                   <span class="sr-only">Actions</span>
                 </th>

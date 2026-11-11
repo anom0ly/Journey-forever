@@ -3,6 +3,7 @@
 
 import {
   JOURNEY_FORMAT,
+  TOP_CREATURES,
   type AddonId,
   type Character,
   type CharacterSummary,
@@ -346,7 +347,8 @@ export function combineStats(list: Stats[]): Stats {
           total: addOpt(list.map((s) => s.kills?.total)),
           byClass: addRecords(list.map((s) => s.kills?.byClass)),
           byType: addRecords(list.map((s) => s.kills?.byType)),
-          top: [...top].sort((a, b) => b[1] - a[1]).slice(0, 15),
+          top: [...top].sort((a, b) => b[1] - a[1]).slice(0, TOP_CREATURES),
+          toughest: list.map((s) => s.kills?.toughest).filter((x) => !!x).sort((a, b) => b!.diff - a!.diff)[0],
         })
       : undefined,
     quests: addRecords(list.map((s) => s.quests)),

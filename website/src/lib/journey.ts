@@ -144,12 +144,21 @@ export interface DungeonRun {
   deaths?: number;
 }
 
+// How many of Journey Tracker's most killed creatures are kept.
+export const TOP_CREATURES = 200;
+
 // Journey Tracker's aggregate counters, passed through with their own names.
 export interface Stats {
   played?: number;
   time?: Record<string, number>;
   xp?: Record<string, number>;
-  kills?: { total?: number; byClass?: Record<string, number>; byType?: Record<string, number>; top?: [string, number][] };
+  kills?: {
+    total?: number;
+    byClass?: Record<string, number>;
+    byType?: Record<string, number>;
+    top?: [string, number][]; // most killed first
+    toughest?: { name: string; diff: number; mobLevel: number; level: number }; // furthest above the player's level
+  };
   quests?: Record<string, number>;
   money?: Record<string, number>;
   loot?: { items?: number; byQuality?: Record<string, number> };

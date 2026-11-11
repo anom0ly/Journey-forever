@@ -7,7 +7,7 @@
 // Group members are stored there only as hashes and PvP killers as
 // "Player (PvP)", so nothing in it names another player.
 
-import type { Death, DungeonRun, LevelInfo, Session, Stats } from "../journey";
+import { TOP_CREATURES, type Death, type DungeonRun, type LevelInfo, type Session, type Stats } from "../journey";
 import { entries, isObj, list, num, str, type LuaObject, type LuaValue } from "../lua";
 import type { Contribution, FileContext } from "./types";
 import { collapseDeaths } from "../merge";
@@ -127,7 +127,11 @@ export function parseJourneyTracker(db: LuaValue | undefined, ctx: FileContext):
 
   const kills = isObj(db.kills) ? db.kills : {};
   const byName = numbers(kills.byName) ?? {};
-  const top = Object.entries(byName).sort((a, b) => b[1] - a[1]).slice(0, 15);
+  const top = Object.entries(byName).sort((a, b) => b[1] - a[1]).slice(0, TOP_CREATURES);
+  const tl = isObj(kills.maxLevelDiff) ? kills.maxLevelDiff : {};
+  const toughest = str(tl.name) && num(tl.diff) !== undefined && num(tl.mobLevel) !== undefined && num(tl.level) !== undefined
+    ? { name: str(tl.name)!, diff: num(tl.diff)!, mobLevel: num(tl.mobLevel)!, level: num(tl.level)! }
+    : undefined;
   const quests = isObj(db.quests) ? db.quests : {};
   const loot = isObj(db.loot) ? db.loot : {};
   const D = isObj(db.dungeons) ? db.dungeons : {};
@@ -148,7 +152,7 @@ export function parseJourneyTracker(db: LuaValue | undefined, ctx: FileContext):
     played: num(isObj(db.played) ? db.played.total : undefined),
     time: numbers(db.time),
     xp: numbers(db.xp),
-    kills: { total: num(kills.total), byClass: numbers(kills.byClass), byType: numbers(kills.byType), top },
+    kills: { total: num(kills.total), byClass: numbers(kills.byClass), byType: numbers(kills.byType), top, toughest },
     quests: strip({
       completed: num(quests.completed), accepted: num(quests.accepted), abandoned: num(quests.abandoned),
       xp: num(quests.xp), money: num(quests.money),

@@ -3,12 +3,13 @@
 
 // Bumped when the numbers are worked out differently, so stored characters
 // are worked out again by their owner's browser.
-export const BOARDS_VERSION = 2;
+export const BOARDS_VERSION = 3;
 
-export type GroupId = "leveling" | "survival" | "gold" | "professions" | "world" | "dungeons" | "pvp";
+export type GroupId = "leveling" | "survival" | "kills" | "gold" | "professions" | "world" | "dungeons" | "pvp";
 export const GROUPS: { id: GroupId; label: string }[] = [
   { id: "leveling", label: "Leveling" },
   { id: "survival", label: "Survival" },
+  { id: "kills", label: "Kills" },
   { id: "gold", label: "Gold" },
   { id: "professions", label: "Professions" },
   { id: "world", label: "World" },
@@ -17,9 +18,9 @@ export const GROUPS: { id: GroupId; label: string }[] = [
 ];
 
 // duration: played seconds. date: unix seconds. gold: copper. distance: yards.
-// percent: 0-100. level: a character level.
-export type Fmt = "duration" | "date" | "gold" | "goldHour" | "count" | "xp" | "distance" | "percent" | "level" | "deaths";
-export type ParamKind = "milestone" | "goldLevel" | "level" | "profession" | "zone" | "dungeon";
+// percent: 0-100. level: a character level. gap: levels above the player.
+export type Fmt = "duration" | "date" | "gold" | "goldHour" | "count" | "xp" | "distance" | "percent" | "level" | "deaths" | "gap";
+export type ParamKind = "milestone" | "goldLevel" | "level" | "profession" | "zone" | "dungeon" | "creature" | "ctype";
 
 export interface BoardDef {
   id: string;
@@ -42,12 +43,20 @@ export const BOARDS: BoardDef[] = [
   { id: "first60", group: "leveling", title: "First to 60", sub: "Date the character reached 60", fmt: "date", dir: "asc" },
   { id: "xph", group: "leveling", title: "Best XP per hour", sub: "Best session of an hour or more", fmt: "xp", dir: "desc" },
   { id: "quests", group: "leveling", title: "Most quests", sub: "Quests turned in", fmt: "count", dir: "desc" },
-  { id: "kills", group: "leveling", title: "Most kills", sub: "Creatures killed", fmt: "count", dir: "desc" },
 
   { id: "fewdeaths60", group: "survival", title: "Fewest deaths to 60", sub: "Deaths from level 1 to 60; ties go to the faster", fmt: "deaths", dir: "asc", fromOne: true },
   { id: "alive", group: "survival", title: "Longest alive", sub: "Most played time between two deaths", fmt: "duration", dir: "desc" },
   { id: "deathless", group: "survival", title: "Deathless", sub: "Highest level reached before the first death", fmt: "level", dir: "desc", fromOne: true },
   { id: "deaths", group: "survival", title: "Most deaths", sub: "Deaths, all time", fmt: "count", dir: "desc" },
+
+  { id: "kills", group: "kills", title: "Most kills", sub: "Creatures killed", fmt: "count", dir: "desc" },
+  { id: "creature", group: "kills", title: "Most killed: {p}", sub: "Kills of one creature", fmt: "count", dir: "desc", param: "creature" },
+  { id: "creatures", group: "kills", title: "Most different creatures", sub: "Creatures killed at least once", fmt: "count", dir: "desc" },
+  { id: "killhour", group: "kills", title: "Busiest hour", sub: "Most kills in one hour", fmt: "count", dir: "desc" },
+  { id: "elites", group: "kills", title: "Most elites killed", sub: "Elite and rare elite kills", fmt: "count", dir: "desc" },
+  { id: "rares", group: "kills", title: "Most rares killed", sub: "Rare and rare elite kills", fmt: "count", dir: "desc" },
+  { id: "ctype", group: "kills", title: "Most {p} killed", sub: "Kills of one creature type", fmt: "count", dir: "desc", param: "ctype", defaultParam: "Beast" },
+  { id: "toughest", group: "kills", title: "Toughest kill", sub: "Most levels above you on a single kill", fmt: "gap", dir: "desc" },
 
   { id: "goldat", group: "gold", title: "Richest at level {p}", sub: "Gold held on reaching the level", fmt: "gold", dir: "desc", param: "goldLevel", defaultParam: "40" },
   { id: "goldpeak", group: "gold", title: "Most gold held", sub: "Most gold held at any login, logout or level-up", fmt: "gold", dir: "desc" },
@@ -96,13 +105,22 @@ export const CARDS: Record<GroupId, CardDef[]> = {
     { title: "One level", boards: [{ id: "levelfast", label: "Fastest" }, { id: "levelslow", label: "Longest" }] },
     { title: "First to 60", boards: [{ id: "first60", label: "" }] },
     { title: "Best XP per hour", boards: [{ id: "xph", label: "" }] },
-    { title: "Most quests and kills", boards: [{ id: "quests", label: "Quests" }, { id: "kills", label: "Kills" }] },
+    { title: "Most quests", boards: [{ id: "quests", label: "" }] },
   ],
   survival: [
     { title: "Fewest deaths to 60", boards: [{ id: "fewdeaths60", label: "" }] },
     { title: "Longest alive", boards: [{ id: "alive", label: "" }] },
     { title: "Deathless", boards: [{ id: "deathless", label: "" }] },
     { title: "Most deaths", boards: [{ id: "deaths", label: "" }] },
+  ],
+  kills: [
+    { title: "Most kills", boards: [{ id: "kills", label: "" }] },
+    { title: "Most killed creature", boards: [{ id: "creature", label: "" }] },
+    { title: "Most different creatures", boards: [{ id: "creatures", label: "" }] },
+    { title: "Busiest hour", boards: [{ id: "killhour", label: "" }] },
+    { title: "Elites and rares", boards: [{ id: "elites", label: "Elites" }, { id: "rares", label: "Rares" }] },
+    { title: "Most of a creature type", boards: [{ id: "ctype", label: "" }] },
+    { title: "Toughest kill", boards: [{ id: "toughest", label: "" }] },
   ],
   gold: [
     { title: "Richest at level", boards: [{ id: "goldat", label: "" }] },
@@ -193,6 +211,8 @@ export function formatValue(fmt: Fmt, v: number): string {
       return `Level ${v}`;
     case "deaths":
       return v === 1 ? "1 death" : `${v} deaths`;
+    case "gap":
+      return v === 1 ? "+1 level" : `+${Math.round(v)} levels`;
     default:
       return Math.round(v).toLocaleString("en-US");
   }

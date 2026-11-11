@@ -60,7 +60,8 @@ describe("the sample characters pass every check", () => {
         expect(valueInRange(def.fmt, e.v), `${e.b} ${e.p} ${e.v}`).toBe(true);
         if (isFreeParam(def.param)) {
           expect(paramLooksRight(e.p), e.p).toBe(true);
-          expect(knownParam(def.param, e.p), `${def.param} ${e.p}`).toBe(true);
+          // Creatures have no known list: they show once several accounts have them.
+          if (def.param !== "creature") expect(knownParam(def.param, e.p), `${def.param} ${e.p}`).toBe(true);
         }
       }
     }

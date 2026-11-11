@@ -234,6 +234,12 @@ dialog.confirm.wide { max-width: 560px; }
 .tabs a.active { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
 .tiles.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .tiles.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tiles.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1180px) { .tiles.six { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .tiles.six { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.meter.teal > div { background: var(--teal); }
+.kill-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.kill-list li { display: flex; flex-direction: column; gap: 4px; }
 @media (max-width: 1180px) { .tiles.five { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .tiles.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .tiles.five, .tiles.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
