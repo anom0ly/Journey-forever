@@ -8,10 +8,15 @@
 // Worker doesn't bundle the parsers).
 export const REPORT_FILES = ["RoadToSixty.lua", "JourneyTracker.lua", "JourneyForever.lua"];
 
-export const REPORT_KINDS = ["crash", "promise", "render", "upload", "uploader"] as const;
+// crash/promise/render: the page broke. upload: a step of the Upload page
+// failed. load: a page couldn't load its data. boards: leaderboard numbers
+// didn't save. addon: an error the Journey Forever addon caught in game and
+// kept in its saved file. uploader: the Windows uploader.
+export const REPORT_KINDS = ["crash", "promise", "render", "upload", "load", "boards", "addon", "uploader"] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
-export const UPLOAD_STEPS = ["read", "preview", "save"] as const;
+// pick: what was picked holds nothing to read (the wrong folder).
+export const UPLOAD_STEPS = ["pick", "read", "preview", "save"] as const;
 export type UploadStep = (typeof UPLOAD_STEPS)[number];
 
 // The Windows uploader's reports (kind "uploader"): which part went wrong.
@@ -28,6 +33,11 @@ export interface ErrorReport {
   size?: number; // bytes of that file
   line?: number; // where in the file the parser stopped
   status?: number; // the API's answer, when saving failed
+  blocked?: string[]; // what the page's security policy blocked: "inline", "eval" or a host (an ad blocker's, an extension's)
+  network?: boolean; // the request never got an answer (blocked, or the connection dropped)
+  char?: string; // the character being uploaded (signed-in reports only)
+  at?: number; // addon reports: when it last happened in game (the PC's clock)
+  times?: number; // addon reports: how many times
   // Uploader reports:
   area?: UploaderArea;
   app?: string; // uploader version
@@ -41,6 +51,19 @@ export interface ErrorReport {
 export const MAX_MESSAGE = 300;
 export const MAX_STACK = 1500;
 export const MAX_BODY = 4000;
+export const MAX_BLOCKED = 8;
+
+// A blocked script or connection, as the browser names it, cut to its host:
+// "inline" and "eval" stay, a URL becomes its host name.
+export function blockedName(uri: string): string | undefined {
+  if (uri === "inline" || uri === "eval" || uri === "wasm-eval") return uri;
+  try {
+    const host = new URL(uri).hostname.toLowerCase();
+    return /^[a-z0-9.-]{1,80}$/.test(host) ? host : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 // Quoted text in an error can be a value from a saved file (the Lua parser
 // says `unexpected "Brannoc"`), and those hold other players' names. Keep
@@ -105,6 +128,20 @@ export function cleanReport(raw: unknown): ErrorReport | null {
   if (line !== undefined) out.line = line;
   const status = count(r.status, 599);
   if (status !== undefined) out.status = status;
+  if (Array.isArray(r.blocked)) {
+    const blocked = [...new Set(r.blocked.filter((b): b is string => typeof b === "string" && /^[a-z0-9.-]{1,80}$/.test(b)))].slice(0, MAX_BLOCKED);
+    if (blocked.length) out.blocked = blocked;
+  }
+  if (r.network === true) out.network = true;
+  if (typeof r.char === "string" && /^[\p{L}][\p{L} '-]{0,39}$/u.test(r.char)) out.char = r.char;
+  if (kind === "addon") {
+    const at = count(r.at, 4e9);
+    if (at !== undefined) out.at = at;
+    const times = count(r.times, 1e6);
+    if (times !== undefined) out.times = times;
+    const v = typeof r.addon === "string" && /^[\w.-]{1,20}$/.test(r.addon) ? r.addon : undefined;
+    if (v) out.addon = v;
+  }
   if (kind === "uploader") {
     const area = UPLOADER_AREAS.find((a) => a === r.area);
     if (!area) return null;
@@ -122,6 +159,7 @@ export function cleanReport(raw: unknown): ErrorReport | null {
 // The one line that names the problem: what Issues shows as its title.
 export function headline(r: ErrorReport): string {
   if (r.kind === "uploader") return `Uploader ${r.area}${r.file ? ` ${r.file}` : ""}${r.security ? " (security)" : ""}: ${r.message}`;
+  if (r.kind === "addon") return `Addon${r.addon ? ` ${r.addon}` : ""}: ${r.message}`;
   const where = r.kind === "upload" ? `upload ${r.step ?? "?"}${r.file ? ` ${r.file}` : ""}` : r.kind;
   return `Browser ${where}: ${r.message}`;
 }

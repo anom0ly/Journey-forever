@@ -1,7 +1,8 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Journey } from "../lib/journey";
 import { readUpload } from "../lib/parse/upload";
-import { api, type Screenshot, type StoredCharacter } from "./api";
+import { api, ApiError, type Screenshot, type StoredCharacter } from "./api";
+import { reportLoad } from "./report";
 
 // Where a journey page gets its journey: the signed-in owner's character,
 // a public link, or the built-in sample (nothing saved).
@@ -44,7 +45,10 @@ export function useJourney(source: JourneySource): { data?: Loaded; error?: stri
       return { journey, stored, screenshots: shots.screenshots, base: `/c/${encodeURIComponent(source.key)}` };
     })()
       .then((data) => live && setState({ data }))
-      .catch((err: Error) => live && setState({ error: err.message }));
+      .catch((err: Error) => {
+        reportLoad(err, err instanceof ApiError ? err.status : undefined);
+        if (live) setState({ error: err.message });
+      });
     return () => {
       live = false;
     };

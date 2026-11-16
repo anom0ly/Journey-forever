@@ -21,6 +21,7 @@ Readers should refuse a `schemaVersion` they don't know, accept unknown `kind` v
 | `screenshots` | array | One entry per screenshot logged, oldest first (below). Capped at 5000. |
 | `notes` | array | One entry per note, oldest first (below). Capped at 5000. |
 | `friends` | table | The account's Battle.net friends (since 1.1.0): `t` (`time()` when read) and `tags`, the friends' BattleTags (`"Name#1234"`), sorted, unique. Refreshed a few seconds after login and when the list changes; kept as it was if Battle.net answers with nothing. Missing until first read. |
+| `errors` | array | Lua errors the addon caught (since 1.3.0), newest last, at most 20: `t` (`time()` when it last happened), `msg` (where and the error, at most 300 characters), `n` (how many times), `v` (addon version). The same message is one entry. The website reports them so problems are found without asking the player. |
 | `paused`, `settings`, `zones`, `halfway`, `run` | | The addon's own state. Ignore. |
 
 ## Place fields (screenshots and notes)

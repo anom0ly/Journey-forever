@@ -383,6 +383,10 @@ export class Uploader {
       this.store.log(msg?.log ?? "Checked, nothing new to upload");
       for (const n of notes) this.store.log(`Couldn't read ${n}`, false);
       for (const n of r.notes) this.report({ area: "read", file: n.path.split("/").pop(), message: n.message });
+      // The newest few errors the Journey Forever addon caught in game.
+      for (const e of [...r.addonErrors].sort((x, y) => y.t - x.t).slice(0, 4)) {
+        this.report({ area: "addon", message: e.message, game: { at: e.t, times: e.count, version: e.version } });
+      }
       this.failing = false;
       this.error = undefined;
       if (msg && this.settings.notify) await notify(msg.title, msg.body, msg.url);

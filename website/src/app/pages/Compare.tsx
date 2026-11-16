@@ -10,9 +10,10 @@ import { slugFromLink } from "../../lib/search";
 import { duration, gold, played } from "../../lib/insights";
 import { km } from "../../lib/path";
 import { deathStats, goldStats, levelStats, professionStats, pvpStats, SKILL_CAPS } from "../../lib/stats";
-import { api, type PublicHit, type Screenshot, type StoredCharacter } from "../api";
+import { api, ApiError, type PublicHit, type Screenshot, type StoredCharacter } from "../api";
 import { classColor, describeCharacter, plural } from "../format";
 import { friendCharacters, friendSlugs, useFriends } from "../friends";
+import { reportLoad } from "../report";
 import { navigate } from "../router";
 import { loadDemoJourneys } from "../source";
 import { ReplayDuo } from "./CompareReplay";
@@ -41,7 +42,10 @@ function usePublic(slug: string | undefined): { side?: Side; error?: string } {
     // diamonds still open, saying the image isn't there.
     Promise.all([api.publicJourneyData(slug), api.publicJourney(slug).then((m) => m.screenshots).catch(() => [] as Screenshot[])])
       .then(([j, shots]) => live && setState({ side: { j, slug, shots } }))
-      .catch((e: Error) => live && setState({ error: e.message }));
+      .catch((e: Error) => {
+        reportLoad(e, e instanceof ApiError ? e.status : undefined);
+        if (live) setState({ error: e.message });
+      });
     return () => {
       live = false;
     };

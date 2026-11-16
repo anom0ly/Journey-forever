@@ -75,6 +75,15 @@ describe("error reports from the uploader", () => {
     expect(down.sent).toHaveLength(2);
   });
 
+  it("sends the addon's own in-game errors as addon reports", async () => {
+    const { reporter, sent } = setup();
+    const game = { at: 1794800000, times: 3, version: "1.3.0" };
+    expect(await reporter.report({ area: "addon", message: "PLAYER_LEVEL_UP: Shots.lua:131: Adom broke it", game })).toBe(true);
+    expect(await reporter.report({ area: "addon", message: "PLAYER_LEVEL_UP: Shots.lua:131: Adom broke it", game })).toBe(false);
+    expect(sent[0].body).toEqual({ kind: "addon", message: "PLAYER_LEVEL_UP: Shots.lua:131: <character> broke it", at: 1794800000, times: 3, addon: "1.3.0" });
+    expect(cleanReport(sent[0].body)).toMatchObject({ kind: "addon", at: 1794800000, times: 3, addon: "1.3.0" });
+  });
+
   it("reports a crash on the next start", async () => {
     const { reporter, sent, store } = setup();
     Reporter.saveCrash(store.dir, new TypeError("boom at C:\\Users\\Justin Smith\\x"));

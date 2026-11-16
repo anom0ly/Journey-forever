@@ -139,7 +139,7 @@ describe("one upload", () => {
 describe("the notification", () => {
   it("names one character's levels, time and screenshots", () => {
     const m = uploadMessage(
-      { characters: [{ key: "Adom-Toretto", name: "Adom", fromLevel: 23, toLevel: 25, played: 8040, isNew: false, fillsGap: false }], shots: 4, shotIds: [], notes: [], skippedPreLaunch: 0 },
+      { characters: [{ key: "Adom-Toretto", name: "Adom", fromLevel: 23, toLevel: 25, played: 8040, isNew: false, fillsGap: false }], shots: 4, shotIds: [], notes: [], addonErrors: [], skippedPreLaunch: 0 },
       "https://site",
     )!;
     expect(m.title).toBe("Adom's journey is up to date");

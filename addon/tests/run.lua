@@ -471,5 +471,22 @@ test("no errors were caught along the way", function()
     eq(#ns.errors, 0, "errors: " .. table.concat(ns.errors, " | "))
 end)
 
+test("caught errors are kept in the saved data, one entry per message", function()
+    local before = #ns.errors
+    local boom = function() error("boom") end
+    ns.SafeCall(boom)
+    ns.SafeCall(boom)
+    ns.SafeCall(function() error("other") end)
+    eq(#ns.errors, before + 3, "session list")
+    local errs = ns.db.errors
+    eq(#errs, 2, "two messages")
+    eq(errs[1].n, 2, "boom twice")
+    eq(errs[1].v, ns.VERSION, "version")
+    eq(type(errs[1].t), "number", "time")
+    eq(errs[2].msg:find("other", 1, true) ~= nil, true, "second message")
+    for i = 1, 30 do ns.SafeCall(function() error("e" .. i) end) end
+    eq(#ns.db.errors, ns.MAX_ERRORS, "capped")
+end)
+
 io.write(("%d passed, %d failed\n"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

@@ -24,6 +24,9 @@ export interface Problem {
   stack?: string;
   security?: boolean; // a check that guards the PC failed (checksum, unexpected file)
   webview?: string;
+  // An error our addon caught in game (its saved file keeps them): sent as
+  // kind "addon", for the site's Problems page, not the uploader's own.
+  game?: { at: number; times: number; version?: string };
 }
 
 // What a report must never carry, for this PC.
@@ -97,10 +100,12 @@ export class Reporter {
       const message = scrub(split.message, priv).slice(0, 300);
       const t = Math.floor(Date.now() / 1000);
       const seen = (this.store.state.reported ??= {});
-      const id = `${p.area}|${p.file ?? ""}|${message}`.slice(0, 200);
+      const id = `${p.game ? `game@${p.game.at}` : p.area}|${p.file ?? ""}|${message}`.slice(0, 200);
       if (t - (seen[id] ?? 0) < DAY) return false;
       for (const k of Object.keys(seen)) if (t - seen[k] >= DAY) delete seen[k];
-      const body = {
+      const body = p.game
+        ? { kind: "addon", message, at: p.game.at, times: p.game.times, addon: p.game.version }
+        : {
         kind: "uploader",
         area: p.area,
         message,
@@ -113,7 +118,7 @@ export class Reporter {
         os: release(),
         webview: p.webview,
         pc: this.pcId,
-      };
+        };
       const headers: Record<string, string> = { "content-type": "application/json", "x-journey-forever": "1" };
       const key = this.opts.key();
       if (key) headers.authorization = `Bearer ${key}`;
