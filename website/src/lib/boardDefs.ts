@@ -1,11 +1,13 @@
 // The leaderboards' catalogue: what each board ranks and how it's shown.
-// No other imports, so the Worker can use it to check and sort entries.
+// Only plain lists imported, so the Worker can use it to check and sort entries.
+
+import { FACTIONS, RAID_BOSSES } from "./sixtyLists";
 
 // Bumped when the numbers are worked out differently, so stored characters
 // are worked out again by their owner's browser.
-export const BOARDS_VERSION = 4;
+export const BOARDS_VERSION = 5;
 
-export type GroupId = "leveling" | "survival" | "kills" | "gold" | "professions" | "world" | "dungeons" | "pvp";
+export type GroupId = "leveling" | "survival" | "kills" | "gold" | "professions" | "world" | "dungeons" | "pvp" | "sixty";
 export const GROUPS: { id: GroupId; label: string }[] = [
   { id: "leveling", label: "Leveling" },
   { id: "survival", label: "Survival" },
@@ -15,12 +17,13 @@ export const GROUPS: { id: GroupId; label: string }[] = [
   { id: "world", label: "World" },
   { id: "dungeons", label: "Dungeons" },
   { id: "pvp", label: "PvP" },
+  { id: "sixty", label: "Level 60" },
 ];
 
 // duration: played seconds. date: unix seconds. gold: copper. distance: yards.
 // percent: 0-100. level: a character level. gap: levels above the player.
 export type Fmt = "duration" | "date" | "gold" | "goldHour" | "count" | "xp" | "distance" | "percent" | "level" | "deaths" | "gap";
-export type ParamKind = "milestone" | "goldLevel" | "level" | "profession" | "zone" | "dungeon" | "creature" | "ctype";
+export type ParamKind = "milestone" | "goldLevel" | "level" | "profession" | "zone" | "dungeon" | "creature" | "ctype" | "raidboss" | "faction";
 
 export interface BoardDef {
   id: string;
@@ -87,6 +90,14 @@ export const BOARDS: BoardDef[] = [
   { id: "bgwins", group: "pvp", title: "Most battleground wins", sub: "Battlegrounds won", fmt: "count", dir: "desc" },
   { id: "winrate", group: "pvp", title: "Best win rate", sub: "Battlegrounds, at least 20 finished", fmt: "percent", dir: "desc" },
   { id: "duels", group: "pvp", title: "Most duels won", sub: "Duels won", fmt: "count", dir: "desc" },
+
+  { id: "firstboss", group: "sixty", title: "First to kill {p}", sub: "Date of the first kill", fmt: "date", dir: "asc", param: "raidboss", defaultParam: "Ragnaros" },
+  { id: "bosskills", group: "sixty", title: "Most raid boss kills", sub: "Raid bosses killed, counting repeats", fmt: "count", dir: "desc" },
+  { id: "killrate", group: "sixty", title: "Best boss kill rate", sub: "Boss kills out of attempts, at least 5 kills", fmt: "percent", dir: "desc", jt: true },
+  { id: "raidvisits", group: "sixty", title: "Most raid visits", sub: "Raids entered since 60", fmt: "count", dir: "desc" },
+  { id: "epicmount", group: "sixty", title: "Fastest to epic mount", sub: "Played time from 60 to an epic mount", fmt: "duration", dir: "asc" },
+  { id: "epics60", group: "sixty", title: "Most epics at 60", sub: "Epic items looted since 60", fmt: "count", dir: "desc" },
+  { id: "exalted", group: "sixty", title: "First to Exalted with {p}", sub: "Date Exalted was reached", fmt: "date", dir: "asc", param: "faction", defaultParam: "Argent Dawn" },
 ];
 
 export const BOARD_BY_ID = new Map(BOARDS.map((b) => [b.id, b]));
@@ -149,6 +160,13 @@ export const CARDS: Record<GroupId, CardDef[]> = {
     { title: "Best win rate", boards: [{ id: "winrate", label: "" }] },
     { title: "Most duels won", boards: [{ id: "duels", label: "" }] },
   ],
+  sixty: [
+    { title: "First raid boss kill", boards: [{ id: "firstboss", label: "" }] },
+    { title: "Raid bosses", boards: [{ id: "bosskills", label: "Kills" }, { id: "killrate", label: "Kill rate" }, { id: "raidvisits", label: "Raid visits" }] },
+    { title: "Fastest to epic mount", boards: [{ id: "epicmount", label: "" }] },
+    { title: "Most epics at 60", boards: [{ id: "epics60", label: "" }] },
+    { title: "First to Exalted", boards: [{ id: "exalted", label: "" }] },
+  ],
 };
 
 export const MILESTONES = ["10", "20", "30", "40", "50"];
@@ -160,6 +178,8 @@ export function fixedParams(kind: ParamKind | undefined): string[] | undefined {
   if (kind === "milestone") return MILESTONES;
   if (kind === "goldLevel") return GOLD_LEVELS;
   if (kind === "level") return ONE_LEVELS;
+  if (kind === "raidboss") return RAID_BOSSES;
+  if (kind === "faction") return FACTIONS;
   return undefined;
 }
 

@@ -135,9 +135,13 @@ function convert(kind: string, f: LuaValue[], names: Record<string, string>): Re
       const itemID = num(f[1]);
       const source = isObj(f[4]) ? f[4] : undefined;
       const how = source && str(source.how);
+      // The item's link (name and quality); the same item as itemID.
+      const item = parseItem(f[2]);
+      if (item?.id && item.name) names[item.id] = item.name;
       return {
         slot: num(f[0]),
         itemID,
+        item: item && (item.id === undefined || item.id === itemID) ? item : undefined,
         late: bool(f[3]),
         // Where it came from, without who: a trade or mail names the other player.
         how: how && SOURCE_HOW.has(how) ? how : undefined,

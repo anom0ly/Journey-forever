@@ -1,4 +1,4 @@
-// The journey page's stats tabs: Deaths, Kills, Gold, Professions, PvP and Levels
+// The journey page's stats tabs (Life at 60 is SixtyTab.tsx): Deaths, Kills, Gold, Professions, PvP and Levels
 // (the Overview is Journey.tsx). Each reads its numbers from lib/stats.ts.
 
 import { useState } from "preact/hooks";
@@ -23,6 +23,7 @@ import { day, dateTime, plural } from "../format";
 
 export const TABS = [
   { id: "", label: "Overview" },
+  { id: "at60", label: "✦ Life at 60" },
   { id: "deaths", label: "Deaths" },
   { id: "kills", label: "Kills" },
   { id: "gold", label: "Gold" },
@@ -36,10 +37,11 @@ export function isTab(s: string): s is Exclude<TabId, ""> {
   return TABS.some((t) => t.id === s && s !== "");
 }
 
-export function TabNav({ base, tab }: { base: string; tab: TabId }) {
+// Life at 60 shows once the character is 60 (or someone opens its link).
+export function TabNav({ base, tab, at60 }: { base: string; tab: TabId; at60: boolean }) {
   return (
     <nav class="tabs" aria-label="Journey sections">
-      {TABS.map((t) => (
+      {TABS.filter((t) => t.id !== "at60" || at60 || tab === "at60").map((t) => (
         <a key={t.id} href={t.id ? `${base}/${t.id}` : base} class={t.id === tab ? "active" : undefined} aria-current={t.id === tab ? "page" : undefined}>
           {t.label}
         </a>
@@ -50,7 +52,7 @@ export function TabNav({ base, tab }: { base: string; tab: TabId }) {
 
 // ---------------------------------------------------------------- pieces
 
-function Tile({ label, value, sub, tone }: { label: string; value?: string | number; sub?: string; tone?: "gold" | "good" }) {
+export function Tile({ label, value, sub, tone }: { label: string; value?: string | number; sub?: string; tone?: "gold" | "good" }) {
   // A name (a nemesis, say) is set smaller than a number.
   const wordy = typeof value === "string" && /[a-z]{3}/i.test(value) && value.length > 10;
   return (
@@ -66,7 +68,7 @@ function Empty({ children }: { children: preact.ComponentChildren }) {
   return <p class="muted small">{children}</p>;
 }
 
-function ShowMore<T>({ rows, first, render }: { rows: T[]; first: number; render: (r: T) => preact.JSX.Element }) {
+export function ShowMore<T>({ rows, first, render }: { rows: T[]; first: number; render: (r: T) => preact.JSX.Element }) {
   const [all, setAll] = useState(false);
   const shown = all ? rows : rows.slice(0, first);
   return (

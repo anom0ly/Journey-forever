@@ -6,6 +6,7 @@
 
 import { dungeonRuns, lootCounts } from "./insights";
 import { killStats } from "./kills";
+import { sixtyBoardEntries } from "./sixty";
 import type { Journey } from "./journey";
 import { GOLD_LEVELS, MILESTONES, type BoardEntry } from "./boardDefs";
 import { distanceByMode } from "./path";
@@ -146,6 +147,9 @@ export function boardEntries(j: Journey): BoardEntry[] {
   if (pvp.won) add("bgwins", pvp.won);
   if (pvp.won + pvp.lost >= 20) add("winrate", Math.round((pvp.won / (pvp.won + pvp.lost)) * 1000) / 10);
   if (pvp.duelsWon) add("duels", pvp.duelsWon);
+
+  // Level 60
+  sixtyBoardEntries(j, (b, v, p) => add(b, v, p));
 
   return out;
 }

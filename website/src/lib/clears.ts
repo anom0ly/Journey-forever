@@ -70,8 +70,9 @@ export interface DungeonRun {
   deaths?: number;
   groupSize?: number;
   visits: number;
-  // true: the end boss died inside. false: it didn't. undefined: a dungeon
-  // whose end boss isn't listed, so nobody can tell.
+  // true: the end boss died inside. false: it didn't. undefined: nobody can
+  // tell (a dungeon whose end boss isn't listed, or a run with no XP kills
+  // logged, as at 60, and no screenshot entry).
   cleared?: boolean;
   boss?: string; // the end boss that died
   run?: RunSummary; // the last visit's summary
@@ -172,7 +173,10 @@ export function dungeonRuns(j: Journey): DungeonRun[] {
     if (bosses) {
       const k = kills.find((x) => x.t >= start && x.t <= run.t && bosses.has(x.name.toLowerCase()));
       const s = k ? undefined : shots.find((x) => x.t >= start && x.t <= run.t + SHOT_SLACK);
-      run.cleared = !!(k || s);
+      // No XP kill logged inside at all: at 60 nothing gives XP, so the
+      // kill log can't tell. Without the addon's entry it stays unknown.
+      const blind = !k && !s && !run.kills && !kills.some((x) => x.t >= start && x.t <= run.t);
+      run.cleared = blind ? undefined : !!(k || s);
       if (k) run.boss = k.name;
       else if (s?.boss) run.boss = s.boss;
     }

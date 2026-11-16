@@ -7,7 +7,7 @@
 // Group members are stored there only as hashes and PvP killers as
 // "Player (PvP)", so nothing in it names another player.
 
-import { TOP_CREATURES, type Death, type DungeonRun, type LevelInfo, type Session, type Stats } from "../journey";
+import { TOP_CREATURES, type BossCount, type Death, type DungeonRun, type LevelInfo, type Session, type Stats } from "../journey";
 import { entries, isObj, list, num, str, type LuaObject, type LuaValue } from "../lua";
 import type { Contribution, FileContext } from "./types";
 import { collapseDeaths } from "../merge";
@@ -69,6 +69,29 @@ function sessionsOf(v: LuaValue | undefined): Session[] {
     out.push(strip({ start, end, startLevel, endLevel: startLevel !== undefined ? startLevel + (num(s.levels) ?? 0) : undefined }));
   }
   return out.sort((a, b) => a.start - b.start);
+}
+
+function bossesOf(v: LuaValue | undefined): Record<string, BossCount> | undefined {
+  const out: Record<string, BossCount> = {};
+  for (const [name, b] of entries(v)) {
+    if (!isObj(b) || !name) continue;
+    out[name] = strip({ attempts: num(b.attempts), kills: num(b.kills), wipes: num(b.wipes) });
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+// Played time each item was worn, by item ID (one item can be kept under
+// several keys, one per enchant or suffix).
+function wornOf(v: LuaValue | undefined): Record<string, number> | undefined {
+  const out: Record<string, number> = {};
+  for (const [, w] of entries(v)) {
+    if (!isObj(w)) continue;
+    const id = str(w.link)?.match(/item:(\d+)/)?.[1];
+    const played = num(w.played);
+    if (!id || played === undefined || played <= 0) continue;
+    out[id] = (out[id] ?? 0) + Math.round(played);
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function strip<T extends object>(o: T): T {
@@ -169,6 +192,9 @@ export function parseJourneyTracker(db: LuaValue | undefined, ctx: FileContext):
     deaths,
     where,
     firstSeen: num(db.firstSeen) || undefined,
+    bosses: bossesOf(db.bosses),
+    worn: wornOf(db.worn),
+    reachedMax: num(db.reachedMax) || undefined,
   });
 
   const sessions = sessionsOf(db.sessions);

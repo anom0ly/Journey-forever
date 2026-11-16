@@ -48,7 +48,10 @@ export function parseItem(link: unknown, quality?: unknown): Item | undefined {
   const name = /\|h\[([^\]]*)\]\|h/.exec(link);
   if (name) item.name = name[1];
   const color = /\|c[fF]{2}([0-9a-fA-F]{6})/.exec(link);
+  // Newer clients tag the quality in the link ("|cnIQ4:") instead of a colour.
+  const tagged = /\|cnIQ(\d+):/.exec(link);
   if (typeof quality === "number") item.quality = quality;
+  else if (tagged) item.quality = Number(tagged[1]);
   else if (color && color[1].toLowerCase() in QUALITY_BY_HEX) item.quality = QUALITY_BY_HEX[color[1].toLowerCase()];
   return item.id !== undefined || item.name !== undefined ? item : undefined;
 }
