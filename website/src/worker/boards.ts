@@ -88,6 +88,7 @@ export async function saveBoards(env: Env, user: User, key: string, body: unknow
   const insert = env.DB.prepare("INSERT INTO board_entries (user_id, char_key, board, param, value, score) VALUES (?, ?, ?, ?, ?, ?)");
   for (const e of entries) stmts.push(insert.bind(user.id, key, e.b, e.p, e.v, score(e.b, e.v, e.t)));
   await env.DB.batch(stmts);
+  await openForChecks(env, user.id, key, checks);
   return json({ ok: true, entries: entries.length });
 }
 
@@ -364,11 +365,50 @@ export async function reportedBy(env: Env, reporterId: string): Promise<Target[]
 
 // ---------------------------------------------------------------- review
 
+// Check lines not seen when the item was last cleared.
+export function newCheckLines(checks: string[], seen: string[]): string[] {
+  const had = new Set(seen);
+  return checks.filter((c) => !had.has(c));
+}
+
+function parseLines(json: string | null | undefined): string[] {
+  if (!json) return [];
+  try {
+    const v: unknown = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+// After an upload: a public character with a check line nobody has seen
+// gets an open review item (a new one, or its cleared one reopened). A
+// check never holds or hides a character; that takes reports or you.
+async function openForChecks(env: Env, userId: string, key: string, stored: string[]): Promise<void> {
+  const c = await env.DB.prepare("SELECT is_public FROM characters WHERE user_id = ? AND key = ?").bind(userId, key).first<{ is_public: number }>();
+  if (!c?.is_public) return;
+  const checks = [...stored, ...(await relativeChecks(env, userId, key))];
+  if (!checks.length) return;
+  const flag = await env.DB.prepare("SELECT status, seen_checks FROM flags WHERE user_id = ? AND char_key = ?")
+    .bind(userId, key)
+    .first<{ status: string; seen_checks: string | null }>();
+  if (flag && flag.status !== "cleared") return; // already waiting, or hidden
+  if (!newCheckLines(checks, parseLines(flag?.seen_checks)).length) return;
+  const time = now();
+  await env.DB.prepare(
+    `INSERT INTO flags (user_id, char_key, status, opened_at, updated_at, checks_opened_at) VALUES (?, ?, 'open', ?, ?, ?)
+     ON CONFLICT (user_id, char_key) DO UPDATE SET status = 'open', opened_at = excluded.opened_at, updated_at = excluded.updated_at,
+       checks_opened_at = excluded.checks_opened_at`,
+  )
+    .bind(userId, key, time, time, time)
+    .run();
+}
+
 export async function reviewCount(env: Env): Promise<number> {
   const r = await env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM flags f WHERE f.status = 'open' AND EXISTS (
+    `SELECT COUNT(*) AS n FROM flags f WHERE f.status = 'open' AND (f.checks_opened_at > COALESCE(f.cleared_at, 0) OR EXISTS (
        SELECT 1 FROM reports r WHERE r.user_id = f.user_id AND r.char_key = f.char_key AND r.created_at > COALESCE(f.cleared_at, 0)
-         AND r.reporter_id NOT IN (SELECT reporter_id FROM ignored_reporters))`,
+         AND r.reporter_id NOT IN (SELECT reporter_id FROM ignored_reporters)))`,
   ).first<{ n: number }>();
   return r?.n ?? 0;
 }
@@ -380,6 +420,8 @@ interface ReviewFlag {
   opened_at: number;
   updated_at: number;
   cleared_at: number | null;
+  seen_checks: string | null;
+  checks_opened_at: number | null;
   name: string;
   realm: string;
   slug: string | null;
@@ -418,10 +460,11 @@ export async function reviewList(env: Env, url: URL): Promise<Response> {
       .all<{ reporter_id: string; reason: string; note: string | null; created_at: number; battletag: string | null; sent: number; cleared: number; ignored: number; established: number }>();
     const s = JSON.parse(f.summary) as CharacterSummary;
     const counted = reports.results.filter((r) => !r.ignored && r.created_at > (f.cleared_at ?? 0));
-    if (status === "open" && !counted.length) continue;
-    const ranks = await ranksOf(env, f.user_id, f.char_key, 100000);
-    const checks: string[] = f.checks ? JSON.parse(f.checks) : [];
+    const checks = parseLines(f.checks);
     checks.push(...(await relativeChecks(env, f.user_id, f.char_key)));
+    const newChecks = newCheckLines(checks, parseLines(f.seen_checks));
+    if (status === "open" && !counted.length && !newChecks.length) continue;
+    const ranks = await ranksOf(env, f.user_id, f.char_key, 100000);
     items.push({
       slug: f.slug,
       name: f.name,
@@ -439,6 +482,8 @@ export async function reviewList(env: Env, url: URL): Promise<Response> {
       boards: ranks.length,
       bestRank: ranks[0]?.rank,
       checks,
+      newChecks,
+      checksOpenedAt: f.checks_opened_at,
       reports: reports.results.map((r) => ({
         reporterId: r.reporter_id,
         battletag: r.battletag,
@@ -479,7 +524,7 @@ async function relativeChecks(env: Env, userId: string, key: string): Promise<st
 export async function reviewAction(env: Env, slug: string, body: unknown): Promise<Response> {
   const action = (body as { action?: unknown })?.action;
   if (action !== "hide" && action !== "clear") throw new HttpError(400, "Send hide or clear");
-  const c = await env.DB.prepare("SELECT user_id, key FROM characters WHERE slug = ?").bind(slug).first<Target>();
+  const c = await env.DB.prepare("SELECT user_id, key, checks FROM characters WHERE slug = ?").bind(slug).first<Target & { checks: string | null }>();
   if (!c) throw new HttpError(404, "No such character");
   const time = now();
   if (action === "hide") {
@@ -490,11 +535,17 @@ export async function reviewAction(env: Env, slug: string, body: unknown): Promi
       .bind(c.user_id, c.key, time, time)
       .run();
   } else {
+    // The check lines on the item now count as seen, along with any seen
+    // before, so a line that goes away and comes back stays quiet.
+    const had = await env.DB.prepare("SELECT seen_checks FROM flags WHERE user_id = ? AND char_key = ?").bind(c.user_id, c.key).first<{ seen_checks: string | null }>();
+    const current = [...parseLines(c.checks), ...(await relativeChecks(env, c.user_id, c.key))];
+    const seen = [...new Set([...parseLines(had?.seen_checks), ...current])].slice(-200);
     await env.DB.prepare(
-      `INSERT INTO flags (user_id, char_key, status, opened_at, updated_at, cleared_at) VALUES (?, ?, 'cleared', ?, ?, ?)
-       ON CONFLICT (user_id, char_key) DO UPDATE SET status = 'cleared', updated_at = excluded.updated_at, cleared_at = excluded.cleared_at`,
+      `INSERT INTO flags (user_id, char_key, status, opened_at, updated_at, cleared_at, seen_checks) VALUES (?, ?, 'cleared', ?, ?, ?, ?)
+       ON CONFLICT (user_id, char_key) DO UPDATE SET status = 'cleared', updated_at = excluded.updated_at, cleared_at = excluded.cleared_at,
+         seen_checks = excluded.seen_checks`,
     )
-      .bind(c.user_id, c.key, time, time, time)
+      .bind(c.user_id, c.key, time, time, time, seen.length ? JSON.stringify(seen) : null)
       .run();
   }
   await refreshFlag(env, c.user_id, c.key);

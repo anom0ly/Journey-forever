@@ -432,6 +432,8 @@ table.data.lb-table td { vertical-align: middle; }
 dialog textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: inherit; font-size: 14px; resize: vertical; }
 .rv-card { gap: 14px; }
 .rv-state { font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 6px; background: var(--raised); color: var(--muted); }
+.rv-state.check { background: rgba(224, 178, 82, 0.14); color: var(--gold-hi); }
+.rv-new { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 6px; border-radius: 5px; background: rgba(229, 103, 92, 0.18); color: var(--accent-hi); margin-right: 8px; vertical-align: 1px; }
 .rv-state.hi { background: rgba(242, 156, 147, 0.15); color: var(--red); }
 .rv-label { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
 .rv-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }

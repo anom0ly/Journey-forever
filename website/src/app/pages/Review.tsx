@@ -1,10 +1,11 @@
-// The reviewer's page: every reported character, from the first report.
+// The reviewer's page: every reported character, from the first report,
+// and every character an automatic check has found something new on.
 // Only accounts listed in ADMIN_BNET_IDS can load it; the API answers
 // "Not found" to anyone else.
 
 import { useEffect, useState } from "preact/hooks";
 import { api, type ReviewItem } from "../api";
-import { classColor, date, describeCharacter, plural } from "../format";
+import { classColor, date, dateTime, describeCharacter, plural } from "../format";
 
 type Status = "open" | "hidden" | "cleared";
 const TABS: { id: Status; label: string }[] = [
@@ -53,10 +54,10 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
         <div class="stack">
           <h1>Review</h1>
           <p class="lead">
-            Every reported character, from the first report. It stays on the leaderboards until you hide it, unless 10 different established accounts
-            (3 or more days old, with a character that has an hour played) have reported it: then it's held off until you clear or
-            hide it. The automatic checks are here to help you decide; they never act on
-            their own.
+            Every reported character, and every character an automatic check has found something new on. A reported character stays on the
+            leaderboards until you hide it, unless 10 different established accounts (3 or more days old, with a character that has an hour
+            played) have reported it: then it's held off until you clear or hide it. Automatic checks open an item for you to look at, but
+            never hold or hide anyone on their own.
           </p>
         </div>
         <div class="lb-seg" role="group" aria-label="Show">
@@ -72,13 +73,15 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
       {!data && !error && <p class="muted">Loading…</p>}
       {data && !data.items.length && (
         <div class="card flat">
-          <p class="muted">{status === "open" ? "Nothing waiting. New reports will show up here." : status === "hidden" ? "No characters are hidden." : "Nothing cleared yet."}</p>
+          <p class="muted">{status === "open" ? "Nothing waiting. New reports and new automatic check lines will show up here." : status === "hidden" ? "No characters are hidden." : "Nothing cleared yet."}</p>
         </div>
       )}
       <div class="stack-lg">
         {data?.items.map((it) => {
           const key = it.slug ?? it.name;
           const counted = it.reports.filter((r) => r.counts);
+          const fresh = new Set(it.newChecks);
+          const byCheck = status === "open" && !counted.length && it.newChecks.length > 0;
           return (
             <article class="card rv-card" key={key}>
               <div class="row between">
@@ -95,8 +98,16 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
                     </span>
                   </div>
                 </div>
-                <span class={`rv-state${it.held || it.hidden ? " hi" : ""}`}>
-                  {it.hidden ? "Hidden by you" : it.held ? "Held off boards" : status === "cleared" ? `Cleared ${it.clearedAt ? date(it.clearedAt) : ""}` : "Still listed"}
+                <span class={`rv-state${it.held || it.hidden ? " hi" : byCheck ? " check" : ""}`}>
+                  {it.hidden
+                    ? "Hidden by you"
+                    : it.held
+                      ? "Held off boards"
+                      : status === "cleared"
+                        ? `Cleared ${it.clearedAt ? date(it.clearedAt) : ""}`
+                        : byCheck
+                          ? `${it.clearedAt ? "Reopened" : "Opened"} by a data check`
+                          : "Still listed"}
                   {status !== "cleared" && ` · ${plural(counted.length, "report")}`}
                 </span>
               </div>
@@ -105,16 +116,36 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
                 <div class="stack">
                   <span class="tiny muted rv-label">Automatic checks</span>
                   <ul class="rv-list">
-                    {it.checks.map((c) => (
-                      <li key={c}>{c}</li>
-                    ))}
+                    {it.checks.map((c) =>
+                      status !== "cleared" && fresh.has(c) ? (
+                        <li key={c}>
+                          <span class="rv-new">New</span>
+                          {c}
+                        </li>
+                      ) : (
+                        <li key={c} class={it.clearedAt ? "muted" : undefined}>
+                          {c}
+                        </li>
+                      ),
+                    )}
                   </ul>
+                  {status === "cleared" ? (
+                    <span class="tiny muted">{it.newChecks.length ? "" : "All seen when you cleared it. A new line will move it back to Waiting."}</span>
+                  ) : (
+                    it.newChecks.length > 0 && (
+                      <span class="tiny muted">
+                        {it.clearedAt ? `New since you cleared it on ${date(it.clearedAt)}` : "Not looked at yet"}
+                        {it.checksOpenedAt ? ` · found by the upload on ${dateTime(it.checksOpenedAt)}` : ""}
+                      </span>
+                    )
+                  )}
                 </div>
               )}
               {!it.checks.length && <span class="tiny muted">Automatic checks found nothing.</span>}
 
               <div class="stack">
                 <span class="tiny muted rv-label">Reports</span>
+                {!it.reports.length && <span class="tiny muted">Nobody has reported this character.</span>}
                 <ul class="rv-list rv-reports">
                   {it.reports.map((r) => (
                     <li key={r.reporterId} class={r.counts ? undefined : "muted"}>
@@ -168,7 +199,7 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
         })}
       </div>
       <p class="tiny muted">
-        Hide takes a character off every board but leaves its journey public. Clear closes the flag and puts a held character back; accounts that
+        Hide takes a character off every board but leaves its journey public. Clear closes the flag, puts a held character back and marks its check lines as seen; accounts that
         already reported it can't report it again. Ignoring a reporter stops all their reports counting, past and future, without telling them.
       </p>
     </main>
