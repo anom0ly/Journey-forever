@@ -26,3 +26,23 @@ export async function backfillBoards(chars: StoredCharacter[]): Promise<void> {
     running = false;
   }
 }
+
+// The admin's one-off: every public character's leaderboard numbers and
+// checks worked out again from its stored journey, with today's rules.
+export async function recalcAllBoards(onProgress: (done: number, total: number) => void): Promise<{ done: number; failed: string[] }> {
+  const { characters } = await api.recalcList();
+  const failed: string[] = [];
+  let done = 0;
+  onProgress(0, characters.length);
+  for (const c of characters) {
+    try {
+      const j = await api.publicJourneyData(c.slug);
+      await api.recalcSave(c.slug, boardEntries(j), integrityChecks(j), BOARDS_VERSION);
+      done++;
+    } catch {
+      failed.push(c.name);
+    }
+    onProgress(done + failed.length, characters.length);
+  }
+  return { done, failed };
+}

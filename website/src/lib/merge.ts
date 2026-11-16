@@ -20,6 +20,7 @@ import { distanceByMode, PathIndex } from "./path";
 import type { Contribution } from "./parse/types";
 import { mapToWorld, MAPS } from "./maps";
 import { ZONE_NAMES } from "./wow";
+import { levelSeconds } from "./levelTime";
 
 const ADDONS: AddonId[] = ["rts", "jt", "jf"];
 
@@ -101,7 +102,9 @@ function mergeCharacter(parts: Partial<Character>[]): Character {
   return c;
 }
 
-function mergeLevels(lists: (LevelInfo[] | undefined)[]): LevelInfo[] {
+// earliest: folding uploads together, where one PC can have seen a level
+// only at a later login.
+function mergeLevels(lists: (LevelInfo[] | undefined)[], earliest = false): LevelInfo[] {
   const by = new Map<number, LevelInfo>();
   for (const l of lists) {
     for (const x of l ?? []) {
@@ -112,21 +115,25 @@ function mergeLevels(lists: (LevelInfo[] | undefined)[]): LevelInfo[] {
           (had as unknown as Record<string, unknown>)[k] = v;
         }
       }
+      // Except, across uploads, when it was reached and /played at the ding:
+      // a PC that didn't ding sees the level at its next login, later and
+      // with more played. (Within one upload Road to Sixty's clock wins.)
+      if (earliest && x.t !== undefined && had.t !== undefined && x.t < had.t) had.t = x.t;
+      if (earliest && x.played !== undefined && had.played !== undefined && x.played < had.played) had.played = x.played;
       by.set(x.level, had);
     }
   }
   return [...by.values()].sort((a, b) => a.level - b.level);
 }
 
-// Played time spent on each level, from the sessions, where Journey Tracker
-// didn't give it.
-function fillLevelTimes(levels: LevelInfo[], sessions: Session[]): void {
-  for (let i = 0; i < levels.length; i++) {
-    const l = levels[i], next = levels[i + 1];
-    if (l.secondsOnLevel !== undefined || l.t === undefined || !next?.t || next.level !== l.level + 1) continue;
-    let total = 0;
-    for (const s of sessions) total += Math.max(0, Math.min(s.end, next.t) - Math.max(s.start, l.t));
-    if (total > 0) l.secondsOnLevel = total;
+// Played time spent on each level, worked out from /played at the dings
+// where it can be (see levelTime.ts), so a time counted from a late login
+// isn't kept.
+function settleLevelTimes(levels: LevelInfo[], sessions: Session[], events: JEvent[], level: number, start?: number): void {
+  const seconds = levelSeconds({ levels, sessions, events, level, start });
+  for (const l of levels) {
+    const s = seconds.get(l.level);
+    if (s !== undefined) l.secondsOnLevel = s;
   }
 }
 
@@ -229,7 +236,7 @@ export function buildJourney(parts: Contribution[], now = Math.floor(Date.now() 
 
   const levels = mergeLevels([rts?.levels, jt?.levels]);
   const sessions = rts?.sessions?.length ? rts.sessions : jt?.sessions ?? [];
-  fillLevelTimes(levels, sessions);
+  settleLevelTimes(levels, sessions, timeline, character.level, sessions[0]?.start);
   for (const e of timeline) {
     if (e.k === "die" && e.level === undefined) {
       const lv = levelAt(levels, e.t);
@@ -460,16 +467,20 @@ export function mergeJourneys(old: Journey | undefined, next: Journey): Journey 
     name: keptName(old.character.name, next.character.name),
     level: Math.max(old.character.level, next.character.level),
   };
+  const levels = mergeLevels([next.levels, old.levels], true);
+  const sessionList = [...sessions.values()].sort((a, b) => a.start - b.start);
+  const eventList = collapseDeathEvents([...events.values()]);
+  settleLevelTimes(levels, sessionList, eventList, character.level, sessionList[0]?.start);
   return {
     ...next,
     character,
     sources,
     // Twins kept by an upload from before this fix go here too.
-    events: collapseDeathEvents([...events.values()]),
+    events: eventList,
     segments: [...segs.values()].sort((a, b) => a.t - b.t),
     ...(kills ? { kills } : {}),
-    levels: mergeLevels([next.levels, old.levels]),
-    sessions: [...sessions.values()].sort((a, b) => a.start - b.start),
+    levels,
+    sessions: sessionList,
     stats: collapseStatDeaths(stats),
     ...(slots.length ? { pcStats } : {}),
     zones: { ...old.zones, ...next.zones },

@@ -3,7 +3,7 @@
 
 // Bumped when the numbers are worked out differently, so stored characters
 // are worked out again by their owner's browser.
-export const BOARDS_VERSION = 3;
+export const BOARDS_VERSION = 4;
 
 export type GroupId = "leveling" | "survival" | "kills" | "gold" | "professions" | "world" | "dungeons" | "pvp";
 export const GROUPS: { id: GroupId; label: string }[] = [
