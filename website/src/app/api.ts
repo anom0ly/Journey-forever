@@ -141,6 +141,8 @@ export interface ReviewItem {
   boards: number;
   bestRank?: number;
   checks: string[];
+  newChecks: string[]; // check lines not seen when it was last cleared
+  checksOpenedAt: number | null; // when a check last opened it
   reports: ReviewReport[];
 }
 
