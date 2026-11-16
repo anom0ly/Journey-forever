@@ -6,6 +6,7 @@ import type { Item, JEvent, Journey, LevelInfo, PvpSummary, RunSummary, Session 
 import { zoneAt, zoneName } from "./insights";
 import { distanceByMode } from "./path";
 import { GATHER_NAMES } from "./wow";
+import { levelSeconds } from "./levelTime";
 
 // ---------------------------------------------------------------- shared
 
@@ -681,6 +682,7 @@ export function levelStats(j: Journey): LevelStats {
   }
   const vs = visits(j).filter((v) => !v.pvp);
   const snap = new Map<number, LevelInfo>(j.levels.map((l) => [l.level, l]));
+  const seconds = levelSeconds({ levels: j.levels, sessions: j.sessions, events: j.events, level: current, start: journeyStart(j) });
   const rows: LevelRow[] = [];
   for (let level = 1; level <= current; level++) {
     const from = times.get(level) ?? (level === 1 ? journeyStart(j) : undefined);
@@ -706,10 +708,10 @@ export function levelStats(j: Journey): LevelStats {
         row.walked = d.w;
         row.flown = d.t;
       }
-      row.played = inProgress ? undefined : snap.get(level)?.secondsOnLevel ?? playedBetween(j.sessions, from, to);
+      row.played = inProgress ? undefined : seconds.get(level);
       row.zone = mainZone(j, from, to);
     } else {
-      row.played = snap.get(level)?.secondsOnLevel;
+      row.played = inProgress ? undefined : seconds.get(level);
     }
     // Where events are missing (older journeys), the snapshots' totals give the counts.
     const a = snap.get(level), b = snap.get(level + 1);

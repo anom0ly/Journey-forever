@@ -300,6 +300,13 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action }),
     }),
+  recalcList: () => call<{ characters: { slug: string; name: string; boardsVersion: number | null }[] }>("/api/review/boards"),
+  recalcSave: (slug: string, entries: BoardEntry[], checks: string[], version: number) =>
+    call<{ ok: true }>(`/api/review/boards/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ entries, checks, version }),
+    }),
   ignoreReporter: (id: string, ignore: boolean) =>
     call<{ ok: true }>(`/api/review/reporters/${encodeURIComponent(id)}`, {
       method: "POST",

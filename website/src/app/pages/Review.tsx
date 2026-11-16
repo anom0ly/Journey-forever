@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { api, type ReviewItem } from "../api";
+import { recalcAllBoards } from "../boardsSync";
 import { classColor, date, dateTime, describeCharacter, plural } from "../format";
 
 type Status = "open" | "hidden" | "cleared";
@@ -19,6 +20,22 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
   const [data, setData] = useState<{ items: ReviewItem[]; counts: Record<string, number> }>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState<string>();
+  const [recalc, setRecalc] = useState<string>();
+  const [recalcing, setRecalcing] = useState(false);
+
+  const recalcAll = async () => {
+    setRecalcing(true);
+    setRecalc("Starting…");
+    try {
+      const r = await recalcAllBoards((n, total) => setRecalc(`Recalculating ${n} of ${total}…`));
+      setRecalc(`Recalculated ${plural(r.done, "public character")}.${r.failed.length ? ` Couldn't do: ${r.failed.join(", ")}.` : ""}`);
+      await load();
+    } catch (e) {
+      setRecalc(`Couldn't recalculate: ${(e as Error).message}`);
+    } finally {
+      setRecalcing(false);
+    }
+  };
 
   const load = () =>
     api
@@ -202,6 +219,21 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
         Hide takes a character off every board but leaves its journey public. Clear closes the flag, puts a held character back and marks its check lines as seen; accounts that
         already reported it can't report it again. Ignoring a reporter stops all their reports counting, past and future, without telling them.
       </p>
+      <section class="card flat" style={{ marginTop: "24px" }}>
+        <div class="row between" style={{ gap: "12px" }}>
+          <div class="stack" style={{ minWidth: 0 }}>
+            <h2>Leaderboard numbers</h2>
+            <p class="muted tiny">
+              Works out every public character's leaderboard numbers and automatic checks again from its saved journey, with the site's
+              current rules. Only needed after the rules change; it can take a minute.
+            </p>
+            {recalc && <p class="tiny">{recalc}</p>}
+          </div>
+          <button type="button" class="btn" disabled={recalcing} onClick={recalcAll}>
+            Recalculate all boards
+          </button>
+        </div>
+      </section>
     </main>
   );
 }

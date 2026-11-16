@@ -8,6 +8,7 @@ import { dungeonRuns } from "./clears";
 export { dungeonRuns };
 import { decodeSegment, distanceByMode } from "./path";
 import { QUALITY_NAMES } from "./wow";
+import { levelSeconds } from "./levelTime";
 
 export interface Tile {
   label: string;
@@ -160,11 +161,11 @@ export function levelBars(j: Journey): LevelBar[] {
   const deathsAt = new Set<number>();
   for (const e of j.events) if (e.k === "die" && typeof e.level === "number") deathsAt.add(e.level);
   for (const d of j.stats.deaths ?? []) if (d.level) deathsAt.add(d.level);
+  const seconds = levelSeconds({ levels: j.levels, sessions: j.sessions, events: j.events, level: j.character.level });
   const out: LevelBar[] = [];
   for (let level = 1; level < Math.max(2, j.character.level); level++) {
-    const l = j.levels.find((x) => x.level === level);
     const next = j.levels.find((x) => x.level === level + 1);
-    out.push({ level, seconds: l?.secondsOnLevel, died: deathsAt.has(level), zone: next?.zone ?? (next?.t ? zoneAt(j, next.t) : undefined) });
+    out.push({ level, seconds: seconds.get(level), died: deathsAt.has(level), zone: next?.zone ?? (next?.t ? zoneAt(j, next.t) : undefined) });
   }
   return out;
 }

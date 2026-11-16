@@ -47,8 +47,9 @@ export function isAdmin(env: Env, user: User | null): boolean {
 // ---------------------------------------------------------------- storing
 
 // The owner's browser sends the board numbers and the automatic checks
-// after each upload (and when the numbers' version changes).
-export async function saveBoards(env: Env, user: User, key: string, body: unknown): Promise<Response> {
+// after each upload (and when the numbers' version changes). An admin's
+// browser sends them too when it recalculates every public character.
+export async function saveBoards(env: Env, userId: string, key: string, body: unknown): Promise<Response> {
   const b = body as { entries?: unknown; checks?: unknown; version?: unknown };
   if (!Array.isArray(b?.entries) || b.entries.length > ENTRIES_LIMIT) throw new HttpError(400, "Send entries");
   const entries: BoardEntry[] = [];
@@ -76,20 +77,36 @@ export async function saveBoards(env: Env, user: User, key: string, body: unknow
     entries.push({ b: e.b, p, v: e.v, t: e.t });
   }
   const checks = Array.isArray(b.checks) ? b.checks.filter((c): c is string => typeof c === "string").slice(0, CHECKS_LIMIT).map((c) => c.slice(0, 200)) : [];
-  const row = await env.DB.prepare("SELECT 1 FROM characters WHERE user_id = ? AND key = ?").bind(user.id, key).first();
+  const row = await env.DB.prepare("SELECT 1 FROM characters WHERE user_id = ? AND key = ?").bind(userId, key).first();
   if (!row) throw new HttpError(404, "No such character");
 
   const stmts = [
-    env.DB.prepare("DELETE FROM board_entries WHERE user_id = ? AND char_key = ?").bind(user.id, key),
+    env.DB.prepare("DELETE FROM board_entries WHERE user_id = ? AND char_key = ?").bind(userId, key),
     env.DB.prepare("UPDATE characters SET checks = ?, boards_version = ? WHERE user_id = ? AND key = ?").bind(
-      checks.length ? JSON.stringify(checks) : null, typeof b.version === "number" ? b.version : BOARDS_VERSION, user.id, key,
+      checks.length ? JSON.stringify(checks) : null, typeof b.version === "number" ? b.version : BOARDS_VERSION, userId, key,
     ),
   ];
   const insert = env.DB.prepare("INSERT INTO board_entries (user_id, char_key, board, param, value, score) VALUES (?, ?, ?, ?, ?, ?)");
-  for (const e of entries) stmts.push(insert.bind(user.id, key, e.b, e.p, e.v, score(e.b, e.v, e.t)));
+  for (const e of entries) stmts.push(insert.bind(userId, key, e.b, e.p, e.v, score(e.b, e.v, e.t)));
   await env.DB.batch(stmts);
-  await openForChecks(env, user.id, key, checks);
+  await openForChecks(env, userId, key, checks);
   return json({ ok: true, entries: entries.length });
+}
+
+// GET /api/review/boards: the public characters an admin can recalculate.
+export async function recalcList(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare(
+    "SELECT slug, name, boards_version FROM characters WHERE is_public = 1 AND slug IS NOT NULL AND journey_size IS NOT NULL ORDER BY name COLLATE NOCASE",
+  ).all<{ slug: string; name: string; boards_version: number | null }>();
+  return json({ characters: rows.results.map((r) => ({ slug: r.slug, name: r.name, boardsVersion: r.boards_version })) });
+}
+
+// PUT /api/review/boards/<slug>: an admin's recalculated numbers for a
+// public character, stored as if its owner had sent them.
+export async function recalcSave(env: Env, slug: string, body: unknown): Promise<Response> {
+  const row = await env.DB.prepare("SELECT user_id, key FROM characters WHERE slug = ? AND is_public = 1").bind(slug).first<{ user_id: string; key: string }>();
+  if (!row) throw new HttpError(404, "No such public character");
+  return saveBoards(env, row.user_id, row.key, body);
 }
 
 // ---------------------------------------------------------------- boards

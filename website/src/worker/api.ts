@@ -8,7 +8,7 @@ import { searchPattern } from "../lib/search";
 import type { CharacterSummary } from "../lib/journey";
 import { clearSessionCookie, currentUser, requireUser } from "./auth";
 import { forgetFriends, friendsOf, saveFriends, setFriendsVisible } from "./friends";
-import { board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, ranksOf, refreshFlag, report, reportedBy, reviewAction, reviewList, saveBoards } from "./boards";
+import { board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, ranksOf, refreshFlag, report, reportedBy, recalcList, recalcSave, reviewAction, reviewList, saveBoards } from "./boards";
 import type { Env, User } from "./env";
 import { summaryProblem } from "../lib/checks";
 import { HttpError, json, now, readBody, sha256 } from "./http";
@@ -278,6 +278,17 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
   if (parts[0] === "review") {
     if (!isAdmin(env, user)) throw new HttpError(404, "Not found");
     if (parts.length === 1 && m === "GET") return reviewList(env, url);
+    if (parts[1] === "boards" && parts.length === 2 && m === "GET") return recalcList(env);
+    if (parts[1] === "boards" && parts.length === 3 && m === "PUT") {
+      const text = new TextDecoder().decode(await readBody(req, 256e3));
+      let body: unknown;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new HttpError(400, "Boards aren't JSON");
+      }
+      return recalcSave(env, parts[2], body);
+    }
     if (parts.length === 3 && parts[1] === "reporters" && m === "POST") return ignoreReporter(env, parts[2], await req.json().catch(() => null));
     if (parts.length === 2 && m === "POST") return reviewAction(env, parts[1], await req.json().catch(() => null));
     throw new HttpError(404, "Not found");
@@ -390,7 +401,7 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
       } catch {
         throw new HttpError(400, "Boards aren't JSON");
       }
-      return saveBoards(env, user, key, body);
+      return saveBoards(env, user.id, key, body);
     }
     if (parts[2] === "ranks" && parts.length === 3 && m === "GET") {
       const row = await ownCharacter(env, user, key);
