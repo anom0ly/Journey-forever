@@ -11,6 +11,7 @@ import { forgetFriends, friendsOf, saveFriends, setFriendsVisible } from "./frie
 import { board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, ranksOf, refreshFlag, report, reportedBy, recalcList, recalcSave, reviewAction, reviewList, saveBoards } from "./boards";
 import type { Env, User } from "./env";
 import { summaryProblem } from "../lib/checks";
+import { dismissNotice, listProblems, problemAction } from "./problems";
 import { HttpError, json, now, readBody, sha256 } from "./http";
 import { claimKey, handleUploader, handleUploaderHealth, uploaderDownload } from "./uploader";
 
@@ -273,6 +274,15 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
 
   // The Uploader health page (admins only, like review).
   if (parts[0] === "admin" && parts[1] === "uploader") return handleUploaderHealth(req, env, user, parts);
+  // The Problems page (admins only).
+  if (parts[0] === "admin" && parts[1] === "problems") {
+    if (!isAdmin(env, user)) throw new HttpError(404, "Not found");
+    if (parts.length === 2 && m === "GET") return listProblems(env, url);
+    if (parts.length === 3 && m === "POST") return problemAction(env, user, parts[2], await req.json().catch(() => null));
+    throw new HttpError(404, "Not found");
+  }
+  // A player dismissing a "fixed" notice.
+  if (parts[0] === "notices" && parts.length === 2 && m === "DELETE") return dismissNotice(env, user, parts[1]);
   // The review page: only for the accounts in ADMIN_BNET_IDS. Anyone else
   // gets the same "Not found" as a page that doesn't exist.
   if (parts[0] === "review") {
@@ -315,6 +325,8 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
       await deletePrefix(env, `shots/${user.id}/`);
       const reported = await reportedBy(env, user.id);
       await env.DB.batch([
+        env.DB.prepare("DELETE FROM problem_notices WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM site_problems WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM board_entries WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM reports WHERE reporter_id = ? OR user_id = ?").bind(user.id, user.id),
         env.DB.prepare("DELETE FROM flags WHERE user_id = ?").bind(user.id),

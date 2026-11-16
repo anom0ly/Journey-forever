@@ -104,9 +104,43 @@ end
 local frame = CreateFrame("Frame")
 local handlers = {}
 ns.errors = {}
+ns.MAX_ERRORS = 20
+
+-- An error is also kept in the saved data (db.errors), so the next upload
+-- tells the website about it and nobody has to ask the player. The same
+-- message is one entry with a count; only the newest MAX_ERRORS are kept.
+local function Keep(msg, when)
+    local db = ns.db
+    if not db or ns.readOnly then return end
+    if type(db.errors) ~= "table" then db.errors = {} end
+    msg = msg:sub(1, 300)
+    for i, e in ipairs(db.errors) do
+        if type(e) == "table" and e.msg == msg then
+            e.n = (tonumber(e.n) or 1) + 1
+            e.t = when
+            e.v = ns.VERSION
+            table.remove(db.errors, i)
+            table.insert(db.errors, e)
+            return
+        end
+    end
+    table.insert(db.errors, { t = when, msg = msg, n = 1, v = ns.VERSION })
+    ns.Trim(db.errors, ns.MAX_ERRORS)
+end
+
+-- Caught before the saved data loaded: kept once it has.
+local early = {}
 
 local function Report(event, err)
-    if #ns.errors < 20 then table.insert(ns.errors, event .. ": " .. tostring(err)) end
+    local msg = event .. ": " .. tostring(err)
+    if #ns.errors < 20 then table.insert(ns.errors, msg) end
+    local when = time and time() or 0
+    if ns.db then Keep(msg, when) else table.insert(early, { msg, when }) end
+end
+
+function ns.KeepEarlyErrors()
+    for _, e in ipairs(early) do Keep(e[1], e[2]) end
+    early = {}
 end
 
 function ns.SafeCall(fn, ...)
@@ -276,6 +310,7 @@ end
 ns.On("ADDON_LOADED", function(name)
     if name ~= ADDON then return end
     Load()
+    ns.KeepEarlyErrors()
     for _, fn in ipairs(ready) do ns.SafeCall(fn) end
     ready = {}
 end)

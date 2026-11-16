@@ -6,6 +6,7 @@ import { checkSameOrigin, HttpError, isLocal, json, withSecurityHeaders } from "
 import { checkRate } from "./limits";
 import { handleMapTile } from "./maps";
 import { handleErrorReport } from "./errors";
+import { noticesFor, openProblemCount } from "./problems";
 import { bearerKey, canUseUploader, keyAllows, keyUser, outdatedBlocked, uploaderSwitches } from "./uploader";
 
 // What the error log says about a request that failed.
@@ -42,6 +43,8 @@ async function route(req: Request, env: Env, url: URL, seen: Seen): Promise<Resp
     return json({
       user: me && { id: me.id, battletag: me.battletag, lastUploadAt: me.last_upload_at, isAdmin: admin, uploader },
       reviewCount: admin ? await reviewCount(env) : undefined,
+      problemCount: admin ? await openProblemCount(env) : undefined,
+      notices: me ? await noticesFor(env, me.id) : undefined,
       authMode: authMode(env, url),
     });
   }

@@ -6,6 +6,9 @@
 import { hashTag } from "../lib/friendTags";
 import type { Env, User } from "./env";
 import { cookie, HttpError, isLocal, json, now, parseCookies, randomToken, sha256 } from "./http";
+import { redact } from "../lib/errorReport";
+import { browserOf, groupKey, type SigninReason } from "../lib/problems";
+import { recordProblem } from "./problems";
 import { bearerKey, keyUser } from "./uploader";
 
 const SESSION_COOKIE = "jf_session";
@@ -109,9 +112,14 @@ export async function handleAuth(req: Request, env: Env, url: URL): Promise<Resp
     if (mode !== "battlenet") throw new HttpError(404, "Not found");
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
-    if (!code || !state || state !== parseCookies(req)[STATE_COOKIE]) {
-      return Response.redirect(`${url.origin}/?signin=failed`, 302);
-    }
+    const bnetError = url.searchParams.get("error");
+    // A visit with nothing from Battle.net (a bot, a bookmark) isn't a failed sign-in.
+    if (!code && !bnetError) return Response.redirect(`${url.origin}/?signin=failed`, 302);
+    const fail = (why: SigninReason, extra: Record<string, unknown> = {}) => signinFailed(req, env, url, why, extra);
+    if (bnetError) return fail("denied", { bnet: bnetError.slice(0, 60) });
+    const expected = parseCookies(req)[STATE_COOKIE];
+    if (!expected) return fail("expired");
+    if (!code || !state || state !== expected) return fail("mismatch");
     const tokenRes = await fetch(`${BNET}/token`, {
       method: "POST",
       headers: {
@@ -120,13 +128,20 @@ export async function handleAuth(req: Request, env: Env, url: URL): Promise<Resp
       },
       body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri(env, url) }),
     });
-    if (!tokenRes.ok) return Response.redirect(`${url.origin}/?signin=failed`, 302);
+    if (!tokenRes.ok) {
+      const answer = (await tokenRes.json().catch(() => ({}))) as { error?: unknown; error_description?: unknown };
+      return fail("token", {
+        status: tokenRes.status,
+        bnet: typeof answer.error === "string" ? answer.error.slice(0, 60) : undefined,
+        says: typeof answer.error_description === "string" ? answer.error_description.slice(0, 160) : undefined,
+      });
+    }
     const { access_token } = (await tokenRes.json()) as { access_token?: string };
     const infoRes = await fetch(`${BNET}/userinfo`, { headers: { authorization: `Bearer ${access_token}` } });
-    if (!infoRes.ok) return Response.redirect(`${url.origin}/?signin=failed`, 302);
+    if (!infoRes.ok) return fail("userinfo", { status: infoRes.status });
     const info = (await infoRes.json()) as { sub?: string; id?: number; battletag?: string };
     const bnetId = info.sub ?? (info.id !== undefined ? String(info.id) : undefined);
-    if (!bnetId) return Response.redirect(`${url.origin}/?signin=failed`, 302);
+    if (!bnetId) return fail("account");
     // The Battle.net access token is only used here and never stored.
     return startSession(env, url, await upsertUser(env, bnetId, info.battletag ?? null), returnPath(parseCookies(req)[RETURN_COOKIE]) ?? "/characters");
   }
@@ -139,3 +154,30 @@ export async function handleAuth(req: Request, env: Env, url: URL): Promise<Resp
 
   throw new HttpError(404, "Not found");
 }
+
+// A sign-in that didn't finish: kept for the Problems page (it can't be
+// tied to an account, so the callback address and browser say whose), and
+// the home page told why, so it can say what to do.
+async function signinFailed(req: Request, env: Env, url: URL, why: SigninReason, extra: Record<string, unknown>): Promise<Response> {
+  const detail: Record<string, unknown> = { why, callback: redirectUri(env, url), browser: browserOf(req.headers.get("user-agent")) };
+  for (const [k, v] of Object.entries(extra)) if (v !== undefined) detail[k] = typeof v === "string" ? redact(v) : v;
+  const message = `${SIGNIN_TEXT[why]}${extra.status ? ` (${extra.status}${extra.bnet ? ` ${extra.bnet}` : ""})` : extra.bnet ? ` (${extra.bnet})` : ""}`;
+  const status = await recordProblem(env, {
+    kind: "signin",
+    key: groupKey("signin", `${why} ${url.host}`, message),
+    title: `${message}, via ${url.host}`,
+    userId: null,
+    detail,
+  });
+  if (why !== "denied" && why !== "expired" && status !== "hidden") console.error(new Error(`Sign-in failed: ${message}`), JSON.stringify(detail));
+  return Response.redirect(`${url.origin}/?signin=failed&why=${why}`, 302);
+}
+
+const SIGNIN_TEXT: Record<SigninReason, string> = {
+  denied: "Player cancelled at Battle.net",
+  expired: "Sign-in cookie missing (took over 10 minutes, or cookies blocked)",
+  mismatch: "Sign-in state didn't match",
+  token: "Battle.net refused the code",
+  userinfo: "Battle.net account info failed",
+  account: "Battle.net sent no account id",
+};

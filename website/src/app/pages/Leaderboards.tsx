@@ -5,10 +5,11 @@
 import { useEffect, useState } from "preact/hooks";
 import { BOARD_BY_ID, boardTitle, CARDS, coins, formatValue, GROUPS, type BoardDef, type GroupId } from "../../lib/boardDefs";
 import { className as classLabel } from "../../lib/wow";
-import { api, type BoardFilters, type BoardPage, type BoardRow } from "../api";
+import { api, ApiError, type BoardFilters, type BoardPage, type BoardRow } from "../api";
 import { classColor, describeCharacter, plural } from "../format";
 import { useFriends } from "../friends";
 import { useMe } from "../me";
+import { reportLoad } from "../report";
 import { navigate } from "../router";
 import { ReportDialog } from "./Report";
 
@@ -150,7 +151,10 @@ function BoardCard({ title, boards, f, index }: { title: string; boards: { id: s
     api
       .board(id, { ...f, param: param || undefined, limit: 5 })
       .then((d) => live && setData(d))
-      .catch((e: Error) => live && setError(e.message));
+      .catch((e: Error) => {
+        reportLoad(e, e instanceof ApiError ? e.status : undefined);
+        if (live) setError(e.message);
+      });
     return () => {
       live = false;
     };
@@ -299,7 +303,10 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
     api
       .board(id, { ...f, param })
       .then((d) => live && setData(d))
-      .catch((e: Error) => live && setError(e.message));
+      .catch((e: Error) => {
+        reportLoad(e, e instanceof ApiError ? e.status : undefined);
+        if (live) setError(e.message);
+      });
     return () => {
       live = false;
     };

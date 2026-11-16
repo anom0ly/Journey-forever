@@ -10,6 +10,7 @@ import { friendHashes } from "../../website/src/lib/friends";
 import type { CharacterSummary, Journey } from "../../website/src/lib/journey";
 import { isPreLaunch, mergeJourneys, summarize, uploadDelta, type UploadDelta } from "../../website/src/lib/merge";
 import { readUpload, type FileNote, type InputFile } from "../../website/src/lib/parse/upload";
+import type { AddonError } from "../../website/src/lib/parse/types";
 import { matchShots, shotTime, type Matched } from "../../website/src/lib/shots";
 import type { PreparedImage } from "./images";
 
@@ -65,6 +66,7 @@ export interface SyncResult {
   shots: number;
   shotIds: string[]; // uploaded now or found on the site already: for options.known next time
   notes: FileNote[]; // files that couldn't be read
+  addonErrors: AddonError[]; // errors our addon caught in game, for the site's Problems page
   skippedPreLaunch: number;
   friendsHash?: string;
 }
@@ -83,7 +85,7 @@ async function hashText(text: string): Promise<string> {
 
 export async function sync(client: Client, saved: InputFile[], shots: ShotSource[], o: SyncOptions): Promise<SyncResult> {
   const say = o.progress ?? (() => undefined);
-  const { journeys, notes, friends } = readUpload(saved);
+  const { journeys, notes, friends, addonErrors } = readUpload(saved);
   const stored = new Map((await client.characters()).map((c) => [c.key, c]));
 
   // Characters from the beta or stress test are left out unless the site
@@ -175,6 +177,7 @@ export async function sync(client: Client, saved: InputFile[], shots: ShotSource
     shots: uploaded,
     shotIds,
     notes,
+    addonErrors,
     skippedPreLaunch: journeys.length - active.length,
     friendsHash,
   };

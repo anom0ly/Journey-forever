@@ -18,7 +18,7 @@
 import type { JEvent } from "../journey";
 import { isObj, list, num, str, type LuaValue } from "../lua";
 import { parseItem } from "../wow";
-import type { Contribution, FileContext } from "./types";
+import type { AddonError, Contribution, FileContext } from "./types";
 
 export const JF_KNOWN_VERSION = 1;
 
@@ -139,5 +139,26 @@ export function parseJourneyForever(db: LuaValue | undefined, ctx: FileContext):
   for (const e of events) if (typeof e.mapID === "number" && typeof e.zone === "string") zones[e.mapID] = e.zone;
   if (events.length) source.seenAt = events.at(-1)!.t;
   const utcOffset = num(db.utcOffset);
-  return { source, character: { ...character, level: num(char.level) }, events, zones, items, ...(utcOffset !== undefined ? { utcOffset } : {}) };
+  const addonErrors = errorsOf(db.errors, character.name);
+  return {
+    source,
+    character: { ...character, level: num(char.level) },
+    events,
+    zones,
+    items,
+    ...(utcOffset !== undefined ? { utcOffset } : {}),
+    ...(addonErrors.length ? { addonErrors } : {}),
+  };
+}
+
+// Errors the addon caught in game (addon 1.3.0+): { t, msg, n, v }, newest last.
+function errorsOf(v: LuaValue | undefined, character: string | undefined): AddonError[] {
+  const out: AddonError[] = [];
+  for (const raw of list(v)) {
+    if (!isObj(raw)) continue;
+    const t = num(raw.t), message = str(raw.msg);
+    if (t === undefined || !message) continue;
+    out.push({ t, message: message.slice(0, 300), count: Math.max(1, num(raw.n) ?? 1), version: str(raw.v), character });
+  }
+  return out.slice(-20);
 }

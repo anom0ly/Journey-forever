@@ -1,6 +1,8 @@
 import { Component, render, type ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { api, type Me } from "./api";
+import { api, type Me, type ProblemNotice } from "./api";
+import { noticeTitle } from "../lib/problems";
+import { ProblemsPage } from "./pages/Problems";
 import { AccountPage } from "./pages/Account";
 import { ConnectPage } from "./pages/Uploader";
 import { UploaderPage } from "./pages/GetUploader";
@@ -41,6 +43,11 @@ function Header({ me, path, onSignOut }: { me: Me | null; path: string; onSignOu
           </a>
         )}
         {me?.user?.isAdmin && link("/admin/uploader", "Uploaders", path === "/admin/uploader")}
+        {me?.user?.isAdmin && (
+          <a href="/admin/problems" class={path === "/admin/problems" ? "active" : undefined} aria-current={path === "/admin/problems" ? "page" : undefined}>
+            Problems{me.problemCount ? <span class="nav-count">{me.problemCount}</span> : null}
+          </a>
+        )}
         <span class="push" />
         {signedIn && link("/account", me?.user?.battletag ?? "Account", path === "/account")}
         {signedIn ? (
@@ -52,6 +59,32 @@ function Header({ me, path, onSignOut }: { me: Me | null; path: string; onSignOu
         )}
       </nav>
     </header>
+  );
+}
+
+// Problems this player hit that have since been fixed, with the note left
+// when it was: shown until dismissed, so nobody has to write to them.
+function FixedNotices({ notices, onDismiss }: { notices: ProblemNotice[]; onDismiss: (id: string) => void }) {
+  if (!notices.length) return null;
+  return (
+    <div class="page narrow fixed-notices">
+      {notices.map((n) => (
+        <div class="notice ok stack" role="status" key={n.id} style={{ gap: "6px" }}>
+          <b>{noticeTitle(n.kind, n.hitAt)}</b>
+          <span style={{ color: "var(--text)" }}>{n.note}</span>
+          <div class="row" style={{ gap: "8px" }}>
+            {n.kind === "upload" && (
+              <a class="btn primary" href="/upload" onClick={() => onDismiss(n.id)}>
+                Upload now
+              </a>
+            )}
+            <button type="button" class="btn" onClick={() => onDismiss(n.id)}>
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -129,6 +162,11 @@ function App() {
     navigate("/");
   };
 
+  const dismissNotice = (id: string) => {
+    setMe((m) => (m ? { ...m, notices: (m.notices ?? []).filter((n) => n.id !== id) } : m));
+    void api.dismissNotice(id).catch(() => undefined);
+  };
+
   const accountDeleted = () => {
     setMe((m) => (m ? { ...m, user: null } : m));
     navigate("/?deleted=1");
@@ -159,6 +197,8 @@ function App() {
   else if ((m = match("/leaderboards/:group", path)) && isGroup(m.group)) page = <LeaderboardsPage group={m.group} />;
   else if ((m = match("/leaderboards/board/:board", path))) page = <BoardPageView id={m.board} />;
   else if ((m = match("/leaderboards/board/:board/:param", path))) page = <BoardPageView id={m.board} param={m.param} />;
+  else if (path === "/admin/problems")
+    page = !loaded ? null : me?.user?.isAdmin ? <ProblemsPage onCount={(n) => setMe((x) => (x ? { ...x, problemCount: n } : x))} /> : <NotFound />;
   else if (path === "/admin/uploader") page = !loaded ? null : me?.user?.isAdmin ? <UploaderHealthPage /> : <NotFound />;
   else if (path === "/review") page = !loaded ? null : me?.user?.isAdmin ? <ReviewPage onCount={(n) => setMe((x) => (x ? { ...x, reviewCount: n } : x))} /> : <NotFound />;
   else if ((m = match("/compare/:a", path))) page = loaded ? <ComparePage a={m.a} signedIn={signedIn} /> : null;
@@ -168,6 +208,7 @@ function App() {
   return (
     <MeContext.Provider value={me}>
       <Header me={me} path={path} onSignOut={signOut} />
+      {me?.user && <FixedNotices notices={me.notices ?? []} onDismiss={dismissNotice} />}
       <PageBoundary key={path}>{page}</PageBoundary>
     </MeContext.Provider>
   );

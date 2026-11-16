@@ -1,6 +1,17 @@
 import { AddonsPanel } from "../Addons";
 import type { Me } from "../api";
 
+// Why a sign-in didn't finish (worker/auth.ts), worded for the player.
+const SIGNIN_HELP: Record<string, string> = {
+  denied: "Sign-in was cancelled at Battle.net. Press Sign in to try again.",
+  expired:
+    "Sign-in took too long or your browser blocked our sign-in cookie. Try again, and if it keeps happening, allow cookies for journey.wowhub.net.",
+  mismatch: "Sign-in got mixed up, often from two sign-in tabs at once. Close the other tab and try again.",
+  token: "Battle.net turned down the sign-in. We've been told. Try again in a minute; if it keeps happening, check back later today.",
+  userinfo: "Battle.net didn't send your account details. We've been told. Try again in a minute.",
+  account: "Battle.net didn't send an account id. We've been told. Try again in a minute.",
+};
+
 export function Landing({ me }: { me: Me | null }) {
   const params = new URLSearchParams(location.search);
   const problem = params.get("signin");
@@ -23,7 +34,9 @@ export function Landing({ me }: { me: Me | null }) {
             Sign-in with Battle.net isn't switched on for this site yet. You can still look around with the sample journey.
           </div>
         ) : problem === "failed" ? (
-          <div class="notice err">Battle.net sign-in didn't go through. Try again.</div>
+          <div class="notice err" role="alert">
+            {SIGNIN_HELP[params.get("why") ?? ""] ?? "Battle.net sign-in didn't go through. Try again."}
+          </div>
         ) : null}
         <div class="row">
           <a class="btn primary" href="/auth/login">

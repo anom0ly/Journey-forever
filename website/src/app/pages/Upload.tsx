@@ -12,7 +12,9 @@ import { fromDrop, fromInput, merge, type Picked } from "../files";
 import { classColor, describeCharacter, plural } from "../format";
 import { setFriends } from "../friends";
 import { prepareImage, previewUrl, sha256Hex } from "../images";
-import { reportUpload } from "../report";
+import { interference, isNetworkError, reportAddonErrors, reportUpload } from "../report";
+import { PICK_ADVICE, pickProblem, pickSummary } from "../../lib/pick";
+import type { AddonError } from "../../lib/parse/types";
 import { navigate } from "../router";
 import { UploaderNudge, UploaderPromo } from "./GetUploader";
 
@@ -76,6 +78,20 @@ interface Preview {
   skipped: number;
   friends: FriendLists;
   preLaunch: Set<string>; // new characters from the beta or stress test, left out unless kept
+  addonErrors: AddonError[]; // errors our addon caught in game, reported once saving is done
+}
+
+// What went wrong, worded for the player: when the request never got an
+// answer, say what to try (an ad blocker is the usual cause), and that we
+// already know.
+export function failureText(err: unknown, prefix: string, tail = ""): string {
+  const base = `${prefix}${(err as Error).message}.${tail}`;
+  if (!isNetworkError(err)) return `${base} We've been sent the details.`;
+  const who = interference();
+  const blocker = who?.name ?? (who ? `something on your PC (${who.host})` : undefined);
+  return blocker
+    ? `${prefix}the connection to our server was cut off.${tail} ${blocker} changed this page, which can block uploads: turn it off for journey.wowhub.net (or pause it), or use the Windows uploader, then try again. We've been sent the details.`
+    : `${prefix}the connection to our server was cut off.${tail} Check your connection and try again. If it keeps happening, turn off any ad blocker or VPN for journey.wowhub.net, or use the Windows uploader. We've been sent the details.`;
 }
 
 // When the earlier sessions were: they were played on another PC, between
@@ -99,7 +115,7 @@ function deltaText(d: UploadDelta): string {
 
 async function buildPreview(picked: Picked): Promise<Preview> {
   const texts = await Promise.all(picked.saved.map(async ({ path, file, group }) => ({ path, group, text: await file.text() })));
-  const { journeys, notes, unnamed, friends } = readUpload(texts);
+  const { journeys, notes, unnamed, friends, addonErrors } = readUpload(texts);
   // Files the parsers couldn't read are the thing to know about on launch
   // night: report which addon's file and why, never what's in it.
   for (const n of notes) {
@@ -152,7 +168,7 @@ async function buildPreview(picked: Picked): Promise<Preview> {
   for (const m of [...shots.matched, ...shots.manual].slice(0, 60)) m.file.preview = await previewUrl(m.file.file).catch(() => undefined);
   // Ones already on the site were uploaded on purpose, so only new ones are left out.
   const preLaunch = new Set(journeys.filter((j) => isPreLaunch(j) && !stored.has(j.character.key)).map((j) => j.character.key));
-  return { journeys, notes, unnamed, stored, olds, deltas, shots, already, skipped: picked.skipped, friends, preLaunch };
+  return { journeys, notes, unnamed, stored, olds, deltas, shots, already, skipped: picked.skipped, friends, preLaunch, addonErrors };
 }
 
 export function UploadPage() {
@@ -176,11 +192,11 @@ export function UploadPage() {
     setDone(undefined);
     if (!all.saved.length) {
       setPreview(undefined);
-      setError(
-        all.images.length
-          ? "Got the screenshots. Now add your saved files too, so we know which character and moment each one belongs to."
-          : "No Road to Sixty, Journey Tracker or Journey Forever files in what you added. Choose RoadToSixty.lua, JourneyTracker.lua and JourneyForever.lua from a character's SavedVariables folder, or the whole WTF\\Account\\<account> folder.",
-      );
+      const problem = pickProblem(all.shape);
+      // Screenshots first is a normal order; anything else is a pick that
+      // didn't work, which we'd otherwise only hear about from the player.
+      if (problem !== "images-only") reportUpload("pick", pickSummary(all.shape));
+      setError(PICK_ADVICE[problem]);
       return;
     }
     setBusy("Reading your saved files…");
@@ -189,7 +205,7 @@ export function UploadPage() {
       setPreview(await buildPreview(all));
     } catch (e) {
       reportUpload("preview", e, { status: e instanceof ApiError ? e.status : undefined });
-      setError((e as Error).message);
+      setError(failureText(e, "Couldn't get your upload ready: "));
     } finally {
       setBusy(undefined);
     }
@@ -198,17 +214,20 @@ export function UploadPage() {
   const save = async () => {
     if (!preview) return;
     setError(undefined);
+    let current: string | undefined;
     try {
       const toSave = active.filter((j) => !preview.deltas.get(j.character.key)?.upToDate || !preview.stored.has(j.character.key));
       let n = 0;
       for (const j of toSave) {
         setBusy(`Saving ${j.character.name} (${++n} of ${toSave.length})…`);
+        current = j.character.name;
         const before = preview.stored.get(j.character.key);
         const old = preview.olds.get(j.character.key) ?? (before?.hasJourney ? await api.journey(j.character.key).catch(() => undefined) : undefined);
         const merged = mergeJourneys(old, j);
         await api.saveJourney(merged, summarize(merged));
         await saveBoards(merged, old);
       }
+      current = undefined;
       let i = 0;
       for (const s of shots) {
         setBusy(`Uploading screenshot ${++i} of ${shots.length}…`);
@@ -227,12 +246,13 @@ export function UploadPage() {
         const onSite = info.friends.length;
         friendsLine = ` Friends list saved: ${plural(info.counts.total, "Battle.net friend")}, ${onSite} with public characters here.`;
       }
+      if (preview.addonErrors.length) reportAddonErrors(preview.addonErrors);
       setDone(`Saved ${plural(toSave.length, "character")} and ${plural(shots.length, "screenshot")}.${friendsLine}`);
       setPreview(undefined);
       setPicked(undefined);
     } catch (e) {
-      reportUpload("save", e, { status: e instanceof ApiError ? e.status : undefined });
-      setError(`Saving stopped: ${(e as Error).message}. What was saved so far is kept; try again to finish.`);
+      reportUpload("save", e, { status: e instanceof ApiError ? e.status : undefined, char: current });
+      setError(failureText(e, "Saving stopped: ", " What was saved so far is kept; try again to finish."));
     } finally {
       setBusy(undefined);
     }

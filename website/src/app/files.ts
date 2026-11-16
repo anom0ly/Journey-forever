@@ -4,6 +4,7 @@
 // loose) are tagged with the round they came in: one round is one character.
 
 import { isSavedFile } from "../lib/parse/upload";
+import { addToShape, emptyShape, mergeShapes, type PickShape } from "../lib/pick";
 
 export const IMAGE_RE = /\.(jpe?g|png|tga)$/i;
 
@@ -11,6 +12,7 @@ export interface Picked {
   saved: { path: string; file: File; group?: string }[];
   images: File[];
   skipped: number;
+  shape: PickShape; // folder and file names only, to say what went wrong when nothing could be read
 }
 
 let rounds = 0;
@@ -19,14 +21,16 @@ function sort(files: { path: string; file: File }[], out: Picked): void {
   const group = `round${++rounds}`;
   for (const { path, file } of files) {
     const loose = !/[\\/]/.test(path);
+    const image = IMAGE_RE.test(file.name);
+    addToShape(out.shape, path, image);
     if (isSavedFile(path)) out.saved.push({ path, file, ...(loose ? { group } : {}) });
-    else if (IMAGE_RE.test(file.name)) out.images.push(file);
+    else if (image) out.images.push(file);
     else out.skipped++;
   }
 }
 
 export function fromInput(list: FileList | null): Picked {
-  const out: Picked = { saved: [], images: [], skipped: 0 };
+  const out: Picked = { saved: [], images: [], skipped: 0, shape: emptyShape() };
   if (!list) return out;
   sort([...list].map((file) => ({ path: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name, file })), out);
   return out;
@@ -64,7 +68,7 @@ async function walk(entry: FileSystemEntry, files: { path: string; file: File }[
 }
 
 export async function fromDrop(dt: DataTransfer): Promise<Picked> {
-  const out: Picked = { saved: [], images: [], skipped: 0 };
+  const out: Picked = { saved: [], images: [], skipped: 0, shape: emptyShape() };
   const entries = [...dt.items].map((i) => i.webkitGetAsEntry?.()).filter((e): e is FileSystemEntry => !!e);
   const files: { path: string; file: File }[] = [];
   if (entries.length) for (const e of entries) await walk(e, files);
@@ -74,5 +78,5 @@ export async function fromDrop(dt: DataTransfer): Promise<Picked> {
 }
 
 export function merge(a: Picked, b: Picked): Picked {
-  return { saved: [...a.saved, ...b.saved], images: [...a.images, ...b.images], skipped: a.skipped + b.skipped };
+  return { saved: [...a.saved, ...b.saved], images: [...a.images, ...b.images], skipped: a.skipped + b.skipped, shape: mergeShapes(a.shape, b.shape) };
 }

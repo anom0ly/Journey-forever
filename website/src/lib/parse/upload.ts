@@ -9,7 +9,7 @@ import { buildJourney, characterKey } from "../merge";
 import { parseJourneyForever } from "./jf";
 import { parseJourneyTracker } from "./jt";
 import { parseRoadToSixtyAccount, parseRoadToSixtyChar, type RosterEntry } from "./rts";
-import type { Contribution, FileContext } from "./types";
+import type { AddonError, Contribution, FileContext } from "./types";
 
 export interface InputFile {
   path: string; // as the browser gives it (webkitRelativePath), or just the name
@@ -36,6 +36,7 @@ export interface UploadResult {
   notes: FileNote[]; // files that couldn't be read, and why
   unnamed: Unnamed[]; // loose files that don't say whose they are
   friends: FriendLists; // Battle.net friends' BattleTags; never sent as they are (lib/friends.ts)
+  addonErrors: AddonError[]; // errors our addon caught in game, for the Problems page
 }
 
 // Whether a dropped file is one this site reads: one of the three names,
@@ -77,6 +78,7 @@ export function readUpload(files: InputFile[], now?: number): UploadResult {
   const filesOf = new Map<string, string[]>();
   const roster: RosterEntry[] = [];
   const friends: FriendLists = {};
+  const addonErrors: AddonError[] = [];
 
   for (const file of files) {
     if (!isSavedFile(file.path)) continue;
@@ -97,6 +99,7 @@ export function readUpload(files: InputFile[], now?: number): UploadResult {
       continue;
     }
     for (const p of parts) {
+      if (p.addonErrors) addonErrors.push(...p.addonErrors);
       if (p.source.status === "error") notes.push({ path: file.path, message: p.source.message ?? "Couldn't read it." });
     }
     // Files of one character share a folder; loose files picked together are
@@ -131,5 +134,5 @@ export function readUpload(files: InputFile[], now?: number): UploadResult {
     journeys.push(j);
   }
   journeys.sort((a, b) => b.character.level - a.character.level || a.character.name.localeCompare(b.character.name));
-  return { journeys, notes, unnamed, friends };
+  return { journeys, notes, unnamed, friends, addonErrors };
 }

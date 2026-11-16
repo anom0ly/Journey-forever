@@ -12,7 +12,42 @@ export interface Me {
     uploader?: { allowed: boolean; beta: boolean; pcs: number };
   } | null;
   reviewCount?: number;
+  problemCount?: number; // admins: problems open on the Problems page
+  notices?: ProblemNotice[]; // problems this player hit that have since been fixed
   authMode: "battlenet" | "dev" | "unconfigured";
+}
+
+export interface ProblemNotice {
+  id: string;
+  kind: string;
+  note: string;
+  hitAt: number;
+}
+
+export interface ProblemCase {
+  t: number;
+  battletag: string | null;
+  signedIn: boolean;
+  detail: Record<string, unknown>;
+}
+
+export interface ProblemGroup {
+  id: string;
+  kind: string;
+  title: string;
+  status: "open" | "fixed" | "hidden";
+  firstT: number;
+  lastT: number;
+  count: number;
+  players: number;
+  fixedAt: number | null;
+  note: string | null;
+  cases: ProblemCase[];
+}
+
+export interface ProblemList {
+  groups: ProblemGroup[];
+  counts: { open: number; fixed: number; hidden: number; playersWeek: number; uploadersWeek: number; signinWeek: number };
 }
 
 export interface StoredCharacter {
@@ -236,6 +271,14 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   me: () => call<Me>("/api/me"),
+  problems: (status: string) => call<ProblemList>(`/api/admin/problems?status=${encodeURIComponent(status)}`),
+  problemAction: (id: string, action: "fix" | "hide" | "reopen", note?: string) =>
+    call<{ ok: true; notified: number }>(`/api/admin/problems/${encodeURIComponent(id)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, note }),
+    }),
+  dismissNotice: (id: string) => call<{ ok: true }>(`/api/notices/${encodeURIComponent(id)}`, { method: "DELETE" }),
   logout: () => call<{ ok: true }>("/auth/logout", { method: "POST" }),
   characters: () => call<{ characters: StoredCharacter[]; lastUploadAt: number | null }>("/api/characters"),
   character: (key: string) => call<StoredCharacter>(`/api/characters/${encodeURIComponent(key)}`),

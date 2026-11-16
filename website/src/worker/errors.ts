@@ -11,6 +11,8 @@ import { cleanReport, headline, MAX_BODY, type ErrorReport } from "../lib/errorR
 import type { Env, User } from "./env";
 import { HttpError, json, now, readBody } from "./http";
 import { checkReportRate } from "./limits";
+import { browserOf, groupKey, problemKindOf, titleOf, whereOf } from "../lib/problems";
+import { recordProblem } from "./problems";
 
 export const KEEP_PER_PC = 10;
 
@@ -29,12 +31,29 @@ export async function handleErrorReport(req: Request, env: Env, user: (User & { 
   await checkReportRate(env, req, user?.key_id ? `pc:${user.key_id}` : user ? `user:${user.id}` : null);
   // An Error named for where it happened, carrying the sender's own stack, so
   // Issues groups by the problem rather than by this line.
-  const name = uploader ? "UploaderError" : "BrowserError";
+  const name = uploader ? "UploaderError" : report.kind === "addon" ? "AddonError" : "BrowserError";
   const err = new Error(headline(report));
   err.name = name;
   err.stack = `${name}: ${err.message}${report.stack ? `\n${report.stack}` : ""}`;
   const { stack: _stack, ...details } = report;
-  console.error(err, JSON.stringify({ source: uploader ? "uploader" : "browser", ...details, userId: user?.id ?? undefined }));
+  // Everything but the uploader's own reports also goes on the Problems page,
+  // grouped. One marked as noise there is only logged, not alerted on.
+  let status: string | undefined;
+  if (!uploader) {
+    const browser = browserOf(req.headers.get("user-agent"));
+    const kind = problemKindOf(report);
+    status = await recordProblem(env, {
+      kind,
+      key: groupKey(kind, whereOf(report), report.message),
+      title: titleOf(report),
+      userId: user?.id ?? null,
+      t: report.kind === "addon" ? report.at : undefined,
+      detail: { ...details, ...(browser ? { browser } : {}), ...(user?.key_id ? { via: "uploader" } : {}) },
+    });
+  }
+  const line = JSON.stringify({ source: uploader ? "uploader" : "browser", ...details, userId: user?.id ?? undefined });
+  if (status === "hidden") console.log(err.message, line);
+  else console.error(err, line);
   if (uploader && user?.key_id) await keep(env, user.key_id, report);
   return json({ ok: true });
 }
