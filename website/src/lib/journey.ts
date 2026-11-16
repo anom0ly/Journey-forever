@@ -173,6 +173,25 @@ export interface Stats {
   // [uiMapID] = { [square 1-625 of a 25x25 grid] = seconds }
   where?: Record<string, Record<string, number>>;
   firstSeen?: number;
+  // Every boss fight the game announced (dungeons and raids), by the boss's
+  // name: lifetime counts, no dates.
+  bosses?: Record<string, BossCount>;
+  worn?: Record<string, number>; // item ID -> /played seconds it was worn
+  reachedMax?: number; // when the character first logged in at 60
+}
+
+export interface BossCount {
+  attempts?: number;
+  kills?: number;
+  wipes?: number;
+}
+
+// When a boss was first killed, worked out across uploads (merge.ts):
+// Journey Tracker counts kills without dates, so the date is that of the
+// raid run the count first rose in. by: the kill was on or before t.
+export interface BossFirst {
+  t: number;
+  by?: true;
 }
 
 export interface Journey {
@@ -189,6 +208,7 @@ export interface Journey {
   zones: Record<string, string>; // uiMapID -> name, learned from the files
   items: Record<string, string>; // item ID -> name, from item links seen
   utcOffset?: number; // seconds the player's PC clock is ahead of UTC, from our addon
+  bossFirst?: Record<string, BossFirst>; // boss name -> first kill, see merge.ts
   updatedAt: number;
 }
 

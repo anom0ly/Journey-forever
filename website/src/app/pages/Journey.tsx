@@ -27,6 +27,8 @@ import { mapArt } from "../mapArt";
 import { PublicToggle, shareUrl } from "./Characters";
 import { draw, fitView, type Fade, type LayerId } from "./Replay";
 import { DeathsTab, GoldTab, KillsTab, LevelsTab, ProfessionsTab, PvpTab, TabNav, type TabId } from "./JourneyTabs";
+import { SixtyTab } from "./SixtyTab";
+import { reachedCap } from "../../lib/sixty";
 
 const THUMB_LAYERS = new Set<LayerId>(["w", "t", "g"]);
 const DEATH_LAYERS = new Set<LayerId>(["w", "t", "g", "die"]);
@@ -276,19 +278,21 @@ interface GalleryItem {
   note?: JEvent;
 }
 
-function Gallery({ j, shots }: { j: Journey; shots: Screenshot[] }) {
+function Gallery({ j, shots, title = "Screenshots and notes", notes = true }: { j: Journey; shots: Screenshot[]; title?: string; notes?: boolean }) {
   const [open, setOpen] = useState<Screenshot>();
   const items: GalleryItem[] = [
     ...shots.map((s) => ({ t: s.t, label: s.label ?? "Screenshot", shot: s })),
-    ...j.events.filter((e) => e.k === "note").map((e) => ({ t: e.t, label: String(e.text), note: e })),
+    ...(notes ? j.events.filter((e) => e.k === "note").map((e) => ({ t: e.t, label: String(e.text), note: e })) : []),
   ].sort((a, b) => b.t - a.t);
+  if (!notes && !shots.length) return null;
   const logged = j.events.filter((e) => e.k === "shot").length;
   return (
     <div class="card">
       <div class="row between" style={{ alignItems: "baseline" }}>
-        <h2>Screenshots and notes</h2>
+        <h2>{title}</h2>
         <span class="tiny muted">
-          {plural(shots.length, "screenshot")} · {plural(items.length - shots.length, "note")}
+          {plural(shots.length, "screenshot")}
+          {notes && ` · ${plural(items.length - shots.length, "note")}`}
         </span>
       </div>
       {items.length ? (
@@ -453,9 +457,11 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
           Uploaded from {pcCount(j)} PCs. Gold, kills and loot add up {pcCount(j) === 2 ? "both" : "all of them"}.
         </p>
       )}
-      <TabNav base={base} tab={tab} />
+      <TabNav base={base} tab={tab} at60={c.level >= 60} />
 
-      {tab === "deaths" ? (
+      {tab === "at60" ? (
+        <SixtyTab j={j} gallery={<Gallery j={j} shots={shots.filter((x) => x.t >= (reachedCap(j) ?? Infinity))} title="Screenshots at 60" notes={false} />} />
+      ) : tab === "deaths" ? (
         <DeathsTab j={j} map={<a href={`${base}/replay`} style={{ textDecoration: "none", color: "var(--text)" }}><RouteThumb j={j} layers={DEATH_LAYERS} caption={false} /></a>} />
       ) : tab === "kills" ? (
         <KillsTab j={j} />

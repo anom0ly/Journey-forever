@@ -21,6 +21,7 @@ import type { Contribution } from "./parse/types";
 import { mapToWorld, MAPS } from "./maps";
 import { ZONE_NAMES } from "./wow";
 import { levelSeconds } from "./levelTime";
+import { bossFirstKills } from "./sixty";
 
 const ADDONS: AddonId[] = ["rts", "jt", "jf"];
 
@@ -373,7 +374,23 @@ export function combineStats(list: Stats[]): Stats {
     deaths: unionBy(list.map((s) => s.deaths), (d) => `${d.t}|${d.killer ?? ""}`, (d) => d.t),
     where: Object.keys(where).length ? where : undefined,
     firstSeen: firstSeen.length ? Math.min(...firstSeen) : undefined,
+    bosses: addBosses(list.map((s) => s.bosses)),
+    worn: addRecords(list.map((s) => s.worn)),
+    reachedMax: list.some((s) => s.reachedMax) ? Math.min(...list.map((s) => s.reachedMax ?? Infinity)) : undefined,
   });
+}
+
+function addBosses(list: (Stats["bosses"] | undefined)[]): Stats["bosses"] {
+  let out: Stats["bosses"];
+  for (const b of list) {
+    if (!b) continue;
+    out ??= {};
+    for (const [name, c] of Object.entries(b)) {
+      const had = out[name] ?? {};
+      out[name] = strip({ attempts: addOpt([had.attempts, c.attempts]), kills: addOpt([had.kills, c.kills]), wipes: addOpt([had.wipes, c.wipes]) });
+    }
+  }
+  return out;
 }
 
 // Road to Sixty's kill lists ("dt,xp,n;" with dt counted from 0, so the
@@ -425,7 +442,7 @@ export function keptName(old: string | undefined, next: string | undefined): str
 // a wiped or reset file no longer has (the beta's files were deleted once),
 // and what was played on another PC.
 export function mergeJourneys(old: Journey | undefined, next: Journey): Journey {
-  if (!old) return next;
+  if (!old) return withBossFirst(next, bossFirstKills(undefined, next));
   const events = new Map<string, JEvent>();
   for (const e of old.events) events.set(eventKey(e), e);
   for (const e of next.events) events.set(eventKey(e), e);
@@ -471,7 +488,7 @@ export function mergeJourneys(old: Journey | undefined, next: Journey): Journey 
   const sessionList = [...sessions.values()].sort((a, b) => a.start - b.start);
   const eventList = collapseDeathEvents([...events.values()]);
   settleLevelTimes(levels, sessionList, eventList, character.level, sessionList[0]?.start);
-  return {
+  const merged: Journey = {
     ...next,
     character,
     sources,
@@ -487,6 +504,15 @@ export function mergeJourneys(old: Journey | undefined, next: Journey): Journey 
     items: { ...old.items, ...next.items },
     ...((next.utcOffset ?? old.utcOffset) !== undefined ? { utcOffset: next.utcOffset ?? old.utcOffset } : {}),
   };
+  return withBossFirst(merged, bossFirstKills(old, merged));
+}
+
+function withBossFirst(j: Journey, bossFirst: Journey["bossFirst"]): Journey {
+  if (!bossFirst) {
+    const { bossFirst: _, ...rest } = j;
+    return rest;
+  }
+  return { ...j, bossFirst };
 }
 
 export function questCount(j: Journey): number {
