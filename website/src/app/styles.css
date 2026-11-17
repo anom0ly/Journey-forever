@@ -561,8 +561,26 @@ a.done-chip:hover { border-color: var(--good); color: var(--text); }
 .upload-done.current .done-check { background: var(--teal-hi); color: #0d1f1e; }
 .upload-done.current a.done-chip:hover { border-color: var(--teal-hi); }
 .done-tag { color: var(--teal-hi); font-size: 13px; }
-.found-title { scroll-margin-top: 16px; }
-.found-title:focus { outline: none; }
+/* Upload: files read, waiting for Save. Replaces the drop zone. */
+.ready-panel { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; padding: 24px 26px; border-radius: 16px; border: 2px solid var(--gold); background: linear-gradient(180deg, #2a2112, #1b160f); box-shadow: 0 0 0 4px rgba(224, 178, 82, 0.1); }
+.ready-panel h2 { font-size: 26px; color: var(--gold-hi); }
+.ready-panel h2:focus { outline: none; }
+.ready-panel .ready-body { flex: 1 1 320px; min-width: 0; }
+.ready-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--gold); color: #2a1d05; display: grid; place-items: center; flex: none; font-size: 26px; font-weight: 700; }
+.ready-panel.failed { border-color: var(--red); background: linear-gradient(180deg, #2a1514, #1d1111); box-shadow: 0 0 0 4px rgba(242, 156, 147, 0.1); }
+.ready-panel.failed h2 { color: var(--red); }
+.ready-panel.failed .ready-icon { background: var(--red); color: #2a0b08; }
+.btn.big { min-height: 52px; font-size: 17px; padding: 0 26px; }
+.steps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; list-style: none; margin: 0 0 4px; padding: 0; font-size: 13px; color: var(--muted); }
+.steps li { display: inline-flex; align-items: center; gap: 6px; }
+.steps .n { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; border: 1px solid var(--line-2); }
+.steps .done .n { background: var(--good); border-color: var(--good); color: #0d1f16; }
+.steps .now { color: var(--text); font-weight: 600; }
+.steps .now .n { background: var(--gold); border-color: var(--gold); color: #2a1d05; }
+.ready-links { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 4px; }
+.link-pick { display: inline-flex; align-items: center; min-height: 32px; padding: 0; border: none; background: none; color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.link-pick:hover { color: var(--text); }
+.link-pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .dropzone.compact { flex-direction: row; flex-wrap: wrap; padding: 18px 20px; gap: 12px; }
 @media (max-width: 640px) {
   .upload-done { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; padding: 20px 18px; }
@@ -570,5 +588,10 @@ a.done-chip:hover { border-color: var(--good); color: var(--text); }
   .done-check { width: 40px; height: 40px; }
   .done-check svg { width: 22px; height: 22px; }
   .done-actions { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
+  .ready-panel { flex-direction: column; align-items: stretch; gap: 14px; padding: 20px 18px; }
+  .ready-panel .ready-body { flex-basis: auto; }
+  .ready-panel h2 { font-size: 21px; }
+  .ready-icon { display: none; }
+  .ready-panel > .btn { width: 100%; }
   .done-actions .btn { flex: 1 1 auto; }
 }

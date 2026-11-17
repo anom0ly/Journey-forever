@@ -198,7 +198,7 @@ export function UploadPage() {
   const [includeManual, setIncludeManual] = useState(true);
   const [done, setDone] = useState<Done>();
   const doneRef = useRef<HTMLHeadingElement>(null);
-  const foundRef = useRef<HTMLHeadingElement>(null);
+  const readyRef = useRef<HTMLHeadingElement>(null);
 
   // Bring the banner into view: the Save button the player just pressed was far down the page.
   useEffect(() => {
@@ -208,12 +208,13 @@ export function UploadPage() {
   }, [done]);
   const [keepBeta, setKeepBeta] = useState<Set<string>>(new Set());
 
-  // Once the files are read, bring "What we found" and its Save button into
-  // view: the list appears far below the drop zone and was easy to miss.
+  // Once the files are read, the drop zone gives way to the "Ready to save"
+  // panel at the top: bring it into view, since the pick may have been made
+  // further down the page.
   useEffect(() => {
     if (!preview) return;
-    foundRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    foundRef.current?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    readyRef.current?.focus({ preventScroll: true });
   }, [preview]);
 
   useEffect(() => () => {
@@ -333,15 +334,25 @@ export function UploadPage() {
   const manualCount = preview ? preview.shots.manual.filter((s) => !left(s.charKey)).length : 0;
   const friends = preview && hasFriends(preview.friends) ? friendCount(preview.friends) : undefined;
   const sessions = preview ? active.filter((j) => !preview.deltas.get(j.character.key)?.upToDate).length : 0;
+  const canSave = !!(sessions || shots.length || friends);
+  const saveLabel =
+    sessions || shots.length
+      ? `Save ${[sessions ? plural(sessions, "session") : "", shots.length ? plural(shots.length, "screenshot") : ""].filter(Boolean).join(" and ")}`
+      : friends
+        ? "Save friends list"
+        : "Nothing new to save";
+  const readyText = preview ? readySummary(active.filter((j) => !preview.deltas.get(j.character.key)?.upToDate).map((j) => j.character.name), active.length, shots.length, !!friends, canSave) : "";
 
   return (
     <main class="page narrow">
       <div class="stack">
         <h1>Upload today's session</h1>
-        <p class="lead">
-          Log out of WoW first. Then give us your saved files, either the whole account folder or just the files themselves, plus any
-          screenshots from this session.
-        </p>
+        {!preview && (
+          <p class="lead">
+            Log out of WoW first. Then give us your saved files, either the whole account folder or just the files themselves, plus any
+            screenshots from this session.
+          </p>
+        )}
       </div>
       {done ? (
         <>
@@ -388,99 +399,131 @@ export function UploadPage() {
           </section>
           <UploaderNudge />
         </>
-      ) : (
+      ) : preview ? null : (
         <UploaderPromo />
       )}
 
-      <div
-        class={`dropzone${over ? " over" : ""}${done ? " compact" : ""}`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setOver(true);
-        }}
-        onDragLeave={() => setOver(false)}
-        onDrop={async (e) => {
-          e.preventDefault();
-          setOver(false);
-          if (e.dataTransfer) take(await fromDrop(e.dataTransfer));
-        }}
-      >
-        {done ? (
-          <>
-            <span class="muted">{done.kind === "current" ? "Wrong files? Drop others here or" : "Played another character? Drop more files here or"}</span>
-            <PickFiles label="Choose saved files" onPick={take} />
-          </>
-        ) : (
-          <>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E5675C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 16V4" />
-              <path d="M7 9l5-5 5 5" />
-              <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
-            </svg>
-            <span class="big">Drop your account folder, saved files or screenshots here</span>
-            <span class="muted">Or choose them. You can add more in a second round before saving.</span>
-            <div class="row" style={{ justifyContent: "center" }}>
-              <PickFiles primary label="Choose saved files" onPick={take} />
-              <PickFiles folder label="Choose whole account folder" onPick={take} />
-              <PickFiles images label="Add screenshots" onPick={take} />
-            </div>
-          </>
-        )}
-      </div>
-
-      <div class="two-col">
-        <div class="card flat stack" style={{ gap: "10px" }}>
-          <span style={{ fontWeight: 600 }}>Just the files</span>
-          <span class="small muted">
-            Open one character's SavedVariables folder and pick the files below (JourneyTracker.lua only if you use it). Repeat for each character you played.
-          </span>
-          <code class="small" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>WTF\Account\[ACCOUNT]\[Realm]\[Character]\SavedVariables\</code>
-          <div class="stack mono small" style={{ gap: "4px", color: "var(--accent-hi)" }}>
-            <span>RoadToSixty.lua</span>
-            <span>JourneyTracker.lua <span class="muted">(optional)</span></span>
-            <span>JourneyForever.lua</span>
+      {preview ? (
+        <section class={`ready-panel${error ? " failed" : ""}`} aria-labelledby="ready-title">
+          <div class="ready-icon" aria-hidden="true">
+            {error ? "!" : busy ? "…" : "!"}
           </div>
-          <span class="small muted">Tip: hold Ctrl (Cmd on a Mac) to pick them all at once. Leave out the .lua.bak copies.</span>
+          <div class="stack ready-body" style={{ gap: "6px" }}>
+            <ol class="steps" aria-label="Upload steps">
+              <li class="done">
+                <span class="n">✓</span>Choose files
+              </li>
+              <li class="now" aria-current="step">
+                <span class="n">2</span>Review and save
+              </li>
+              <li>
+                <span class="n">3</span>Done
+              </li>
+            </ol>
+            <h2 id="ready-title" ref={readyRef} tabIndex={-1}>
+              {error ? "Saving stopped" : busy ? "Saving…" : canSave ? "Ready to save, not uploaded yet" : "Nothing to save yet"}
+            </h2>
+            <p class="small" role={error ? "alert" : busy ? "status" : undefined}>
+              {error ?? busy ?? readyText}
+            </p>
+            {!busy && (
+              <div class="ready-links">
+                <PickFiles link label="Add another character's files" onPick={take} />
+                <PickFiles link images label="Add screenshots" onPick={take} />
+                <button type="button" class="link-pick" onClick={() => { setPicked(undefined); setPreview(undefined); setError(undefined); }}>
+                  Start over
+                </button>
+              </div>
+            )}
+          </div>
+          <button type="button" class="btn primary big" disabled={!!busy || !canSave} onClick={save}>
+            {error ? "Try again" : saveLabel}
+          </button>
+        </section>
+      ) : (
+        <div
+          class={`dropzone${over ? " over" : ""}${done ? " compact" : ""}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setOver(true);
+          }}
+          onDragLeave={() => setOver(false)}
+          onDrop={async (e) => {
+            e.preventDefault();
+            setOver(false);
+            if (e.dataTransfer) take(await fromDrop(e.dataTransfer));
+          }}
+        >
+          {done ? (
+            <>
+              <span class="muted">{done.kind === "current" ? "Wrong files? Drop others here or" : "Played another character? Drop more files here or"}</span>
+              <PickFiles label="Choose saved files" onPick={take} />
+            </>
+          ) : (
+            <>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E5675C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 16V4" />
+                <path d="M7 9l5-5 5 5" />
+                <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+              </svg>
+              <span class="big">Drop your account folder, saved files or screenshots here</span>
+              <span class="muted">Or choose them. You can add more in a second round before saving.</span>
+              <div class="row" style={{ justifyContent: "center" }}>
+                <PickFiles primary label="Choose saved files" onPick={take} />
+                <PickFiles folder label="Choose whole account folder" onPick={take} />
+                <PickFiles images label="Add screenshots" onPick={take} />
+              </div>
+            </>
+          )}
         </div>
-        <div class="card flat stack" style={{ gap: "10px" }}>
-          <span style={{ fontWeight: 600 }}>The whole account folder</span>
-          <span class="small muted">Fastest if you played several characters. One drop covers all of them.</span>
-          <code class="small" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>World of Warcraft\_forever_\WTF\Account\[ACCOUNT]\</code>
-          <span class="small muted">
-            Your browser may ask to "upload" every file in it. That's the browser's wording: we only open the three files named on the
-            left and skip the rest unread.
-          </span>
-        </div>
-      </div>
+      )}
 
-      <div class="notice">
-        Whichever way you choose, the files are read here in your browser. Only your journey (path, events, stats) and the screenshots you
-        keep are sent. The raw files never leave your computer.
-      </div>
+      {!preview && (
+        <>
+          <div class="two-col">
+            <div class="card flat stack" style={{ gap: "10px" }}>
+              <span style={{ fontWeight: 600 }}>Just the files</span>
+              <span class="small muted">
+                Open one character's SavedVariables folder and pick the files below (JourneyTracker.lua only if you use it). Repeat for each character you played.
+              </span>
+              <code class="small" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>WTF\Account\[ACCOUNT]\[Realm]\[Character]\SavedVariables\</code>
+              <div class="stack mono small" style={{ gap: "4px", color: "var(--accent-hi)" }}>
+                <span>RoadToSixty.lua</span>
+                <span>JourneyTracker.lua <span class="muted">(optional)</span></span>
+                <span>JourneyForever.lua</span>
+              </div>
+              <span class="small muted">Tip: hold Ctrl (Cmd on a Mac) to pick them all at once. Leave out the .lua.bak copies.</span>
+            </div>
+            <div class="card flat stack" style={{ gap: "10px" }}>
+              <span style={{ fontWeight: 600 }}>The whole account folder</span>
+              <span class="small muted">Fastest if you played several characters. One drop covers all of them.</span>
+              <code class="small" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>World of Warcraft\_forever_\WTF\Account\[ACCOUNT]\</code>
+              <span class="small muted">
+                Your browser may ask to "upload" every file in it. That's the browser's wording: we only open the three files named on the
+                left and skip the rest unread.
+              </span>
+            </div>
+          </div>
 
-      <div class="stack" style={{ gap: "6px" }}>
-        <span style={{ fontWeight: 600 }}>Screenshots</span>
-        <code class="small" style={{ color: "var(--text)" }}>World of Warcraft\_forever_\Screenshots\</code>
-        <span class="small muted">You can drop the whole folder. Only shots from a recorded session that weren't uploaded before are added.</span>
-      </div>
+          <div class="notice">
+            Whichever way you choose, the files are read here in your browser. Only your journey (path, events, stats) and the screenshots you
+            keep are sent. The raw files never leave your computer.
+          </div>
 
-      {busy && <div class="notice" role="status">{busy}</div>}
-      {error && <div class="notice err" role="alert">{error}</div>}
+          <div class="stack" style={{ gap: "6px" }}>
+            <span style={{ fontWeight: 600 }}>Screenshots</span>
+            <code class="small" style={{ color: "var(--text)" }}>World of Warcraft\_forever_\Screenshots\</code>
+            <span class="small muted">You can drop the whole folder. Only shots from a recorded session that weren't uploaded before are added.</span>
+          </div>
+        </>
+      )}
+
+      {busy && !preview && <div class="notice" role="status">{busy}</div>}
+      {error && !preview && <div class="notice err" role="alert">{error}</div>}
 
       {preview && (
         <section class="stack-lg">
-          <div class="row between">
-            <h2 ref={foundRef} tabIndex={-1} class="found-title">
-              What we found
-            </h2>
-            <div class="row">
-              <PickFiles chip label="Add another character's files" onPick={take} />
-              <PickFiles chip images label="Add screenshots" onPick={take} />
-              <button type="button" class="btn chip" onClick={() => { setPicked(undefined); setPreview(undefined); }}>
-                Start over
-              </button>
-            </div>
-          </div>
+          <h2>What we found</h2>
           {preview.notes.map((n) => (
             <div class="notice err" key={n.path}>
               <span class="mono">{n.path}</span>: {n.message}
@@ -636,12 +679,8 @@ export function UploadPage() {
             <button type="button" class="btn" onClick={() => navigate("/characters")}>
               Cancel
             </button>
-            <button type="button" class="btn primary" disabled={!!busy || (!sessions && !shots.length && !friends)} onClick={save}>
-              {sessions || shots.length
-                ? `Save ${plural(sessions, "session")} and ${plural(shots.length, "screenshot")}`
-                : friends
-                  ? "Save friends list"
-                  : "Nothing new to save"}
+            <button type="button" class="btn primary" disabled={!!busy || !canSave} onClick={save}>
+              {saveLabel}
             </button>
           </div>
         </section>
@@ -662,12 +701,23 @@ function upToDate(p: Preview): Journey[] | undefined {
   return chars;
 }
 
+// The line under "Ready to save": what was read and what Save will send.
+function readySummary(fresh: string[], chars: number, shots: number, friends: boolean, canSave: boolean): string {
+  if (!canSave) return "There's nothing new to send from these files. Check the notes below, or add other files.";
+  const parts = [plural(chars, "character")];
+  if (fresh.length) parts.push(`${fresh.length} with a new session${fresh.length <= 3 ? ` (${fresh.join(", ")})` : ""}`);
+  if (shots) parts.push(plural(shots, "new screenshot"));
+  if (friends) parts.push("your friends list");
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+  return `We read your files: ${list}. Nothing is uploaded until you press Save.`;
+}
+
 function hasFriends(f: FriendLists): boolean {
   return !!(f.jf || f.rts);
 }
 
-function PickFiles(props: { label: string; onPick: (p: Picked) => void; folder?: boolean; images?: boolean; primary?: boolean; chip?: boolean }) {
-  const cls = `btn${props.primary ? " primary" : ""}${props.chip ? " chip" : ""}`;
+function PickFiles(props: { label: string; onPick: (p: Picked) => void; folder?: boolean; images?: boolean; primary?: boolean; chip?: boolean; link?: boolean }) {
+  const cls = props.link ? "link-pick" : `btn${props.primary ? " primary" : ""}${props.chip ? " chip" : ""}`;
   return (
     <label class={cls}>
       {props.label}
