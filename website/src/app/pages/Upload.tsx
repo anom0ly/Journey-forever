@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { saveBoards } from "../boardsSync";
 import { friendCount, friendHashes, type FriendLists } from "../../lib/friends";
 import { duration } from "../../lib/insights";
@@ -171,6 +171,17 @@ async function buildPreview(picked: Picked): Promise<Preview> {
   return { journeys, notes, unnamed, stored, olds, deltas, shots, already, skipped: picked.skipped, friends, preLaunch, addonErrors };
 }
 
+// What the success banner shows after a save.
+type Done = {
+  line: string;
+  chars: { key: string; name: string; className?: string; from?: number; to: number }[];
+  shots: number;
+};
+
+function levelText(c: Done["chars"][number]): string {
+  return c.from && c.from !== c.to ? `${c.from} → ${c.to}` : `level ${c.to}`;
+}
+
 export function UploadPage() {
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState<string>();
@@ -178,7 +189,15 @@ export function UploadPage() {
   const [preview, setPreview] = useState<Preview>();
   const [picked, setPicked] = useState<Picked>();
   const [includeManual, setIncludeManual] = useState(true);
-  const [done, setDone] = useState<string>();
+  const [done, setDone] = useState<Done>();
+  const doneRef = useRef<HTMLHeadingElement>(null);
+
+  // Bring the banner into view: the Save button the player just pressed was far down the page.
+  useEffect(() => {
+    if (!done) return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    doneRef.current?.focus({ preventScroll: true });
+  }, [done]);
   const [keepBeta, setKeepBeta] = useState<Set<string>>(new Set());
 
   useEffect(() => () => {
@@ -247,7 +266,14 @@ export function UploadPage() {
         friendsLine = ` Friends list saved: ${plural(info.counts.total, "Battle.net friend")}, ${onSite} with public characters here.`;
       }
       if (preview.addonErrors.length) reportAddonErrors(preview.addonErrors);
-      setDone(`Saved ${plural(toSave.length, "character")} and ${plural(shots.length, "screenshot")}.${friendsLine}`);
+      setDone({
+        line: `Saved ${plural(toSave.length, "character")} and ${plural(shots.length, "screenshot")}.${friendsLine}`,
+        chars: toSave.map((j) => {
+          const d = preview.deltas.get(j.character.key);
+          return { key: j.character.key, name: j.character.name, className: j.character.className, from: d?.fromLevel, to: d?.toLevel ?? j.character.level };
+        }),
+        shots: shots.length,
+      });
       setPreview(undefined);
       setPicked(undefined);
     } catch (e) {
@@ -276,10 +302,50 @@ export function UploadPage() {
           screenshots from this session.
         </p>
       </div>
-      <UploaderPromo />
+      {done ? (
+        <>
+          <section class="upload-done" aria-labelledby="upload-done-title">
+            <div class="done-check" aria-hidden="true">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12.5l4.5 4.5L19 7.5" />
+              </svg>
+            </div>
+            <div class="stack done-body" style={{ gap: "4px" }}>
+              <h2 id="upload-done-title" ref={doneRef} tabIndex={-1}>
+                Upload complete
+              </h2>
+              <p class="small">{done.line} Your journeys and the leaderboards are up to date.</p>
+              {(done.chars.length > 0 || done.shots > 0) && (
+                <div class="done-chips">
+                  {done.chars.map((c) => (
+                    <a class="done-chip" key={c.key} href={`/c/${encodeURIComponent(c.key)}`}>
+                      <span class="avatar xs" style={{ background: classColor(c.className) }} aria-hidden="true">
+                        {c.name.charAt(0)}
+                      </span>
+                      {c.name} · {levelText(c)}
+                    </a>
+                  ))}
+                  {done.shots > 0 && <span class="done-chip">📷 {plural(done.shots, "screenshot")}</span>}
+                </div>
+              )}
+            </div>
+            <div class="done-actions">
+              <a class="btn primary" href="/characters">
+                See your characters
+              </a>
+              <button type="button" class="btn" onClick={() => setDone(undefined)}>
+                Upload another
+              </button>
+            </div>
+          </section>
+          <UploaderNudge />
+        </>
+      ) : (
+        <UploaderPromo />
+      )}
 
       <div
-        class={`dropzone${over ? " over" : ""}`}
+        class={`dropzone${over ? " over" : ""}${done ? " compact" : ""}`}
         onDragOver={(e) => {
           e.preventDefault();
           setOver(true);
@@ -291,18 +357,27 @@ export function UploadPage() {
           if (e.dataTransfer) take(await fromDrop(e.dataTransfer));
         }}
       >
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E5675C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 16V4" />
-          <path d="M7 9l5-5 5 5" />
-          <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
-        </svg>
-        <span class="big">Drop your account folder, saved files or screenshots here</span>
-        <span class="muted">Or choose them. You can add more in a second round before saving.</span>
-        <div class="row" style={{ justifyContent: "center" }}>
-          <PickFiles primary label="Choose saved files" onPick={take} />
-          <PickFiles folder label="Choose whole account folder" onPick={take} />
-          <PickFiles images label="Add screenshots" onPick={take} />
-        </div>
+        {done ? (
+          <>
+            <span class="muted">Played another character? Drop more files here or</span>
+            <PickFiles label="Choose saved files" onPick={take} />
+          </>
+        ) : (
+          <>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E5675C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 16V4" />
+              <path d="M7 9l5-5 5 5" />
+              <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+            </svg>
+            <span class="big">Drop your account folder, saved files or screenshots here</span>
+            <span class="muted">Or choose them. You can add more in a second round before saving.</span>
+            <div class="row" style={{ justifyContent: "center" }}>
+              <PickFiles primary label="Choose saved files" onPick={take} />
+              <PickFiles folder label="Choose whole account folder" onPick={take} />
+              <PickFiles images label="Add screenshots" onPick={take} />
+            </div>
+          </>
+        )}
       </div>
 
       <div class="two-col">
@@ -343,12 +418,6 @@ export function UploadPage() {
 
       {busy && <div class="notice" role="status">{busy}</div>}
       {error && <div class="notice err" role="alert">{error}</div>}
-      {done && (
-        <div class="notice" role="status">
-          {done} <a href="/characters">See your characters</a>.
-        </div>
-      )}
-      {done && <UploaderNudge />}
 
       {preview && (
         <section class="stack-lg">

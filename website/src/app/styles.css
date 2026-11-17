@@ -543,3 +543,24 @@ dialog textarea { width: 100%; background: var(--bg); color: var(--text); border
 .tl-ev.lilac::before { background: var(--lilac); }
 .rep { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
 .time-bar { display: flex; gap: 2px; height: 22px; border-radius: 6px; overflow: hidden; margin: 8px 0; }
+
+/* Upload: success banner and the one-line drop zone shown under it */
+.upload-done { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; padding: 24px 26px; border-radius: 16px; background: linear-gradient(180deg, #16291f, #121c17); border: 1px solid #2c5a48; box-shadow: 0 0 0 4px rgba(127, 209, 168, 0.08); }
+.upload-done h2 { font-size: 26px; color: var(--good); }
+.upload-done h2:focus { outline: none; }
+.upload-done .done-body { flex: 1 1 320px; min-width: 0; }
+.done-check { width: 56px; height: 56px; border-radius: 50%; background: var(--good); color: #0d1f16; display: grid; place-items: center; flex: none; }
+.done-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.done-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 12px 4px 6px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--text); font-size: 14px; text-decoration: none; }
+a.done-chip:hover { border-color: var(--good); color: var(--text); }
+.avatar.xs { width: 24px; height: 24px; font-size: 12px; }
+.done-actions { display: flex; flex-direction: column; gap: 10px; }
+.dropzone.compact { flex-direction: row; flex-wrap: wrap; padding: 18px 20px; gap: 12px; }
+@media (max-width: 640px) {
+  .upload-done { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; padding: 20px 18px; }
+  .upload-done h2 { font-size: 22px; line-height: 40px; }
+  .done-check { width: 40px; height: 40px; }
+  .done-check svg { width: 22px; height: 22px; }
+  .done-actions { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
+  .done-actions .btn { flex: 1 1 auto; }
+}
