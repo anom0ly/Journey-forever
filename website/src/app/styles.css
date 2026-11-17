@@ -561,6 +561,8 @@ a.done-chip:hover { border-color: var(--good); color: var(--text); }
 .upload-done.current .done-check { background: var(--teal-hi); color: #0d1f1e; }
 .upload-done.current a.done-chip:hover { border-color: var(--teal-hi); }
 .done-tag { color: var(--teal-hi); font-size: 13px; }
+.found-title { scroll-margin-top: 16px; }
+.found-title:focus { outline: none; }
 .dropzone.compact { flex-direction: row; flex-wrap: wrap; padding: 18px 20px; gap: 12px; }
 @media (max-width: 640px) {
   .upload-done { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; padding: 20px 18px; }

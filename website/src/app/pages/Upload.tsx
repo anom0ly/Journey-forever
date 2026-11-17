@@ -198,6 +198,7 @@ export function UploadPage() {
   const [includeManual, setIncludeManual] = useState(true);
   const [done, setDone] = useState<Done>();
   const doneRef = useRef<HTMLHeadingElement>(null);
+  const foundRef = useRef<HTMLHeadingElement>(null);
 
   // Bring the banner into view: the Save button the player just pressed was far down the page.
   useEffect(() => {
@@ -206,6 +207,14 @@ export function UploadPage() {
     doneRef.current?.focus({ preventScroll: true });
   }, [done]);
   const [keepBeta, setKeepBeta] = useState<Set<string>>(new Set());
+
+  // Once the files are read, bring "What we found" and its Save button into
+  // view: the list appears far below the drop zone and was easy to miss.
+  useEffect(() => {
+    if (!preview) return;
+    foundRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    foundRef.current?.focus({ preventScroll: true });
+  }, [preview]);
 
   useEffect(() => () => {
     for (const m of [...(preview?.shots.matched ?? []), ...(preview?.shots.manual ?? [])]) if (m.file.preview) URL.revokeObjectURL(m.file.preview);
@@ -461,7 +470,9 @@ export function UploadPage() {
       {preview && (
         <section class="stack-lg">
           <div class="row between">
-            <h2>What we found</h2>
+            <h2 ref={foundRef} tabIndex={-1} class="found-title">
+              What we found
+            </h2>
             <div class="row">
               <PickFiles chip label="Add another character's files" onPick={take} />
               <PickFiles chip images label="Add screenshots" onPick={take} />
