@@ -1,4 +1,5 @@
 import type { BoardEntry } from "../lib/boardDefs";
+import { send } from "../lib/send";
 import type { CharacterSummary, Journey } from "../lib/journey";
 import type { UploaderSettings } from "../lib/uploader";
 
@@ -250,12 +251,12 @@ export class ApiError extends Error {
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.method && init.method !== "GET") headers.set("x-journey-forever", "1");
-  let res = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  let res = await send(path, { ...init, headers, credentials: "same-origin" });
   // The site limits how fast one person can send requests; a big upload can
   // reach that, so wait and send again (10, 20, then 30 seconds).
   for (let wait = 1; res.status === 429 && wait <= 3; wait++) {
     await new Promise((r) => setTimeout(r, wait * 10_000));
-    res = await fetch(path, { ...init, headers, credentials: "same-origin" });
+    res = await send(path, { ...init, headers, credentials: "same-origin" });
   }
   if (!res.ok) {
     let message = res.statusText;
