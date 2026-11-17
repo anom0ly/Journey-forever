@@ -9,7 +9,7 @@ import { km } from "../../lib/path";
 import { matchShots, shotTime, type Matched, type ShotMatch } from "../../lib/shots";
 import { api, ApiError, type StoredCharacter } from "../api";
 import { fromDrop, fromInput, merge, type Picked } from "../files";
-import { classColor, describeCharacter, plural } from "../format";
+import { classColor, dateTime, describeCharacter, plural } from "../format";
 import { setFriends } from "../friends";
 import { prepareImage, previewUrl, sha256Hex } from "../images";
 import { interference, isNetworkError, reportAddonErrors, reportUpload } from "../report";
@@ -171,15 +171,22 @@ async function buildPreview(picked: Picked): Promise<Preview> {
   return { journeys, notes, unnamed, stored, olds, deltas, shots, already, skipped: picked.skipped, friends, preLaunch, addonErrors };
 }
 
-// What the success banner shows after a save.
+// What the banner at the top shows: "saved" after a save, "current" when the
+// picked files hold nothing new (shown straight after reading them).
 type Done = {
+  kind: "saved" | "current";
   line: string;
   chars: { key: string; name: string; className?: string; from?: number; to: number }[];
-  shots: number;
+  shots: number; // saved, or for "current" already uploaded
+  lastSaved?: number;
 };
 
 function levelText(c: Done["chars"][number]): string {
   return c.from && c.from !== c.to ? `${c.from} → ${c.to}` : `level ${c.to}`;
+}
+
+function friendsText(info: { counts: { total: number }; friends: unknown[] }): string {
+  return `${plural(info.counts.total, "Battle.net friend")}, ${info.friends.length} with public characters here`;
 }
 
 export function UploadPage() {
@@ -220,11 +227,36 @@ export function UploadPage() {
     }
     setBusy("Reading your saved files…");
     setKeepBeta(new Set());
+    let step: "preview" | "save" = "preview";
     try {
-      setPreview(await buildPreview(all));
+      const p = await buildPreview(all);
+      const current = upToDate(p);
+      if (!current) {
+        setPreview(p);
+        return;
+      }
+      // Nothing new to save: say so at the top instead of a list and a grey Save button.
+      let line = "Nothing new since your last upload. Play a session, log out, then drop the files again.";
+      if (hasFriends(p.friends)) {
+        step = "save";
+        setBusy("Saving your friends list…");
+        const info = await api.saveFriends(await friendHashes(p.friends));
+        setFriends(info);
+        line = `Your characters and screenshots have nothing new. Friends list updated: ${friendsText(info)}.`;
+      }
+      if (p.addonErrors.length) reportAddonErrors(p.addonErrors);
+      setPreview(undefined);
+      setPicked(undefined);
+      setDone({
+        kind: "current",
+        line,
+        chars: current.map((j) => ({ key: j.character.key, name: j.character.name, className: j.character.className, to: j.character.level })),
+        shots: p.already,
+        lastSaved: Math.max(0, ...current.map((j) => p.stored.get(j.character.key)?.updatedAt ?? 0)) || undefined,
+      });
     } catch (e) {
-      reportUpload("preview", e, { status: e instanceof ApiError ? e.status : undefined });
-      setError(failureText(e, "Couldn't get your upload ready: "));
+      reportUpload(step, e, { status: e instanceof ApiError ? e.status : undefined });
+      setError(step === "save" ? failureText(e, "Couldn't save your friends list: ") : failureText(e, "Couldn't get your upload ready: "));
     } finally {
       setBusy(undefined);
     }
@@ -262,11 +294,11 @@ export function UploadPage() {
         // Only hashes of the BattleTags leave the browser.
         const info = await api.saveFriends(await friendHashes(preview.friends));
         setFriends(info);
-        const onSite = info.friends.length;
-        friendsLine = ` Friends list saved: ${plural(info.counts.total, "Battle.net friend")}, ${onSite} with public characters here.`;
+        friendsLine = ` Friends list saved: ${friendsText(info)}.`;
       }
       if (preview.addonErrors.length) reportAddonErrors(preview.addonErrors);
       setDone({
+        kind: "saved",
         line: `Saved ${plural(toSave.length, "character")} and ${plural(shots.length, "screenshot")}.${friendsLine}`,
         chars: toSave.map((j) => {
           const d = preview.deltas.get(j.character.key);
@@ -304,7 +336,7 @@ export function UploadPage() {
       </div>
       {done ? (
         <>
-          <section class="upload-done" aria-labelledby="upload-done-title">
+          <section class={`upload-done${done.kind === "current" ? " current" : ""}`} aria-labelledby="upload-done-title">
             <div class="done-check" aria-hidden="true">
               <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M5 12.5l4.5 4.5L19 7.5" />
@@ -312,9 +344,9 @@ export function UploadPage() {
             </div>
             <div class="stack done-body" style={{ gap: "4px" }}>
               <h2 id="upload-done-title" ref={doneRef} tabIndex={-1}>
-                Upload complete
+                {done.kind === "current" ? "Already up to date" : "Upload complete"}
               </h2>
-              <p class="small">{done.line} Your journeys and the leaderboards are up to date.</p>
+              <p class="small">{done.kind === "current" ? done.line : `${done.line} Your journeys and the leaderboards are up to date.`}</p>
               {(done.chars.length > 0 || done.shots > 0) && (
                 <div class="done-chips">
                   {done.chars.map((c) => (
@@ -323,18 +355,25 @@ export function UploadPage() {
                         {c.name.charAt(0)}
                       </span>
                       {c.name} · {levelText(c)}
+                      {done.kind === "current" && <span class="done-tag">✓ up to date</span>}
                     </a>
                   ))}
-                  {done.shots > 0 && <span class="done-chip">📷 {plural(done.shots, "screenshot")}</span>}
+                  {done.shots > 0 && (
+                    <span class="done-chip">
+                      📷 {plural(done.shots, "screenshot")}
+                      {done.kind === "current" ? " already uploaded" : ""}
+                    </span>
+                  )}
                 </div>
               )}
+              {done.lastSaved && <span class="tiny muted">Last saved {dateTime(done.lastSaved)}</span>}
             </div>
             <div class="done-actions">
               <a class="btn primary" href="/characters">
                 See your characters
               </a>
               <button type="button" class="btn" onClick={() => setDone(undefined)}>
-                Upload another
+                {done.kind === "current" ? "Upload different files" : "Upload another"}
               </button>
             </div>
           </section>
@@ -359,7 +398,7 @@ export function UploadPage() {
       >
         {done ? (
           <>
-            <span class="muted">Played another character? Drop more files here or</span>
+            <span class="muted">{done.kind === "current" ? "Wrong files? Drop others here or" : "Played another character? Drop more files here or"}</span>
             <PickFiles label="Choose saved files" onPick={take} />
           </>
         ) : (
@@ -598,6 +637,18 @@ export function UploadPage() {
       )}
     </main>
   );
+}
+
+// The characters in a preview when none of them has anything new to save and
+// no screenshot is new; undefined when there is something to save or a
+// problem to show (unreadable files, unnamed characters, only beta characters).
+function upToDate(p: Preview): Journey[] | undefined {
+  if (p.notes.length || p.unnamed.length) return undefined;
+  const chars = p.journeys.filter((j) => !p.preLaunch.has(j.character.key));
+  if (!chars.length) return undefined;
+  if (chars.some((j) => !p.stored.has(j.character.key) || !p.deltas.get(j.character.key)?.upToDate)) return undefined;
+  if ([...p.shots.matched, ...p.shots.manual].some((s) => !p.preLaunch.has(s.charKey))) return undefined;
+  return chars;
 }
 
 function hasFriends(f: FriendLists): boolean {

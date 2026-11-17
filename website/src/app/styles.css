@@ -555,6 +555,12 @@ dialog textarea { width: 100%; background: var(--bg); color: var(--text); border
 a.done-chip:hover { border-color: var(--good); color: var(--text); }
 .avatar.xs { width: 24px; height: 24px; font-size: 12px; }
 .done-actions { display: flex; flex-direction: column; gap: 10px; }
+/* Nothing new to save: same banner in calm teal, so "already saved" doesn't read as "just saved" */
+.upload-done.current { background: linear-gradient(180deg, #132626, #111b1b); border-color: #2f4d4b; box-shadow: 0 0 0 4px rgba(95, 184, 180, 0.08); }
+.upload-done.current h2 { color: var(--teal-hi); }
+.upload-done.current .done-check { background: var(--teal-hi); color: #0d1f1e; }
+.upload-done.current a.done-chip:hover { border-color: var(--teal-hi); }
+.done-tag { color: var(--teal-hi); font-size: 13px; }
 .dropzone.compact { flex-direction: row; flex-wrap: wrap; padding: 18px 20px; gap: 12px; }
 @media (max-width: 640px) {
   .upload-done { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; padding: 20px 18px; }
