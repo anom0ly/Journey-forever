@@ -8,7 +8,7 @@ import { searchPattern } from "../lib/search";
 import type { CharacterSummary } from "../lib/journey";
 import { clearSessionCookie, currentUser, requireUser } from "./auth";
 import { forgetFriends, friendsOf, saveFriends, setFriendsVisible } from "./friends";
-import { applyModeration, board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, ranksOf, refreshFlag, report, reportedBy, recalcList, recalcSave, reviewAction, reviewList, saveBoards } from "./boards";
+import { applyModeration, board, boardsMeta, ignoreReporter, isAdmin, myReport, placesAction, placesList, publicRanks, ranksOf, refreshFlag, report, reportedBy, recalcList, recalcSave, reviewAction, reviewList, saveBoards, waitingRanks } from "./boards";
 import type { Env, User } from "./env";
 import { summaryProblem } from "../lib/checks";
 import { dismissNotice, listProblems, problemAction } from "./problems";
@@ -300,6 +300,8 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
       }
       return recalcSave(env, parts[2], body);
     }
+    if (parts[1] === "places" && parts.length === 2 && m === "GET") return placesList(env);
+    if (parts[1] === "places" && parts.length === 3 && m === "POST") return placesAction(env, parts[2], await req.json().catch(() => null));
     if (parts.length === 3 && parts[1] === "reporters" && m === "POST") return ignoreReporter(env, parts[2], await req.json().catch(() => null));
     if (parts.length === 2 && m === "POST") return reviewAction(env, parts[1], await req.json().catch(() => null));
     throw new HttpError(404, "Not found");
@@ -329,6 +331,8 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         env.DB.prepare("DELETE FROM problem_notices WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM site_problems WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM board_entries WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM board_held WHERE user_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM board_approvals WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM reports WHERE reporter_id = ? OR user_id = ?").bind(user.id, user.id),
         env.DB.prepare("DELETE FROM flags WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM ignored_reporters WHERE reporter_id = ?").bind(user.id),
@@ -365,8 +369,8 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         const t = now();
         // A new character only while the account has room for one.
         const saved = await env.DB.prepare(
-          `INSERT INTO characters (user_id, key, name, realm, summary, journey_size, updated_at)
-           SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE (SELECT COUNT(*) FROM characters WHERE user_id = ?1 AND key <> ?2) < ?8
+          `INSERT INTO characters (user_id, key, name, realm, summary, journey_size, updated_at, first_upload_at)
+           SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7 WHERE (SELECT COUNT(*) FROM characters WHERE user_id = ?1 AND key <> ?2) < ?8
            ON CONFLICT (user_id, key) DO UPDATE SET name = excluded.name, realm = excluded.realm,
              summary = excluded.summary, journey_size = excluded.journey_size, updated_at = excluded.updated_at`,
         )
@@ -398,6 +402,8 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         await env.DB.batch([
           env.DB.prepare("DELETE FROM screenshots WHERE user_id = ? AND char_key = ?").bind(user.id, key),
           env.DB.prepare("DELETE FROM board_entries WHERE user_id = ? AND char_key = ?").bind(user.id, key),
+          env.DB.prepare("DELETE FROM board_held WHERE user_id = ? AND char_key = ?").bind(user.id, key),
+          env.DB.prepare("DELETE FROM board_approvals WHERE user_id = ? AND char_key = ?").bind(user.id, key),
           env.DB.prepare("DELETE FROM reports WHERE user_id = ? AND char_key = ?").bind(user.id, key),
           env.DB.prepare("DELETE FROM flags WHERE user_id = ? AND char_key = ?").bind(user.id, key),
           env.DB.prepare("DELETE FROM characters WHERE user_id = ? AND key = ?").bind(user.id, key),
@@ -419,7 +425,8 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
     if (parts[2] === "ranks" && parts.length === 3 && m === "GET") {
       const row = await ownCharacter(env, user, key);
       const listed = row.is_public && row.slug && !row.board_state;
-      return json({ ranks: listed ? await ranksOf(env, user.id, key) : [] });
+      // Waiting top places come first, so their owner notices them.
+      return json({ ranks: listed ? [...(await waitingRanks(env, user.id, key)), ...(await ranksOf(env, user.id, key))] : [] });
     }
 
     if (parts[2] === "journey" && parts.length === 3) {

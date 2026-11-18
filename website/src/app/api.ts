@@ -105,6 +105,7 @@ export interface BoardRow {
   mine: boolean;
   friend?: boolean; // a Battle.net friend's (signed in only)
   overall?: number; // place on the whole board, when ranked among friends
+  waiting?: boolean; // the owner's own top place, waiting for review (rank is where it would be)
 }
 
 export interface BoardPage {
@@ -115,6 +116,22 @@ export interface BoardPage {
   rows: BoardRow[];
   me?: BoardRow;
   friends?: BoardRow[]; // friends further down, nearest your own place
+  waiting?: number; // new top places on this board waiting for review
+  mineWaiting?: BoardRow[]; // the viewer's own waiting places, numbered where they'd rank
+}
+
+// A character with new top places waiting for the reviewer.
+export interface PlaceItem {
+  slug: string;
+  name: string;
+  realm: string;
+  level: number;
+  className?: string;
+  race?: string;
+  uploadedAt: number;
+  waitingSince: number;
+  checks: string[];
+  places: { board: string; param: string; value: number; rank: number; top: { value: number; name: string }[] }[];
 }
 
 export interface BoardFilters {
@@ -148,6 +165,7 @@ export interface Rank {
   param: string;
   value: number;
   rank: number;
+  waiting?: boolean; // the owner's top place waiting for review
 }
 
 export interface ReviewReport {
@@ -159,7 +177,7 @@ export interface ReviewReport {
   sent: number;
   cleared: number;
   ignored: boolean;
-  established: boolean; // counts toward a hold (account 3+ days old, 1+ hour played)
+  established: boolean; // counts toward a hold (account 3+ days old, a character first uploaded 2+ days before)
   counts: boolean;
 }
 
@@ -345,6 +363,13 @@ export const api = {
     call<{ items: ReviewItem[]; counts: Record<string, number> }>(`/api/review?status=${status}`),
   reviewAction: (slug: string, action: "hide" | "clear") =>
     call<{ ok: true }>(`/api/review/${encodeURIComponent(slug)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    }),
+  places: () => call<{ items: PlaceItem[] }>("/api/review/places"),
+  placeAction: (slug: string, action: "approve" | "decline") =>
+    call<{ ok: true }>(`/api/review/places/${encodeURIComponent(slug)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action }),

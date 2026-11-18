@@ -7,6 +7,11 @@ import { FACTIONS, RAID_BOSSES } from "./sixtyLists";
 // are worked out again by their owner's browser.
 export const BOARDS_VERSION = 6;
 
+// New times that would be in the top HELD_TOP on these boards wait for the
+// reviewer's approval before they're listed (worker/boards.ts).
+export const HELD_BOARDS = new Set(["to60", "tolevel", "levelfast"]);
+export const HELD_TOP = 3;
+
 export type GroupId = "leveling" | "survival" | "kills" | "gold" | "professions" | "world" | "dungeons" | "pvp" | "sixty";
 export const GROUPS: { id: GroupId; label: string }[] = [
   { id: "leveling", label: "Leveling" },

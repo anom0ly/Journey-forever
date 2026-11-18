@@ -4,19 +4,22 @@
 // "Not found" to anyone else.
 
 import { useEffect, useState } from "preact/hooks";
-import { api, type ReviewItem } from "../api";
+import { BOARD_BY_ID, boardTitle, formatValue } from "../../lib/boardDefs";
+import { api, type PlaceItem, type ReviewItem } from "../api";
 import { recalcAllBoards } from "../boardsSync";
 import { classColor, date, dateTime, describeCharacter, plural } from "../format";
 
 type Status = "open" | "hidden" | "cleared";
-const TABS: { id: Status; label: string }[] = [
+const TABS: { id: Status | "places"; label: string }[] = [
   { id: "open", label: "Waiting" },
+  { id: "places", label: "Top places" },
   { id: "hidden", label: "Hidden" },
   { id: "cleared", label: "Cleared" },
 ];
 
 export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
-  const [status, setStatus] = useState<Status>("open");
+  const [status, setStatus] = useState<Status | "places">("open");
+  const [places, setPlaces] = useState<PlaceItem[]>();
   const [data, setData] = useState<{ items: ReviewItem[]; counts: Record<string, number> }>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState<string>();
@@ -37,14 +40,20 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
     }
   };
 
-  const load = () =>
-    api
-      .review(status)
-      .then((d) => {
-        setData(d);
-        if (status === "open") onCount?.(d.items.length);
-      })
-      .catch((e: Error) => setError(e.message));
+  // The nav badge counts both: reports and checks waiting, and characters
+  // with top places waiting.
+  const load = async () => {
+    try {
+      const p = await api.places();
+      setPlaces(p.items);
+      if (status === "places") return;
+      const d = await api.review(status);
+      setData(d);
+      if (status === "open") onCount?.(d.items.length + p.items.length);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   useEffect(() => {
     setData(undefined);
@@ -72,8 +81,8 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
           <h1>Review</h1>
           <p class="lead">
             Every reported character, and every character an automatic check has found something new on. A reported character stays on the
-            leaderboards until you hide it, unless 10 different established accounts (3 or more days old, with a character that has an hour
-            played) have reported it: then it's held off until you clear or hide it. Automatic checks open an item for you to look at, but
+            leaderboards until you hide it, unless 10 different established accounts (3 or more days old, with a character first uploaded at
+            least 2 days before the report) have reported it: then it's held off until you clear or hide it. Automatic checks open an item for you to look at, but
             never hold or hide anyone on their own.
           </p>
         </div>
@@ -81,20 +90,29 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
           {TABS.map((t) => (
             <button key={t.id} type="button" aria-pressed={status === t.id} onClick={() => setStatus(t.id)}>
               {t.label}
-              {t.id !== "open" && data?.counts[t.id] ? ` (${data.counts[t.id]})` : t.id === "open" && status === "open" && data ? ` (${data.items.length})` : ""}
+              {t.id === "places"
+                ? places?.length
+                  ? ` (${places.length})`
+                  : ""
+                : t.id !== "open" && data?.counts[t.id]
+                  ? ` (${data.counts[t.id]})`
+                  : t.id === "open" && status === "open" && data
+                    ? ` (${data.items.length})`
+                    : ""}
             </button>
           ))}
         </div>
       </section>
       {error && <div class="notice err">{error}</div>}
-      {!data && !error && <p class="muted">Loading…</p>}
-      {data && !data.items.length && (
+      {status === "places" && <TopPlaces items={places} busy={busy} act={act} />}
+      {status !== "places" && !data && !error && <p class="muted">Loading…</p>}
+      {status !== "places" && data && !data.items.length && (
         <div class="card flat">
           <p class="muted">{status === "open" ? "Nothing waiting. New reports and new automatic check lines will show up here." : status === "hidden" ? "No characters are hidden." : "Nothing cleared yet."}</p>
         </div>
       )}
       <div class="stack-lg">
-        {data?.items.map((it) => {
+        {status !== "places" && data?.items.map((it) => {
           const key = it.slug ?? it.name;
           const counted = it.reports.filter((r) => r.counts);
           const fresh = new Set(it.newChecks);
@@ -235,5 +253,105 @@ export function ReviewPage({ onCount }: { onCount?: (n: number) => void }) {
         </div>
       </section>
     </main>
+  );
+}
+
+// New top-3 times on Fastest to 60 and the level-time boards, one card per
+// character so one click approves everything it has waiting.
+function TopPlaces({ items, busy, act }: { items?: PlaceItem[]; busy?: string; act: (key: string, run: () => Promise<unknown>) => Promise<void> }) {
+  if (!items) return <p class="muted">Loading…</p>;
+  return (
+    <div class="stack-lg">
+      <p class="muted small">
+        New top-3 times on Fastest to 60 and the level-time boards wait here until you approve them. Approving covers that time or slower; a faster one
+        comes back here.
+      </p>
+      {!items.length && (
+        <div class="card flat">
+          <p class="muted">No top places waiting.</p>
+        </div>
+      )}
+      {items.map((it) => (
+        <article class="card rv-card" key={it.slug}>
+          <div class="row between">
+            <div class="row" style={{ flexWrap: "nowrap", gap: "12px", minWidth: 0 }}>
+              <div class="avatar sm" style={{ background: classColor(it.className) }} aria-hidden="true">
+                {it.name.charAt(0)}
+              </div>
+              <div class="stack" style={{ gap: "0", minWidth: 0 }}>
+                <strong>{it.name}</strong>
+                <span class="tiny muted">
+                  Level {it.level} {describeCharacter(it)} · {it.realm} · uploaded {dateTime(it.uploadedAt)}
+                </span>
+              </div>
+            </div>
+            <span class="rv-state wait">{plural(it.places.length, "place")} waiting</span>
+          </div>
+          <div class="table-wrap">
+            <table class="rv-places">
+              <thead>
+                <tr>
+                  <th>Board</th>
+                  <th>Time</th>
+                  <th>Would be</th>
+                  <th>Listed now</th>
+                </tr>
+              </thead>
+              <tbody>
+                {it.places.map((p) => {
+                  const def = BOARD_BY_ID.get(p.board);
+                  if (!def) return null;
+                  return (
+                    <tr key={`${p.board}-${p.param}`}>
+                      <td>{boardTitle(def, p.param)}</td>
+                      <td class="v">{formatValue(def.fmt, p.value)}</td>
+                      <td>
+                        <span class="lb-wait">#{p.rank}</span>
+                      </td>
+                      <td class="tiny muted">
+                        {p.top.length ? p.top.map((t, i) => `#${i + 1} ${t.name} ${formatValue(def.fmt, t.value)}`).join(" · ") : "Nobody yet"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {it.checks.length > 0 ? (
+            <div class="stack">
+              <span class="tiny muted rv-label">Automatic checks</span>
+              <ul class="rv-list">
+                {it.checks.map((c) => (
+                  <li key={c}>{c}</li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <span class="tiny muted">Automatic checks found nothing.</span>
+          )}
+          <div class="row" style={{ gap: "12px" }}>
+            <a class="btn" href={`/j/${encodeURIComponent(it.slug)}`}>
+              Open journey
+            </a>
+            <a class="btn" href={`/j/${encodeURIComponent(it.slug)}/replay`}>
+              Open replay
+            </a>
+            <span class="push" />
+            <button type="button" class="btn" disabled={!!busy} onClick={() => act(`dec-${it.slug}`, () => api.placeAction(it.slug, "decline"))}>
+              Turn down
+            </button>
+            <button type="button" class="btn primary" disabled={!!busy} onClick={() => act(`app-${it.slug}`, () => api.placeAction(it.slug, "approve"))}>
+              {it.places.length > 1 ? `Approve ${it.places.length} places` : "Approve"}
+            </button>
+          </div>
+        </article>
+      ))}
+      {items.length > 0 && (
+        <p class="tiny muted">
+          Approve lists the places. Turn down keeps them off those boards (the character stays on every other board) without telling its owner; a faster
+          time later comes back here. To take a character off every board, use Hide on the Waiting tab.
+        </p>
+      )}
+    </div>
   );
 }

@@ -100,6 +100,39 @@ function below(page: BoardPage, shown: BoardRow[]): BoardRow[] {
   return extra.sort((a, b) => a.rank - b.rank);
 }
 
+// The viewer's own waiting top places, slotted in where they would rank.
+function withWaiting(page: BoardPage, rows: BoardRow[]): BoardRow[] {
+  const out = [...rows];
+  for (const w of page.mineWaiting ?? []) {
+    const at = out.findIndex((r) => !r.waiting && r.rank >= w.rank);
+    out.splice(at < 0 ? out.length : at, 0, w);
+  }
+  return out;
+}
+
+function WaitingNote({ page }: { page: BoardPage }) {
+  const mine = page.mineWaiting?.[0];
+  if (mine) {
+    return (
+      <div class="notice warn">
+        Your time for {mine.name} would be #{mine.rank}. New top-3 times on leveling boards are checked by hand before they're listed, usually within a
+        day. Only you can see it here until then.
+      </div>
+    );
+  }
+  if (!page.waiting) return null;
+  return (
+    <p class="lb-held-note">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </svg>
+      {page.waiting === 1 ? "1 new top-3 time is" : `${page.waiting} new top-3 times are`} being checked before {page.waiting === 1 ? "it's" : "they're"} listed. Top
+      places on leveling boards are checked by hand.
+    </p>
+  );
+}
+
 function Dot({ r, size }: { r: Pick<BoardRow, "name" | "className">; size?: "lg" }) {
   return (
     <span class={`lb-dot${size ? ` ${size}` : ""}`} style={{ background: classColor(r.className), color: r.className === "SHAMAN" ? "#fff" : "#1c0806" }} aria-hidden="true">
@@ -193,12 +226,12 @@ function BoardCard({ title, boards, f, index }: { title: string; boards: { id: s
         <p class="small muted">Couldn't load this board: {error}</p>
       ) : !shown ? (
         <p class="small muted">Loading…</p>
-      ) : !shown.rows.length ? (
+      ) : !shown.rows.length && !shown.mineWaiting?.length ? (
         <p class="small muted">{emptyText(f)}</p>
       ) : (
         <ol class="lb-rank">
-          {shown.rows.map((r) => (
-            <RankLi key={r.slug} r={r} def={def} />
+          {withWaiting(shown, shown.rows).map((r) => (
+            <RankLi key={`${r.slug}${r.waiting ? "-wait" : ""}`} r={r} def={def} />
           ))}
           {below(shown, shown.rows).length > 0 && (
             <>
@@ -239,12 +272,18 @@ function BoardValue({ def, value }: { def: BoardDef; value: number }) {
 
 function RankLi({ r, def }: { r: BoardRow; def: BoardDef }) {
   return (
-    <li class={r.mine ? "mine" : r.friend ? "friend" : undefined} title={r.friend ? "Your Battle.net friend" : undefined}>
-      <span class={`n${r.rank === 1 ? " first" : ""}`}>{r.rank}</span>
+    <li
+      class={r.waiting ? "mine held" : r.mine ? "mine" : r.friend ? "friend" : undefined}
+      title={r.waiting ? "Waiting for review: only you can see this" : r.friend ? "Your Battle.net friend" : undefined}
+    >
+      <span class={`n${r.rank === 1 && !r.waiting ? " first" : ""}`}>
+        {r.rank}
+        {r.waiting && "?"}
+      </span>
       <Dot r={r} />
       <a class="nm" href={`/j/${encodeURIComponent(r.slug)}`}>
         {r.name}
-        {r.mine && <span class="lb-you">You</span>}
+        {r.waiting ? <span class="lb-wait">Awaiting</span> : r.mine && <span class="lb-you">You</span>}
         {r.overall !== undefined && <span class="lb-overall">#{r.overall} overall</span>}
       </a>
       <span class="val"><BoardValue def={def} value={r.value} /></span>
@@ -323,7 +362,8 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
     );
   }
 
-  const rows = data ? [...data.rows, ...more] : [];
+  const listed = data ? [...data.rows, ...more] : [];
+  const rows = data ? withWaiting(data, listed) : [];
   const p = data?.param ?? param ?? "";
   const group = GROUPS.find((g) => g.id === def.group)!;
   const mineSlug = rows.find((r) => r.mine)?.slug ?? data?.me?.slug;
@@ -332,7 +372,7 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
     if (!data) return;
     setBusy(true);
     try {
-      const next = await api.board(id, { ...f, param: p, offset: rows.length });
+      const next = await api.board(id, { ...f, param: p, offset: listed.length });
       setMore((m) => [...m, ...next.rows]);
     } catch (e) {
       setError((e as Error).message);
@@ -343,11 +383,14 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
 
   const row = (r: BoardRow, pinned = false) => (
     <tr
-      key={`${r.slug}${pinned ? "-below" : ""}`}
-      class={[r.mine ? "mine" : r.friend && "friend", pinned && "pinned"].filter(Boolean).join(" ") || undefined}
-      title={r.friend ? "Your Battle.net friend" : undefined}
+      key={`${r.slug}${pinned ? "-below" : ""}${r.waiting ? "-wait" : ""}`}
+      class={[r.waiting ? "held" : r.mine ? "mine" : r.friend && "friend", pinned && "pinned"].filter(Boolean).join(" ") || undefined}
+      title={r.waiting ? "Waiting for review: only you can see this" : r.friend ? "Your Battle.net friend" : undefined}
     >
-      <td class={`lb-n${r.rank === 1 ? " first" : ""}`}>{r.rank}</td>
+      <td class={`lb-n${r.rank === 1 && !r.waiting ? " first" : ""}`}>
+        {r.rank}
+        {r.waiting && "?"}
+      </td>
       <td>
         <div class="lb-char">
           <Dot r={r} size="lg" />
@@ -357,6 +400,7 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
                 {r.name}
               </a>
               {r.mine && <span class="lb-you">You</span>}
+              {r.waiting && <span class="lb-wait">Awaiting review</span>}
               {r.overall !== undefined && <span class="lb-overall">#{r.overall} overall</span>}
             </span>
             <span class="tiny muted">
@@ -408,6 +452,7 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
         />
       </section>
       {error && <div class="notice err">{error}</div>}
+      {data && <WaitingNote page={data} />}
       {data && !rows.length && (
         <div class="card flat">
           <p class="muted">{emptyText(f)}</p>
@@ -428,7 +473,7 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
             </thead>
             <tbody>
               {rows.map((r) => row(r))}
-              {data && below(data, rows).map((r, i) => row(r, i === 0))}
+              {data && below(data, listed).map((r, i) => row(r, i === 0))}
             </tbody>
           </table>
         </div>
@@ -436,9 +481,9 @@ export function BoardPageView({ id, param }: { id: string; param?: string }) {
       {data && (
         <div class="row between">
           <span class="tiny muted">
-            Showing {rows.length} of {plural(data.total, "character")}
+            Showing {listed.length} of {plural(data.total, "character")}
           </span>
-          {rows.length < data.total && (
+          {listed.length < data.total && (
             <button type="button" class="btn" onClick={loadMore} disabled={busy}>
               {busy ? "Loading…" : "Show 50 more"}
             </button>

@@ -424,6 +424,22 @@ table.data.lb-table td { vertical-align: middle; }
 .lb-flag:hover { color: var(--accent); background: var(--raised); }
 .lb-ranks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -12px; }
 .lb-rchip { display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; color: var(--text); text-decoration: none; cursor: pointer; }
+.lb-rchip.wait { border-style: dashed; border-color: rgba(240, 201, 135, 0.6); color: var(--amber); }
+.lb-rchip.wait b { color: var(--amber); }
+/* New top places waiting for review: amber, dashed. */
+.lb-held-note { display: flex; gap: 10px; align-items: center; font-size: 14px; color: var(--muted); }
+.lb-held-note svg { flex: none; color: var(--amber); }
+.lb-wait { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; border: 1px dashed var(--amber); color: var(--amber); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px; }
+.lb-table tr.held td { background: rgba(240, 201, 135, 0.06); }
+.lb-table tr.held .lb-n, .lb-rank li.held .n { color: var(--amber); }
+.lb-rank li.held { background: rgba(240, 201, 135, 0.08); outline: 1px dashed rgba(240, 201, 135, 0.45); outline-offset: -1px; }
+.rv-state.wait { background: rgba(240, 201, 135, 0.14); color: var(--amber); }
+.rv-places { width: 100%; border-collapse: collapse; font-size: 14px; }
+.rv-places th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.rv-places td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.rv-places td.v { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.rv-places tr:last-child td { border-bottom: none; }
+.rv-places .lb-wait { margin-left: 0; }
 .lb-rchip b { color: var(--gold); font-variant-numeric: tabular-nums; }
 .lb-rchip:hover { border-color: var(--accent); color: var(--text); }
 .lb-rchip.more { color: var(--muted); font: inherit; font-size: 13px; }

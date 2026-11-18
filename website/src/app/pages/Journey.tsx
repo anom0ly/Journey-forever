@@ -370,8 +370,18 @@ function Ranks({ stored, owner }: { stored: StoredCharacter; owner: boolean }) {
   return (
     <div class="lb-ranks" aria-label="Leaderboard places">
       {shown.map((r) => (
-        <a key={`${r.board}-${r.param}`} class="lb-rchip" href={boardHref(r.board, r.param || undefined)}>
-          <b>#{r.rank}</b> {boardTitle(BOARD_BY_ID.get(r.board)!, r.param)}
+        <a
+          key={`${r.board}-${r.param}${r.waiting ? "-wait" : ""}`}
+          class={`lb-rchip${r.waiting ? " wait" : ""}`}
+          href={boardHref(r.board, r.param || undefined)}
+          title={r.waiting ? "Waiting for review: only you can see this" : undefined}
+        >
+          <b>
+            #{r.rank}
+            {r.waiting && "?"}
+          </b>{" "}
+          {boardTitle(BOARD_BY_ID.get(r.board)!, r.param)}
+          {r.waiting && " · awaiting review"}
         </a>
       ))}
       {ranks.length > 5 && (
