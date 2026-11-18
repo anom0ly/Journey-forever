@@ -1,5 +1,5 @@
 import type { BoardEntry } from "../lib/boardDefs";
-import { send } from "../lib/send";
+import { JOURNEY_READ_LIMIT, readJsonCapped, send } from "../lib/send";
 import type { CharacterSummary, Journey } from "../lib/journey";
 import type { UploaderSettings } from "../lib/uploader";
 
@@ -248,7 +248,8 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+// maxBytes: stop reading the answer past this many bytes (journeys).
+async function call<T>(path: string, init: RequestInit = {}, maxBytes?: number): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.method && init.method !== "GET") headers.set("x-journey-forever", "1");
   let res = await send(path, { ...init, headers, credentials: "same-origin" });
@@ -267,6 +268,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new ApiError(res.status, message);
   }
+  if (maxBytes) return readJsonCapped<T>(res, maxBytes);
   return (await res.json()) as T;
 }
 
@@ -283,7 +285,7 @@ export const api = {
   logout: () => call<{ ok: true }>("/auth/logout", { method: "POST" }),
   characters: () => call<{ characters: StoredCharacter[]; lastUploadAt: number | null }>("/api/characters"),
   character: (key: string) => call<StoredCharacter>(`/api/characters/${encodeURIComponent(key)}`),
-  journey: (key: string) => call<Journey>(`/api/characters/${encodeURIComponent(key)}/journey`),
+  journey: (key: string) => call<Journey>(`/api/characters/${encodeURIComponent(key)}/journey`, {}, JOURNEY_READ_LIMIT),
   screenshots: (key: string) => call<{ screenshots: Screenshot[] }>(`/api/characters/${encodeURIComponent(key)}/screenshots`),
   setPublic: (key: string, isPublic: boolean) =>
     call<StoredCharacter>(`/api/characters/${encodeURIComponent(key)}`, {
@@ -301,7 +303,7 @@ export const api = {
     }),
   publicJourney: (slug: string) => call<{ character: StoredCharacter; screenshots: Screenshot[] }>(`/api/public/${encodeURIComponent(slug)}`),
   searchPublic: (q: string) => call<{ results: PublicHit[] }>(`/api/public?q=${encodeURIComponent(q)}`),
-  publicJourneyData: (slug: string) => call<Journey>(`/api/public/${encodeURIComponent(slug)}/journey`),
+  publicJourneyData: (slug: string) => call<Journey>(`/api/public/${encodeURIComponent(slug)}/journey`, {}, JOURNEY_READ_LIMIT),
 
   friends: () => call<FriendsInfo>("/api/friends"),
   saveFriends: (lists: Partial<Record<"jf" | "rts", string[]>>) =>

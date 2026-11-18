@@ -77,8 +77,11 @@ export async function saveBoards(env: Env, userId: string, key: string, body: un
     entries.push({ b: e.b, p, v: e.v, t: e.t });
   }
   const checks = Array.isArray(b.checks) ? b.checks.filter((c): c is string => typeof c === "string").slice(0, CHECKS_LIMIT).map((c) => c.slice(0, 200)) : [];
-  const row = await env.DB.prepare("SELECT 1 FROM characters WHERE user_id = ? AND key = ?").bind(userId, key).first();
+  const row = await env.DB.prepare("SELECT name, realm FROM characters WHERE user_id = ? AND key = ?").bind(userId, key).first<{ name: string; realm: string }>();
   if (!row) throw new HttpError(404, "No such character");
+  // A character the reviewer hid stays hidden, even if it was deleted and
+  // uploaded again since (the summary upload checks this too).
+  await applyModeration(env, userId, key, row.name, row.realm);
 
   const stmts = [
     env.DB.prepare("DELETE FROM board_entries WHERE user_id = ? AND char_key = ?").bind(userId, key),
@@ -373,6 +376,57 @@ export async function refreshFlag(env: Env, userId: string, key: string): Promis
   await env.DB.prepare("UPDATE characters SET board_state = ? WHERE user_id = ? AND key = ?").bind(state, userId, key).run();
 }
 
+// ---------------------------------------------------------------- hides
+
+// A reviewer's Hide lives in the moderation table as well as in flags,
+// because deleting a character deletes its flags row. A character matches
+// a Hide by its key (the game's GUID) or by name + realm, on any account.
+
+async function rememberHide(env: Env, userId: string, key: string, time: number): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO moderation (user_id, char_key, name, realm, hidden_at)
+     SELECT user_id, key, name, realm, ? FROM characters WHERE user_id = ? AND key = ?
+     ON CONFLICT (user_id, char_key) DO UPDATE SET name = excluded.name, realm = excluded.realm, hidden_at = excluded.hidden_at`,
+  )
+    .bind(time, userId, key)
+    .run();
+}
+
+async function forgetHide(env: Env, userId: string, key: string): Promise<void> {
+  await env.DB.prepare(
+    `DELETE FROM moderation WHERE (user_id = ?1 AND char_key = ?2) OR char_key = ?2 OR EXISTS (
+       SELECT 1 FROM characters c WHERE c.user_id = ?1 AND c.key = ?2
+         AND lower(c.name) = lower(moderation.name) AND lower(c.realm) = lower(moderation.realm))`,
+  )
+    .bind(userId, key)
+    .run();
+}
+
+// After a character's row is written: if it matches a Hide, it's hidden
+// again (flags row back, off the boards). Returns whether it did.
+export async function applyModeration(env: Env, userId: string, key: string, name: string, realm: string): Promise<boolean> {
+  const hit = await env.DB.prepare(
+    `SELECT hidden_at FROM moderation WHERE (user_id = ? AND char_key = ?) OR char_key = ? OR (lower(name) = lower(?) AND lower(realm) = lower(?))
+     ORDER BY hidden_at DESC LIMIT 1`,
+  )
+    .bind(userId, key, key, name, realm)
+    .first<{ hidden_at: number }>();
+  if (!hit) return false;
+  const time = now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO flags (user_id, char_key, status, opened_at, updated_at) VALUES (?, ?, 'hidden', ?, ?)
+       ON CONFLICT (user_id, char_key) DO UPDATE SET status = 'hidden'`,
+    ).bind(userId, key, hit.hidden_at, time),
+    env.DB.prepare(
+      `INSERT INTO moderation (user_id, char_key, name, realm, hidden_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, char_key) DO UPDATE SET name = excluded.name, realm = excluded.realm`,
+    ).bind(userId, key, name, realm, hit.hidden_at),
+    env.DB.prepare("UPDATE characters SET board_state = 2 WHERE user_id = ? AND key = ?").bind(userId, key),
+  ]);
+  return true;
+}
+
 // Before an account is deleted: the characters it reported, to refresh
 // once its reports are gone.
 export async function reportedBy(env: Env, reporterId: string): Promise<Target[]> {
@@ -551,7 +605,9 @@ export async function reviewAction(env: Env, slug: string, body: unknown): Promi
     )
       .bind(c.user_id, c.key, time, time)
       .run();
+    await rememberHide(env, c.user_id, c.key, time);
   } else {
+    await forgetHide(env, c.user_id, c.key);
     // The check lines on the item now count as seen, along with any seen
     // before, so a line that goes away and comes back stays quiet.
     const had = await env.DB.prepare("SELECT seen_checks FROM flags WHERE user_id = ? AND char_key = ?").bind(c.user_id, c.key).first<{ seen_checks: string | null }>();
