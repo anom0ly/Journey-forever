@@ -170,10 +170,10 @@ test("leaving after a release keeps the run going", function()
 end)
 
 test("leaving an unknown dungeon after a boss counts as cleared", function()
-    W.player.instance, W.player.instanceID = "Blackmaw Hold", 9001
+    W.player.instance, W.player.instanceID = "Somewhere New", 9001
     W.Fire("PLAYER_ENTERING_WORLD", false, false)
     W.Advance(5)
-    eq(db.run.instance, "Blackmaw Hold", "new run")
+    eq(db.run.instance, "Somewhere New", "new run")
     W.Fire("ENCOUNTER_END", 77, "Some New Boss", 1, 5, 1)
     W.Advance(3)
     local n = #db.screenshots
