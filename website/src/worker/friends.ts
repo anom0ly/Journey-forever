@@ -63,33 +63,14 @@ async function fillTagHashes(env: Env): Promise<boolean> {
     battletag: string;
   }>();
   if (!results.length) return true;
-  const update = env.DB.prepare("UPDATE users SET tag_key = ?, tag_hash = NULL WHERE id = ?");
+  const update = env.DB.prepare("UPDATE users SET tag_key = ? WHERE id = ?");
   await env.DB.batch(await Promise.all(results.map(async (r) => update.bind(await ownTagHash(env, r.battletag), r.id))));
   return results.length < BATCH;
 }
 
-// Lists stored before the key (friend_tags, plain hashes) move to
-// friend_keys a batch at a time. The old code may still be adding rows
-// until the new one deploys, so this keeps checking.
-// True once none are left.
-async function convertOld(env: Env): Promise<boolean> {
-  const { results } = await env.DB.prepare(`SELECT rowid AS rid, user_id, source, tag_hash FROM friend_tags LIMIT ${BATCH}`).all<{
-    rid: number;
-    user_id: string;
-    source: string;
-    tag_hash: string;
-  }>();
-  if (!results.length) return true;
-  const insert = env.DB.prepare("INSERT OR IGNORE INTO friend_keys (user_id, source, tag_hash) VALUES (?, ?, ?)");
-  const stmts = await Promise.all(results.map(async (r) => insert.bind(r.user_id, r.source, (await keyHash(env, r.tag_hash))!)));
-  stmts.push(env.DB.prepare("DELETE FROM friend_tags WHERE rowid IN (SELECT value FROM json_each(?))").bind(JSON.stringify(results.map((r) => r.rid))));
-  await env.DB.batch(stmts);
-  return results.length < BATCH;
-}
-
 // Drops hashes that match no user, from lists whose owner last uploaded
-// more than 60 days ago. Only once every hash is keyed, so a user whose own
-// hash isn't filled in yet can't be taken for a stranger.
+// more than 60 days ago. Only once every user's own hash is filled in, so
+// nobody can be taken for a stranger.
 async function pruneUnmatched(env: Env): Promise<void> {
   await env.DB.prepare(
     `DELETE FROM friend_keys WHERE user_id IN (
@@ -102,9 +83,7 @@ async function pruneUnmatched(env: Env): Promise<void> {
 
 async function upkeep(env: Env): Promise<boolean> {
   if (!hasKey(env)) return false;
-  const filled = await fillTagHashes(env);
-  const converted = await convertOld(env);
-  return filled && converted;
+  return fillTagHashes(env);
 }
 
 // The user ids of the viewer's friends on the site (not the viewer): both
@@ -150,12 +129,10 @@ export async function saveFriends(env: Env, user: User, body: unknown): Promise<
   for (const [source, list] of lists) {
     const keyed = new Set(await Promise.all(list.map(async (h) => (await keyHash(env, h))!)));
     const { results } = await env.DB.prepare("SELECT tag_hash FROM friend_keys WHERE user_id = ? AND source = ?").bind(user.id, source).all<{ tag_hash: string }>();
-    const { results: old } = await env.DB.prepare("SELECT 1 FROM friend_tags WHERE user_id = ? AND source = ? LIMIT 1").bind(user.id, source).all();
-    const same = !old.length && results.length === keyed.size && results.every((r) => keyed.has(r.tag_hash));
+    const same = results.length === keyed.size && results.every((r) => keyed.has(r.tag_hash));
     if (same) continue;
     changed = true;
     stmts.push(env.DB.prepare("DELETE FROM friend_keys WHERE user_id = ? AND source = ?").bind(user.id, source));
-    stmts.push(env.DB.prepare("DELETE FROM friend_tags WHERE user_id = ? AND source = ?").bind(user.id, source));
     for (const h of keyed) stmts.push(insert.bind(user.id, source, h));
   }
   if (changed) {
@@ -237,7 +214,6 @@ export async function setFriendsVisible(env: Env, user: User, body: unknown): Pr
 export async function forgetFriends(env: Env, user: User): Promise<Response> {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM friend_keys WHERE user_id = ?").bind(user.id),
-    env.DB.prepare("DELETE FROM friend_tags WHERE user_id = ?").bind(user.id),
     env.DB.prepare("UPDATE users SET friends_at = NULL WHERE id = ?").bind(user.id),
   ]);
   return friendsOf(env, user);
