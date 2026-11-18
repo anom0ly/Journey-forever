@@ -89,7 +89,8 @@ for _, name in ipairs({
     "Bloodmage Thalnos", "Arcanist Doan", "Herod", "High Inquisitor Whitemane",          -- Scarlet Monastery
     "Alzzin the Wildshaper", "Prince Tortheldrin", "King Gordok",                        -- Dire Maul
     "Balnazzar", "Baron Rivendare",                                                      -- Stratholme
-    "Durgen Dirgehammer", "Bjork", "Relic Guardian",                                     -- Forever's new dungeons
+    "Durgen Dirgehammer", "Rath'mael", "Relic Guardian", "Shade of the Archmage",        -- Forever's new dungeons
+    "Min'loth the Serpent", "Overseer Mugg", "Blazeroar", "Unbound Spirit", "Nanaya",
     "Onyxia", "Ragnaros", "Nefarian", "Hakkar", "Ossirian the Unscarred", "C'Thun", "Kel'Thuzad", -- raids
 }) do FINAL_BOSSES[name:lower()] = true end
 
@@ -103,6 +104,9 @@ for _, name in ipairs({
     "Zul'Farrak", "Maraudon", "The Temple of Atal'Hakkar", "Sunken Temple", "Blackrock Depths",
     "Blackrock Spire", "Lower Blackrock Spire", "Upper Blackrock Spire", "Scholomance", "Scarlet Monastery",
     "Dire Maul", "Stratholme", "Hall of Thanes", "Ruins of Lordaeron", "Excavation Site",
+    "Excavation Site: Wetlands", "City of Dalaran", "Dalaran", "The Drowned City", "Drowned City",
+    "Krol'dok Stronghold", "Alcaz Prison", "Alcaz Island Prison", "Blackmaw Hold", "The Shaper's Terrace",
+    "Shaper's Terrace",
     "Onyxia's Lair", "Molten Core", "Blackwing Lair", "Zul'Gurub", "Ruins of Ahn'Qiraj", "Ahn'Qiraj Temple",
     "Temple of Ahn'Qiraj", "Naxxramas",
 }) do KNOWN[name:lower()] = true end
