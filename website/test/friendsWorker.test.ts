@@ -79,23 +79,25 @@ describe("friends on the server", () => {
     const { db, list, env } = await setup();
     const plain = await hashTag(tag("bob"));
     await list("ann", ["bob"]);
-    const stored = db.prepare("SELECT tag_hash FROM friend_tags").all().map((r: any) => r.tag_hash);
+    const stored = db.prepare("SELECT tag_hash FROM friend_keys").all().map((r: any) => r.tag_hash);
     expect(stored).toEqual([await keyHash(env, plain)]);
     expect(stored).not.toContain(plain);
-    const own = db.prepare("SELECT tag_hash FROM users WHERE id = 'bob'").get() as { tag_hash: string };
+    const own = db.prepare("SELECT tag_key AS tag_hash FROM users WHERE id = 'bob'").get() as { tag_hash: string };
     expect(own.tag_hash).toBe(await keyHash(env, plain));
     expect(await keyHash({ FRIENDS_KEY: "other" } as Env, plain)).not.toBe(own.tag_hash);
   });
 
   it("keys lists stored before the key, so highlights carry on", async () => {
     const { db, call } = await setup();
-    // As migration 0012 leaves them: plain hashes in friend_tags_old, no user hashes.
+    // As the old code leaves them: plain hashes in friend_tags and users.tag_hash.
     for (const [u, f] of [["ann", "bob"], ["bob", "ann"], ["ann", "zed"]]) {
-      db.prepare("INSERT INTO friend_tags_old (user_id, source, tag_hash) VALUES (?, 'jf', ?)").run(u, await hashTag(tag(f)));
+      db.prepare("INSERT INTO friend_tags (user_id, source, tag_hash) VALUES (?, 'jf', ?)").run(u, await hashTag(tag(f)));
     }
+    db.prepare("UPDATE users SET tag_hash = 'plain'").run();
     expect(names(await call("/api/friends", "ann"))).toEqual(["bob"]);
-    expect((db.prepare("SELECT COUNT(*) AS n FROM friend_tags_old").get() as { n: number }).n).toBe(0);
-    expect((db.prepare("SELECT COUNT(*) AS n FROM friend_tags").get() as { n: number }).n).toBe(3);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM friend_tags").get() as { n: number }).n).toBe(0);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM users WHERE tag_hash IS NOT NULL").get() as { n: number }).n).toBe(0);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM friend_keys").get() as { n: number }).n).toBe(3);
   });
 
   it("drops hashes matching nobody 60 days after the owner's last upload", async () => {
@@ -106,7 +108,7 @@ describe("friends on the server", () => {
     db.prepare("UPDATE users SET last_upload_at = ?, friends_at = ? WHERE id = 'ann'").run(old, old);
     // Any later save runs the clean-up.
     await list("dan", ["ann"]);
-    const left = db.prepare("SELECT user_id, tag_hash FROM friend_tags ORDER BY user_id").all() as { user_id: string }[];
+    const left = db.prepare("SELECT user_id, tag_hash FROM friend_keys ORDER BY user_id").all() as { user_id: string }[];
     // Ann keeps Bob (a user) and loses Zed; Cat uploaded recently and keeps Zed.
     expect(left.map((r) => r.user_id)).toEqual(["ann", "cat", "dan"]);
   });
@@ -130,7 +132,7 @@ describe("friends on the server", () => {
     expect(first.status, JSON.stringify(first.body)).toBe(200);
     expect(first.body.notSaved).toBe("off");
     await list("bob", ["ann"]);
-    expect((db.prepare("SELECT COUNT(*) AS n FROM friend_tags").get() as { n: number }).n).toBe(0);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM friend_keys").get() as { n: number }).n).toBe(0);
     expect(names(await call("/api/friends", "ann"))).toEqual([]);
   });
 });

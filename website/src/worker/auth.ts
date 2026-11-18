@@ -71,11 +71,11 @@ async function startSession(env: Env, url: URL, userId: string, to: string): Pro
 async function upsertUser(env: Env, bnetId: string, battletag: string | null): Promise<string> {
   const existing = await env.DB.prepare("SELECT id FROM users WHERE bnet_id = ?").bind(bnetId).first<{ id: string }>();
   if (existing) {
-    await env.DB.prepare("UPDATE users SET battletag = ?, tag_hash = ? WHERE id = ?").bind(battletag, await ownTagHash(env, battletag), existing.id).run();
+    await env.DB.prepare("UPDATE users SET battletag = ?, tag_key = ? WHERE id = ?").bind(battletag, await ownTagHash(env, battletag), existing.id).run();
     return existing.id;
   }
   const id = crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO users (id, bnet_id, battletag, tag_hash, created_at) VALUES (?, ?, ?, ?, ?)")
+  await env.DB.prepare("INSERT INTO users (id, bnet_id, battletag, tag_key, created_at) VALUES (?, ?, ?, ?, ?)")
     .bind(id, bnetId, battletag, await ownTagHash(env, battletag), now())
     .run();
   return id;
