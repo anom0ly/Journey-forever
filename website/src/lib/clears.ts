@@ -31,10 +31,18 @@ const END_BOSS_LIST: [string[], string[]][] = [
   [["Scarlet Monastery"], ["Bloodmage Thalnos", "Arcanist Doan", "Herod", "High Inquisitor Whitemane"]],
   [["Dire Maul"], ["Alzzin the Wildshaper", "Prince Tortheldrin", "King Gordok"]],
   [["Stratholme"], ["Balnazzar", "Baron Rivendare"]],
-  // Forever's new dungeons: not yet confirmed in game.
+  // Forever's new dungeons. The first four are from Wowhead's dungeon
+  // overview; the last five from the game files (forevermastery.com), as no
+  // guide names them yet. Both spellings where guides disagree.
   [["Hall of Thanes"], ["Durgen Dirgehammer"]],
-  [["Ruins of Lordaeron"], ["Bjork"]],
-  [["Excavation Site"], ["Relic Guardian"]],
+  [["Ruins of Lordaeron"], ["Rath'mael"]],
+  [["Excavation Site: Wetlands", "Excavation Site"], ["Relic Guardian"]],
+  [["City of Dalaran", "Dalaran"], ["Shade of the Archmage"]],
+  [["The Drowned City", "Drowned City"], ["Min'loth the Serpent"]],
+  [["Krol'dok Stronghold"], ["Overseer Mugg"]],
+  [["Alcaz Prison", "Alcaz Island Prison"], ["Blazeroar"]],
+  [["Blackmaw Hold"], ["Unbound Spirit"]],
+  [["The Shaper's Terrace", "Shaper's Terrace"], ["Nanaya"]],
   // Raids
   [["Onyxia's Lair"], ["Onyxia"]],
   [["Molten Core"], ["Ragnaros"]],
@@ -55,6 +63,12 @@ export function endBosses(dungeon: string): Set<string> | undefined {
   return END_BOSSES.get(dungeon.toLowerCase());
 }
 
+// A dungeon nobody listed an end boss for yet (a new one Blizzard adds) still
+// counts on the boards when the run looks like a real one: the bar dungeon
+// runs had before end bosses were checked.
+export const UNLISTED_MIN_SECONDS = 60;
+export const UNLISTED_MIN_KILLS = 10;
+
 // Back-to-back visits to the same dungeon this close together are one run:
 // releasing after a wipe puts the player outside, and the clock keeps going.
 export const REJOIN_SECONDS = 600;
@@ -74,6 +88,9 @@ export interface DungeonRun {
   // tell (a dungeon whose end boss isn't listed, or a run with no XP kills
   // logged, as at 60, and no screenshot entry).
   cleared?: boolean;
+  // true: counted as cleared without an end boss to check (a dungeon with
+  // no end boss listed). The journey shows no Cleared tag for these.
+  guessed?: boolean;
   boss?: string; // the end boss that died
   run?: RunSummary; // the last visit's summary
 }
@@ -179,6 +196,9 @@ export function dungeonRuns(j: Journey): DungeonRun[] {
       run.cleared = blind ? undefined : !!(k || s);
       if (k) run.boss = k.name;
       else if (s?.boss) run.boss = s.boss;
+    } else if ((run.duration ?? 0) >= UNLISTED_MIN_SECONDS && (run.kills ?? 0) >= UNLISTED_MIN_KILLS) {
+      run.cleared = true;
+      run.guessed = true;
     }
     out.push(run);
   };
@@ -208,7 +228,9 @@ export function dungeonRuns(j: Journey): DungeonRun[] {
         duration: r.duration,
         deaths: r.deaths,
         visits: 1,
-        cleared: bosses ? !!s : undefined,
+        // Unlisted dungeon: Journey Tracker's boss count stands in.
+        cleared: bosses ? !!s : (r.duration ?? 0) >= UNLISTED_MIN_SECONDS && (r.bosses ?? 0) > 0 ? true : undefined,
+        guessed: bosses ? undefined : (r.duration ?? 0) >= UNLISTED_MIN_SECONDS && (r.bosses ?? 0) > 0 ? true : undefined,
         boss: s?.boss,
         run: { name: r.name, duration: r.duration, deaths: r.deaths },
       });

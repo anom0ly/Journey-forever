@@ -77,11 +77,37 @@ describe("full dungeon clears", () => {
     expect(dungeonRuns(journey([...visit(T, T + 960), left]))[0].cleared).toBe(false);
   });
 
-  it("can't tell for a dungeon with no listed end boss, and leaves it off the boards", () => {
+  it("knows Forever's new dungeons by either spelling", () => {
+    expect(endBosses("City of Dalaran")?.has("shade of the archmage")).toBe(true);
+    expect(endBosses("Excavation Site: Wetlands")?.has("relic guardian")).toBe(true);
+    expect(endBosses("Drowned City")?.has("min'loth the serpent")).toBe(true);
+    expect(endBosses("Alcaz Island Prison")?.has("blazeroar")).toBe(true);
+    expect(endBosses("The Shaper's Terrace")?.has("nanaya")).toBe(true);
+    expect(endBosses("Ruins of Lordaeron")?.has("bjork")).toBe(false);
+  });
+
+  it("puts a City of Dalaran clear on the boards", () => {
+    const j = journey(visit(T, T + 1800, 80, "City of Dalaran", 9001), [[T + 600, "Arcane Anomaly"], [T + 1700, "Shade of the Archmage"]]);
+    expect(dungeonRuns(j)[0]).toMatchObject({ cleared: true, boss: "Shade of the Archmage" });
+    expect(boardEntries(j).find((e) => e.b === "dungeonrun")).toMatchObject({ p: "City of Dalaran", v: 1800 });
+  });
+
+  it("counts a real-looking run in a dungeon with no listed end boss, without a Cleared tag", () => {
     const j = journey(visit(T, T + 960, 30, "Somewhere New", 9999), [[T + 900, "Big Boss"]]);
+    expect(dungeonRuns(j)[0]).toMatchObject({ cleared: true, guessed: true });
+    expect(boardEntries(j).find((e) => e.b === "dungeonrun")).toMatchObject({ p: "Somewhere New", v: 960 });
+    expect(moments(j).find((m) => m.kind === "dungeon")?.tag).toBeUndefined();
+  });
+
+  it("still can't tell for a short visit to a dungeon with no listed end boss", () => {
+    const j = journey(visit(T, T + 960, 3, "Somewhere New", 9999));
     expect(dungeonRuns(j)[0].cleared).toBeUndefined();
     expect(boardEntries(j).find((e) => e.b === "dungeonrun")).toBeUndefined();
-    expect(moments(j).find((m) => m.kind === "dungeon")?.tag).toBeUndefined();
+  });
+
+  it("uses Journey Tracker's boss count for an unlisted dungeon without Road to Sixty", () => {
+    const runs = [{ name: "Somewhere New", start: T, duration: 960, bosses: 2 }, { name: "Somewhere New", start: T + 5000, duration: 600, bosses: 0 }];
+    expect(dungeonRuns(journey([], [], runs)).map((r) => r.cleared)).toEqual([true, undefined]);
   });
 
   it("checks Journey Tracker's runs against the addon when there is no Road to Sixty", () => {
