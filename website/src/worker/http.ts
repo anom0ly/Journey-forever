@@ -23,7 +23,12 @@ export function parseCookies(req: Request): Record<string, string> {
   const out: Record<string, string> = {};
   for (const part of (req.headers.get("cookie") ?? "").split(";")) {
     const i = part.indexOf("=");
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i <= 0) continue;
+    try {
+      out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    } catch {
+      // A cookie that isn't ours (or is mangled) is skipped, not a 500.
+    }
   }
   return out;
 }

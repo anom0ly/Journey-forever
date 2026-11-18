@@ -18,10 +18,22 @@ export interface NewProblem {
 // Stores one case of a problem. Returns its group's status, so a problem
 // marked as noise isn't sent to the alerts again. Never throws: storing a
 // report mustn't be what breaks a request.
+// Past this many open problems, a new one is folded into one "too many"
+// problem per kind, so a flood of made-up reports can't grow the table.
+export const MAX_OPEN_GROUPS = 500;
+
 export async function recordProblem(env: Env, p: NewProblem): Promise<ProblemStatus | undefined> {
   if (!env.DB) return undefined;
   try {
-    const id = (await sha256(p.key)).slice(0, 32);
+    let id = (await sha256(p.key)).slice(0, 32);
+    let title = p.title;
+    if (!(await env.DB.prepare("SELECT 1 FROM problem_groups WHERE id = ?").bind(id).first())) {
+      const open = (await env.DB.prepare("SELECT COUNT(*) AS n FROM problem_groups WHERE status = 'open'").first<{ n: number }>())?.n ?? 0;
+      if (open >= MAX_OPEN_GROUPS) {
+        id = (await sha256(`overflow|${p.kind}`)).slice(0, 32);
+        title = `Too many different ${p.kind} problems. Newest: ${p.title}`;
+      }
+    }
     const time = now();
     const t = p.t && p.t > 0 && p.t <= time + 86400 ? p.t : time;
     const cutoff = time - KEEP_DAYS * 86400;
@@ -36,7 +48,7 @@ export async function recordProblem(env: Env, p: NewProblem): Promise<ProblemSta
        ON CONFLICT (id) DO UPDATE SET count = count + 1, last_t = MAX(last_t, excluded.last_t), title = excluded.title,
          status = CASE WHEN status = 'fixed' AND excluded.last_t > COALESCE(fixed_at, 0) THEN 'open' ELSE status END`,
     )
-      .bind(id, p.kind, p.title.slice(0, 300), t, t)
+      .bind(id, p.kind, title.slice(0, 300), t, t)
       .run();
     await env.DB.prepare("INSERT INTO site_problems (group_id, user_id, t, detail) VALUES (?, ?, ?, ?)")
       .bind(id, p.userId, t, JSON.stringify(p.detail).slice(0, 2000))
@@ -52,7 +64,9 @@ export async function recordProblem(env: Env, p: NewProblem): Promise<ProblemSta
             `DELETE FROM site_problems WHERE user_id IS NULL AND id NOT IN
                (SELECT id FROM site_problems WHERE user_id IS NULL ORDER BY id DESC LIMIT ${KEEP_ANONYMOUS})`,
           ),
-      // Groups nobody has hit for twice as long go too, unless still open.
+      // Open groups nobody has hit in that time have no cases left, so they
+      // go; fixed and hidden ones stay twice as long, for their notes.
+      env.DB.prepare("DELETE FROM problem_groups WHERE status = 'open' AND last_t < ?").bind(cutoff),
       env.DB.prepare("DELETE FROM problem_groups WHERE status != 'open' AND last_t < ?").bind(time - 2 * KEEP_DAYS * 86400),
     ]);
     const g = await env.DB.prepare("SELECT status FROM problem_groups WHERE id = ?").bind(id).first<{ status: ProblemStatus }>();

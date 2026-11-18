@@ -236,7 +236,12 @@ async function listShots(env: Env, userId: string, key: string) {
 
 export async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   const path = url.pathname.replace(/^\/api/, "");
-  const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
+  let parts: string[];
+  try {
+    parts = path.split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    throw new HttpError(400, "That address isn't valid");
+  }
   const m = req.method;
 
   // Public journeys need no sign-in. "Public" means anyone can find a
