@@ -17,45 +17,43 @@ import { prepareHost, startHost } from "./host";
 import { Reporter } from "./report";
 import { removeOldExe } from "./update";
 import { WindowControl } from "./window";
-import { APP_NAME, handler } from "./server";
+import { findRunning, PORTS, randomHex } from "./instance";
+import { handler } from "./server";
 import { Store } from "./store";
 import { deleteAfterExit, IS_WINDOWS, notify, openUrl, pickFolder, registryWowPaths, setStartMenu, setStartup } from "./windows";
 import { candidateRoots, existingDrives, findForever, foreverIn } from "./wow";
 
 const SITE = process.env.JF_SITE ?? "https://journey.wowhub.net";
-const PORTS = Array.from({ length: 10 }, (_, i) => 47213 + i);
 const updatedFrom = process.argv.find((a) => a.startsWith("--updated-from="))?.slice("--updated-from=".length);
 const background = process.argv.includes("--background") || (!!updatedFrom && !process.argv.includes("--show"));
 
-function randomHex(n = 24): string {
-  return [...crypto.getRandomValues(new Uint8Array(n))].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 // A secret only this Windows user can read (it's in their own AppData). It
 // opens the status page (/?t=…), so other users of the PC can't, and lets one
-// copy of the uploader ask a running older one to quit before replacing it.
-function instanceToken(store: Store): string {
-  const file = join(store.dir, "instance.token");
+// copy of the uploader ask the running one to show its window or quit. The
+// copy that serves the page makes a fresh one each start.
+function tokenFile(store: Store): string {
+  return join(store.dir, "instance.token");
+}
+
+function readInstanceToken(store: Store): string | undefined {
   try {
-    return readFileSync(file, "utf8").trim();
+    return readFileSync(tokenFile(store), "utf8").trim() || undefined;
   } catch {
-    const t = randomHex();
-    writeFileSync(file, t, { mode: 0o600 });
-    return t;
+    return undefined;
   }
 }
 
-async function findRunning(): Promise<{ port: number; version: string } | undefined> {
-  for (const port of PORTS) {
-    try {
-      const r = await fetch(`http://127.0.0.1:${port}/ping`, { signal: AbortSignal.timeout(800) });
-      const b = (await r.json()) as { app?: string; version?: string };
-      if (b.app === APP_NAME) return { port, version: b.version ?? "" };
-    } catch {
-      // nothing there, or not us
-    }
-  }
-  return undefined;
+function newInstanceToken(store: Store): string {
+  const t = randomHex();
+  writeFileSync(tokenFile(store), t, { mode: 0o600 });
+  return t;
+}
+
+// Something on our port says it's the uploader but couldn't prove it: an
+// uploader older than 1.3.10 (it can't answer the check), or not ours.
+async function cantReachRunning(): Promise<void> {
+  await notify("Journey Forever uploader is already running", "Quit it from its tray icon, then open the uploader again.");
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -69,23 +67,24 @@ async function showRunning(port: number, token: string): Promise<void> {
 
 async function main(): Promise<void> {
   const store = new Store(SITE);
-  const token = instanceToken(store);
+  const known = readInstanceToken(store);
   const installed = join(store.dir, UPLOADER_EXE);
   const self = process.execPath;
   const compiled = IS_WINDOWS && basename(self).toLowerCase() === UPLOADER_EXE.toLowerCase();
   // After an update the old copy is still quitting: give it a moment.
   if (updatedFrom) await sleep(1500);
-  const running = await findRunning();
+  const running = await findRunning(known);
 
   // Started from Downloads (or wherever): install this copy, then hand over.
   if (compiled && self.toLowerCase() !== installed.toLowerCase()) {
     if (running) {
+      if (!running.proven || !known) return cantReachRunning();
       if (running.version === UPLOADER_VERSION) {
-        await showRunning(running.port, token);
+        await showRunning(running.port, known);
         return;
       }
       // An older version is running from the installed copy: stop it first.
-      await fetch(`http://127.0.0.1:${running.port}/quit`, { method: "POST", headers: { "x-token": token } }).catch(() => undefined);
+      await fetch(`http://127.0.0.1:${running.port}/quit`, { method: "POST", headers: { "x-token": known } }).catch(() => undefined);
       await sleep(2000);
     }
     copyFileSync(self, installed);
@@ -94,9 +93,14 @@ async function main(): Promise<void> {
   }
 
   if (running) {
-    if (!background) await showRunning(running.port, token);
+    if (!background) {
+      if (running.proven && known) await showRunning(running.port, known);
+      else await cantReachRunning();
+    }
     return;
   }
+  // This copy serves the page: a fresh token, so an old one is worth nothing.
+  const token = newInstanceToken(store);
   if (compiled) removeOldExe(installed);
 
   let port = 0;
