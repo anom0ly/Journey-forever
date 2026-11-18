@@ -16,6 +16,9 @@ export interface Env {
   // Uploaders page can list releases; set it as a secret. Optional, but
   // without it GitHub often refuses requests from Workers' shared addresses.
   GITHUB_TOKEN?: string;
+  // A long random secret that keys stored friend hashes (worker/friends.ts).
+  // Without it friends lists aren't stored or matched.
+  FRIENDS_KEY?: string;
   // Rate limits (wrangler.jsonc "ratelimits"); see limits.ts.
   RL_REQUESTS?: RateLimit;
   RL_CHANGES?: RateLimit;

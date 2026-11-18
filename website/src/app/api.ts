@@ -138,6 +138,9 @@ export interface FriendsInfo {
   counts: { jf: number; rts: number; total: number };
   friends: { characters: FriendCharacter[]; sources: ("jf" | "rts")[] }[];
   notOnSite: number;
+  // Set when an upload's list wasn't stored: "limited" = changed more than
+  // 10 times today, "off" = friends are switched off on the site.
+  notSaved?: "limited" | "off";
 }
 
 export interface Rank {
