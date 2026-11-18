@@ -3,7 +3,7 @@
 // public characters with board_state 0 are ranked: 1 is held off the boards
 // by 10+ reports from different accounts, 2 hidden by the reviewer.
 
-import { BOARD_BY_ID, BOARDS_VERSION, fixedParams, type BoardEntry } from "../lib/boardDefs";
+import { BOARD_BY_ID, BOARDS_VERSION, fixedParams, HELD_BOARDS, HELD_TOP, type BoardEntry } from "../lib/boardDefs";
 import type { CharacterSummary } from "../lib/journey";
 import { isFreeParam, knownParam, NEW_PARAM_ACCOUNTS, paramLooksRight, paramsPerCharacter, valueInRange } from "../lib/checks";
 import type { Env, User } from "./env";
@@ -15,12 +15,14 @@ const CHECKS_LIMIT = 20;
 const PAGE = 50;
 export const HOLD_REPORTS = 10;
 // Only reports from established accounts count toward a hold: the account
-// was at least 3 days old when it reported, and has a character with an hour
-// or more played. Every report still reaches the review page.
+// was at least 3 days old when it reported, and the site first saw one of
+// its characters at least 2 days before the report. Both are things the
+// server saw itself, not numbers the reporter's browser sent. Every report
+// still reaches the review page.
 export const ESTABLISHED_AGE = 3 * 86400;
-export const ESTABLISHED_PLAYED = 3600;
+export const ESTABLISHED_UPLOAD = 2 * 86400;
 const ESTABLISHED = `EXISTS (SELECT 1 FROM users ru WHERE ru.id = r.reporter_id AND ru.created_at <= r.created_at - ${ESTABLISHED_AGE})
-  AND EXISTS (SELECT 1 FROM characters rc WHERE rc.user_id = r.reporter_id AND COALESCE(json_extract(rc.summary, '$.played'), 0) >= ${ESTABLISHED_PLAYED})`;
+  AND EXISTS (SELECT 1 FROM characters rc WHERE rc.user_id = r.reporter_id AND rc.first_upload_at <= r.created_at - ${ESTABLISHED_UPLOAD})`;
 export const DAILY_REPORTS = 5;
 export const REASONS: Record<string, string> = {
   impossible: "The numbers look impossible",
@@ -76,24 +78,233 @@ export async function saveBoards(env: Env, userId: string, key: string, body: un
     seen.add(id);
     entries.push({ b: e.b, p, v: e.v, t: e.t });
   }
-  const checks = Array.isArray(b.checks) ? b.checks.filter((c): c is string => typeof c === "string").slice(0, CHECKS_LIMIT).map((c) => c.slice(0, 200)) : [];
-  const row = await env.DB.prepare("SELECT name, realm FROM characters WHERE user_id = ? AND key = ?").bind(userId, key).first<{ name: string; realm: string }>();
+  const sent = Array.isArray(b.checks) ? b.checks.filter((c): c is string => typeof c === "string").slice(0, CHECKS_LIMIT).map((c) => c.slice(0, 200)) : [];
+  const row = await env.DB.prepare("SELECT name, realm, summary FROM characters WHERE user_id = ? AND key = ?")
+    .bind(userId, key)
+    .first<{ name: string; realm: string; summary: string }>();
   if (!row) throw new HttpError(404, "No such character");
+  // The server's own lines go in whatever the browser sent, so leaving
+  // checks out of the request doesn't hide them.
+  const checks = [...new Set([...serverChecks(entries, JSON.parse(row.summary) as CharacterSummary), ...sent])].slice(0, CHECKS_LIMIT);
   // A character the reviewer hid stays hidden, even if it was deleted and
   // uploaded again since (the summary upload checks this too).
   await applyModeration(env, userId, key, row.name, row.realm);
 
+  const scored: Scored[] = entries.map((e) => ({ b: e.b, p: e.p ?? "", v: e.v, s: score(e.b, e.v, e.t), t: e.t }));
+  const { listed, held } = await holdTopPlaces(env, userId, key, scored);
   const stmts = [
     env.DB.prepare("DELETE FROM board_entries WHERE user_id = ? AND char_key = ?").bind(userId, key),
+    env.DB.prepare("DELETE FROM board_held WHERE user_id = ? AND char_key = ?").bind(userId, key),
     env.DB.prepare("UPDATE characters SET checks = ?, boards_version = ? WHERE user_id = ? AND key = ?").bind(
       checks.length ? JSON.stringify(checks) : null, typeof b.version === "number" ? b.version : BOARDS_VERSION, userId, key,
     ),
   ];
   const insert = env.DB.prepare("INSERT INTO board_entries (user_id, char_key, board, param, value, score) VALUES (?, ?, ?, ?, ?, ?)");
-  for (const e of entries) stmts.push(insert.bind(userId, key, e.b, e.p, e.v, score(e.b, e.v, e.t)));
+  for (const e of listed) stmts.push(insert.bind(userId, key, e.b, e.p, e.v, e.s));
+  const hold = env.DB.prepare("INSERT INTO board_held (user_id, char_key, board, param, value, score, declined, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+  for (const h of held) stmts.push(hold.bind(userId, key, h.b, h.p, h.v, h.s, h.declined ? 1 : 0, h.createdAt));
   await env.DB.batch(stmts);
+  // This character's new times may push someone's waiting time out of the top places.
+  await releaseHeld(env, scored.filter((e) => HELD_BOARDS.has(e.b)).map((e) => [e.b, e.p]));
   await openForChecks(env, userId, key, checks);
-  return json({ ok: true, entries: entries.length });
+  return json({ ok: true, entries: entries.length, held: held.filter((h) => !h.declined).length });
+}
+
+// ---------------------------------------------------------------- held top places
+
+interface Scored {
+  b: string;
+  p: string;
+  v: number;
+  s: number;
+  t?: number;
+}
+
+interface Held extends Scored {
+  declined: boolean;
+  createdAt: number;
+}
+
+// Splits a character's new numbers into the ones listed now and the ones
+// that wait for the reviewer: a time on a held board that would be in the
+// top places among listed characters and isn't covered by an approval
+// (that time or slower). While a time waits, the character's last approved
+// time on that board is listed instead, if there is one.
+export async function holdTopPlaces(env: Env, userId: string, key: string, entries: Scored[]): Promise<{ listed: Scored[]; held: Held[] }> {
+  const candidates = entries.filter((e) => HELD_BOARDS.has(e.b));
+  if (!candidates.length) return { listed: entries, held: [] };
+  const id = (b: string, p: string) => `${b}\u0000${p}`;
+  const [approvals, before] = await env.DB.batch([
+    env.DB.prepare("SELECT board, param, approved, declined FROM board_approvals WHERE user_id = ? AND char_key = ?").bind(userId, key),
+    env.DB.prepare("SELECT board, param, value, created_at FROM board_held WHERE user_id = ? AND char_key = ?").bind(userId, key),
+  ]);
+  const decided = new Map(
+    (approvals.results as { board: string; param: string; approved: number | null; declined: number | null }[]).map((a) => [id(a.board, a.param), a]),
+  );
+  const waited = new Map((before.results as { board: string; param: string; value: number; created_at: number }[]).map((h) => [id(h.board, h.param), h]));
+  const unapproved = candidates.filter((e) => {
+    const a = decided.get(id(e.b, e.p));
+    return !(a?.approved != null && e.v >= a.approved);
+  });
+  if (!unapproved.length) return { listed: entries, held: [] };
+
+  // How many listed characters are ahead of each time, in one query.
+  const { results } = await env.DB.prepare(
+    `SELECT CAST(j.key AS INTEGER) AS i,
+       (SELECT COUNT(*) FROM board_entries o JOIN characters c ON c.user_id = o.user_id AND c.key = o.char_key
+        WHERE o.board = json_extract(j.value, '$.b') AND o.param = json_extract(j.value, '$.p') AND o.score < json_extract(j.value, '$.s')
+          AND NOT (o.user_id = ? AND o.char_key = ?) AND ${LISTED}) AS ahead
+     FROM json_each(?) j`,
+  )
+    .bind(userId, key, JSON.stringify(unapproved.map((e) => ({ b: e.b, p: e.p, s: e.s }))))
+    .all<{ i: number; ahead: number }>();
+  const top = new Set(results.filter((r) => r.ahead < HELD_TOP).map((r) => unapproved[r.i]));
+
+  const time = now();
+  const listed: Scored[] = [];
+  const held: Held[] = [];
+  for (const e of entries) {
+    if (!top.has(e)) {
+      listed.push(e);
+      continue;
+    }
+    const a = decided.get(id(e.b, e.p));
+    const old = waited.get(id(e.b, e.p));
+    held.push({ ...e, declined: a?.declined != null && e.v >= a.declined, createdAt: old && old.value === e.v ? old.created_at : time });
+    if (a?.approved != null) listed.push({ b: e.b, p: e.p, v: a.approved, s: score(e.b, a.approved, e.t) });
+  }
+  return { listed, held };
+}
+
+// Lists waiting times that are no longer in the top places (others got
+// faster), on the given boards or on all of them. Listing one can push
+// another out, so it goes round until nothing moves.
+export async function releaseHeld(env: Env, boards?: [string, string][]): Promise<number> {
+  if (boards && !boards.length) return 0;
+  let released = 0;
+  for (let pass = 0; pass < 5; pass++) {
+    const { results } = await env.DB.prepare(
+      `SELECT h.user_id, h.char_key, h.board, h.param, h.value, h.score FROM board_held h
+       WHERE (?1 IS NULL OR EXISTS (SELECT 1 FROM json_each(?1) j WHERE json_extract(j.value, '$[0]') = h.board AND json_extract(j.value, '$[1]') = h.param))
+         AND (SELECT COUNT(*) FROM board_entries o JOIN characters c ON c.user_id = o.user_id AND c.key = o.char_key
+              WHERE o.board = h.board AND o.param = h.param AND o.score < h.score AND NOT (o.user_id = h.user_id AND o.char_key = h.char_key) AND ${LISTED}) >= ?2`,
+    )
+      .bind(boards ? JSON.stringify(boards) : null, HELD_TOP)
+      .all<{ user_id: string; char_key: string; board: string; param: string; value: number; score: number }>();
+    if (!results.length) break;
+    released += results.length;
+    await env.DB.batch(results.flatMap((h) => listHeld(env, h)));
+  }
+  return released;
+}
+
+// Moves a waiting time onto its board, replacing the approved one shown meanwhile.
+function listHeld(env: Env, h: { user_id: string; char_key: string; board: string; param: string; value: number; score: number }) {
+  return [
+    env.DB.prepare(
+      `INSERT INTO board_entries (user_id, char_key, board, param, value, score) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, char_key, board, param) DO UPDATE SET value = excluded.value, score = excluded.score`,
+    ).bind(h.user_id, h.char_key, h.board, h.param, h.value, h.score),
+    env.DB.prepare("DELETE FROM board_held WHERE user_id = ? AND char_key = ? AND board = ? AND param = ?").bind(h.user_id, h.char_key, h.board, h.param),
+  ];
+}
+
+// Lines the server adds to a character's checks from the numbers it was
+// sent and the stored summary, whatever checks the browser sent.
+export const FASTEST_60 = 3 * 86400;
+export function serverChecks(entries: { b: string; p?: string; v: number }[], summary: Pick<CharacterSummary, "played">): string[] {
+  const out: string[] = [];
+  const played = typeof summary.played === "number" && summary.played > 0 ? summary.played : undefined;
+  const hours = (s: number) => `${Math.round(s / 3600)} hours`;
+  let levelSum = 0;
+  for (const e of entries) {
+    if (e.b === "to60" && e.v < FASTEST_60) out.push(`Level 1 to 60 in ${hours(e.v)} of played time, faster than any known speedrun.`);
+    if (e.b === "levelfast") {
+      levelSum += e.v;
+      const level = Number(e.p);
+      if (level >= 10 && e.v < level * 60) out.push(`Level ${level} took ${Math.round(e.v / 60)} minutes of played time.`);
+    }
+    if (played !== undefined && (e.b === "to60" || e.b === "tolevel") && e.v > played + 3600) {
+      out.push(`${e.b === "to60" ? "Level 60" : `Level ${e.p}`} was reached in ${hours(e.v)} of played time, more than the character's ${hours(played)} in total.`);
+    }
+  }
+  if (played !== undefined && levelSum > played + 3600) out.push(`Its level times add up to ${hours(levelSum)}, more than the character's ${hours(played)} of played time.`);
+  return out;
+}
+
+// GET /api/review/places: characters with top places waiting, oldest first.
+export async function placesList(env: Env): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    `SELECT h.user_id, h.char_key, h.board, h.param, h.value, h.score, h.created_at, c.name, c.realm, c.slug, c.summary, c.checks, c.updated_at,
+       (SELECT COUNT(*) FROM board_entries o JOIN characters oc ON oc.user_id = o.user_id AND oc.key = o.char_key
+        WHERE o.board = h.board AND o.param = h.param AND o.score < h.score AND NOT (o.user_id = h.user_id AND o.char_key = h.char_key) AND ${LISTED.replaceAll("c.", "oc.")}) + 1 AS rank
+     FROM board_held h JOIN characters c ON c.user_id = h.user_id AND c.key = h.char_key
+     WHERE h.declined = 0 AND ${LISTED} ORDER BY h.created_at, h.board, h.param LIMIT 300`,
+  ).all<{
+    user_id: string; char_key: string; board: string; param: string; value: number; score: number; created_at: number;
+    name: string; realm: string; slug: string; summary: string; checks: string | null; updated_at: number; rank: number;
+  }>();
+  const items = new Map<string, ReturnType<typeof placeItem>>();
+  for (const r of results) {
+    const k = `${r.user_id}\u0000${r.char_key}`;
+    if (!items.has(k)) items.set(k, placeItem(r, [...parseLines(r.checks), ...(await relativeChecks(env, r.user_id, r.char_key))]));
+    const { results: top } = await env.DB.prepare(
+      `SELECT e.value, c.name FROM board_entries e JOIN characters c ON c.user_id = e.user_id AND c.key = e.char_key
+       WHERE e.board = ? AND e.param = ? AND ${LISTED} ORDER BY e.score LIMIT ${HELD_TOP}`,
+    )
+      .bind(r.board, r.param)
+      .all<{ value: number; name: string }>();
+    items.get(k)!.places.push({ board: r.board, param: r.param, value: r.value, rank: r.rank, top });
+  }
+  return json({ items: [...items.values()] });
+}
+
+function placeItem(r: { slug: string; name: string; realm: string; summary: string; updated_at: number; created_at: number }, checks: string[]) {
+  const s = JSON.parse(r.summary) as CharacterSummary;
+  return {
+    slug: r.slug, name: r.name, realm: r.realm, level: s.level, className: s.className, race: s.race,
+    uploadedAt: r.updated_at, waitingSince: r.created_at, checks,
+    places: [] as { board: string; param: string; value: number; rank: number; top: { value: number; name: string }[] }[],
+  };
+}
+
+// POST /api/review/places/:slug { action: "approve" | "decline" }. Approve
+// lists every waiting time the character has; decline keeps them off
+// quietly until a faster time comes.
+export async function placesAction(env: Env, slug: string, body: unknown): Promise<Response> {
+  const action = (body as { action?: unknown })?.action;
+  if (action !== "approve" && action !== "decline") throw new HttpError(400, "Send approve or decline");
+  const c = await env.DB.prepare("SELECT user_id, key FROM characters WHERE slug = ?").bind(slug).first<Target>();
+  if (!c) throw new HttpError(404, "No such character");
+  const { results } = await env.DB.prepare(
+    "SELECT user_id, char_key, board, param, value, score FROM board_held WHERE user_id = ? AND char_key = ? AND declined = 0",
+  )
+    .bind(c.user_id, c.key)
+    .all<{ user_id: string; char_key: string; board: string; param: string; value: number; score: number }>();
+  const time = now();
+  const stmts = [];
+  for (const h of results) {
+    if (action === "approve") {
+      stmts.push(
+        env.DB.prepare(
+          `INSERT INTO board_approvals (user_id, char_key, board, param, approved, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (user_id, char_key, board, param) DO UPDATE SET approved = excluded.approved, declined = NULL, updated_at = excluded.updated_at`,
+        ).bind(h.user_id, h.char_key, h.board, h.param, h.value, time),
+        ...listHeld(env, h),
+      );
+    } else {
+      stmts.push(
+        env.DB.prepare(
+          `INSERT INTO board_approvals (user_id, char_key, board, param, declined, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (user_id, char_key, board, param) DO UPDATE SET declined = excluded.declined, updated_at = excluded.updated_at`,
+        ).bind(h.user_id, h.char_key, h.board, h.param, h.value, time),
+        env.DB.prepare("UPDATE board_held SET declined = 1 WHERE user_id = ? AND char_key = ? AND board = ? AND param = ?").bind(h.user_id, h.char_key, h.board, h.param),
+      );
+    }
+  }
+  if (stmts.length) await env.DB.batch(stmts);
+  if (action === "approve") await releaseHeld(env);
+  return json({ ok: true, places: results.length });
 }
 
 // GET /api/review/boards: the public characters an admin can recalculate.
@@ -259,7 +470,30 @@ export async function board(env: Env, url: URL, id: string, viewer: User | null)
     picked.sort((x, y) => x.score - y.score);
     for (const r of picked) near.push(rowOut(r, await rankOf(env, id, param, r.score, f), viewer, friends));
   }
-  return json({ board: id, param, params, total, rows: out, me, friends: near });
+  // Waiting top places: how many (for the public note) and, for their
+  // owner, their own rows numbered where they would rank.
+  let waiting = 0;
+  const mineWaiting: (ReturnType<typeof rowOut> & { waiting: true })[] = [];
+  if (HELD_BOARDS.has(id)) {
+    const w = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM board_held h JOIN characters c ON c.user_id = h.user_id AND c.key = h.char_key
+       WHERE h.board = ? AND h.param = ? AND h.declined = 0 AND ${LISTED}`,
+    )
+      .bind(id, param)
+      .first<{ n: number }>();
+    waiting = w?.n ?? 0;
+    if (viewer && offset === 0) {
+      const { results } = await env.DB.prepare(
+        `SELECT h.value, h.score, c.name, c.realm, c.slug, c.summary, c.user_id FROM board_held h
+         JOIN characters c ON c.user_id = h.user_id AND c.key = h.char_key
+         WHERE h.board = ? AND h.param = ? AND h.user_id = ? AND ${LISTED}${f.sql} ORDER BY h.score`,
+      )
+        .bind(id, param, viewer.id, ...f.args)
+        .all<RankRow>();
+      for (const r of results) mineWaiting.push({ ...rowOut(r, await rankOf(env, id, param, r.score, f), viewer, friends), waiting: true });
+    }
+  }
+  return json({ board: id, param, params, total, rows: out, me, friends: near, waiting, mineWaiting });
 }
 
 async function rankOf(env: Env, id: string, param: string, s: number, f: { sql: string; args: unknown[] }): Promise<number> {
@@ -283,6 +517,20 @@ export async function ranksOf(env: Env, userId: string, key: string, max = 10) {
     .bind(userId, key)
     .all<{ board: string; param: string; value: number; rank: number }>();
   return results.filter((r) => r.rank <= max).sort((a, b) => a.rank - b.rank || a.board.localeCompare(b.board));
+}
+
+// The owner's waiting places, numbered where they would rank on the whole
+// board today, to show first among the journey page's chips.
+export async function waitingRanks(env: Env, userId: string, key: string) {
+  const { results } = await env.DB.prepare(
+    `SELECT h.board, h.param, h.value, h.declined,
+       (SELECT COUNT(*) FROM board_entries o JOIN characters c ON c.user_id = o.user_id AND c.key = o.char_key
+        WHERE o.board = h.board AND o.param = h.param AND o.score < h.score AND NOT (o.user_id = h.user_id AND o.char_key = h.char_key) AND ${LISTED}) + 1 AS rank
+     FROM board_held h WHERE h.user_id = ? AND h.char_key = ? ORDER BY rank, h.board`,
+  )
+    .bind(userId, key)
+    .all<{ board: string; param: string; value: number; rank: number }>();
+  return results.map((r) => ({ board: r.board, param: r.param, value: r.value, rank: r.rank, waiting: true }));
 }
 
 // GET /api/public/:slug/ranks
@@ -476,12 +724,16 @@ async function openForChecks(env: Env, userId: string, key: string, stored: stri
 }
 
 export async function reviewCount(env: Env): Promise<number> {
+  const places = await env.DB.prepare(
+    `SELECT COUNT(DISTINCT h.user_id || ':' || h.char_key) AS n FROM board_held h JOIN characters c ON c.user_id = h.user_id AND c.key = h.char_key
+     WHERE h.declined = 0 AND ${LISTED}`,
+  ).first<{ n: number }>();
   const r = await env.DB.prepare(
     `SELECT COUNT(*) AS n FROM flags f WHERE f.status = 'open' AND (f.checks_opened_at > COALESCE(f.cleared_at, 0) OR EXISTS (
        SELECT 1 FROM reports r WHERE r.user_id = f.user_id AND r.char_key = f.char_key AND r.created_at > COALESCE(f.cleared_at, 0)
          AND r.reporter_id NOT IN (SELECT reporter_id FROM ignored_reporters)))`,
   ).first<{ n: number }>();
-  return r?.n ?? 0;
+  return (r?.n ?? 0) + (places?.n ?? 0);
 }
 
 interface ReviewFlag {
@@ -622,6 +874,8 @@ export async function reviewAction(env: Env, slug: string, body: unknown): Promi
       .run();
   }
   await refreshFlag(env, c.user_id, c.key);
+  // A character put back on the boards can push waiting times out of the top places.
+  if (action === "clear") await releaseHeld(env);
   return json({ ok: true });
 }
 
