@@ -5,7 +5,7 @@ import { FACTIONS, RAID_BOSSES } from "./sixtyLists";
 
 // Bumped when the numbers are worked out differently, so stored characters
 // are worked out again by their owner's browser.
-export const BOARDS_VERSION = 5;
+export const BOARDS_VERSION = 6;
 
 export type GroupId = "leveling" | "survival" | "kills" | "gold" | "professions" | "world" | "dungeons" | "pvp" | "sixty";
 export const GROUPS: { id: GroupId; label: string }[] = [

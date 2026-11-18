@@ -185,7 +185,9 @@ function levelText(c: Done["chars"][number]): string {
   return c.from && c.from !== c.to ? `${c.from} → ${c.to}` : `level ${c.to}`;
 }
 
-function friendsText(info: { counts: { total: number }; friends: unknown[] }): string {
+function friendsText(info: { counts: { total: number }; friends: unknown[]; notSaved?: string }): string {
+  if (info.notSaved === "limited") return "not changed, because it already changed 10 times today. Try again tomorrow";
+  if (info.notSaved === "off") return "not saved, because friends are switched off on the site for now";
   return `${plural(info.counts.total, "Battle.net friend")}, ${info.friends.length} with public characters here`;
 }
 
@@ -301,7 +303,7 @@ export function UploadPage() {
       let friendsLine = "";
       if (hasFriends(preview.friends)) {
         setBusy("Saving your friends list…");
-        // Only hashes of the BattleTags leave the browser.
+        // Only hashes of the BattleTags leave the browser; the Worker keys them again.
         const info = await api.saveFriends(await friendHashes(preview.friends));
         setFriends(info);
         friendsLine = ` Friends list saved: ${friendsText(info)}.`;
@@ -619,8 +621,8 @@ export function UploadPage() {
                   {[friends.jf ? `${friends.jf} from Journey Forever` : "", friends.rts ? `${friends.rts} from Road to Sixty` : "", friends.both ? `${friends.both} in both` : ""]
                     .filter(Boolean)
                     .join(", ") || "Nobody on the list yet"}
-                  . Their public characters are highlighted for you on the leaderboards and in Compare. Only scrambled copies of the BattleTags
-                  are sent.
+                  . Friends who also have you on their list are highlighted for you on the leaderboards and in Compare. Only scrambled copies
+                  of the BattleTags are sent.
                 </span>
               </div>
               <span class="pill">Friends</span>

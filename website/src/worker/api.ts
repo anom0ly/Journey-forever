@@ -232,7 +232,12 @@ async function listShots(env: Env, userId: string, key: string) {
 
 export async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   const path = url.pathname.replace(/^\/api/, "");
-  const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
+  let parts: string[];
+  try {
+    parts = path.split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    throw new HttpError(400, "That address isn't valid");
+  }
   const m = req.method;
 
   // Public journeys need no sign-in. "Public" means anyone can find a
@@ -327,6 +332,7 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         env.DB.prepare("DELETE FROM reports WHERE reporter_id = ? OR user_id = ?").bind(user.id, user.id),
         env.DB.prepare("DELETE FROM flags WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM ignored_reporters WHERE reporter_id = ?").bind(user.id),
+        env.DB.prepare("DELETE FROM friend_keys WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM friend_tags WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM upload_errors WHERE key_id IN (SELECT id FROM upload_keys WHERE user_id = ?)").bind(user.id),
         env.DB.prepare("DELETE FROM upload_keys WHERE user_id = ?").bind(user.id),

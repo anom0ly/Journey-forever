@@ -186,4 +186,46 @@ describe("problem reports", () => {
     expect(token.cases[0].detail).toMatchObject({ why: "token", status: 400, bnet: "invalid_grant", callback: `${ORIGIN}/auth/callback`, browser: "Chrome 142 · Windows" });
     expect(groups.some((g) => g.kind === "signin" && g.title.startsWith("Sign-in cookie missing"))).toBe(true);
   });
+  it("keeps made-up sign-in errors from adding problems", async () => {
+    const { call } = await setup();
+    for (const e of ["access_denied", "aaaa", "bbbb", "zzzz"]) {
+      expect((await call(`/auth/callback?error=${e}`)).location).toBe(`${ORIGIN}/?signin=failed&why=denied`);
+    }
+    const groups = (await call("/api/admin/problems", { session: "admin" })).body.groups as { title: string; count: number }[];
+    expect(groups).toEqual([expect.objectContaining({ title: "Player cancelled at Battle.net, via jf.example", count: 4 })]);
+  });
+
+  it("stops storing sign-in failures past the report limit", async () => {
+    const { env, call } = await setup();
+    let left = 2;
+    (env as unknown as { RL_ERRORS: unknown }).RL_ERRORS = { limit: async () => ({ success: left-- > 0 }) };
+    for (let i = 0; i < 5; i++) expect((await call("/auth/callback?error=x")).location).toBe(`${ORIGIN}/?signin=failed&why=denied`);
+    (env as unknown as { RL_ERRORS: unknown }).RL_ERRORS = undefined;
+    const groups = (await call("/api/admin/problems", { session: "admin" })).body.groups as { count: number }[];
+    expect(groups.map((g) => g.count)).toEqual([2]);
+  });
+
+  it("folds new problems into one past the open limit, and prunes old open ones", async () => {
+    const { env, call } = await setup();
+    const t = Math.floor(Date.now() / 1000);
+    for (let i = 0; i < 500; i++) {
+      await env.DB.prepare("INSERT INTO problem_groups (id, kind, title, status, first_t, last_t, count) VALUES (?, 'page', 'x', 'open', ?, ?, 1)").bind(`g${i}`, t, t).run();
+    }
+    await env.DB.prepare("INSERT INTO problem_groups (id, kind, title, status, first_t, last_t, count) VALUES ('stale', 'page', 'old', 'open', 1, 1, 1)").run();
+    for (const message of ["first new one", "second new one"]) {
+      await call("/api/errors", { method: "POST", session: "billy", body: { kind: "crash", message } });
+    }
+    const n = async (sql: string) => ((await env.DB.prepare(sql).first()) as { n: number }).n;
+    expect(await n("SELECT COUNT(*) AS n FROM problem_groups WHERE id = 'stale'")).toBe(0);
+    const over = (await env.DB.prepare("SELECT title, count FROM problem_groups WHERE title LIKE 'Too many%'").all()).results as { title: string; count: number }[];
+    expect(over).toEqual([{ title: "Too many different page problems. Newest: crash: second new one", count: 2 }]);
+  });
+
+  it("answers 400, not 500, to a mangled address or cookie", async () => {
+    const { call } = await setup();
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect((await call("/api/public/%E0")).status).toBe(400);
+    expect((await call("/api/me", { headers: { cookie: "x=%E0; jf_session=tok-billy" } })).status).toBe(200);
+    expect(err).not.toHaveBeenCalled();
+  });
 });

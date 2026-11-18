@@ -68,4 +68,4 @@ Place fields, plus `text` (up to 500 characters), `subzone` and `instance` (name
 
 ## Privacy
 
-The addon never stores other players' character names, chat or the combat log. The one exception is `friends`: the BattleTags of the player's own Battle.net friends, so the website can highlight friends' public characters. The website hashes them in the browser before upload; the tags never leave the player's computer. `char` is the player's own character; boss, rare and item names are game data.
+The addon never stores other players' character names, chat or the combat log. The one exception is `friends`: the BattleTags of the player's own Battle.net friends, so the website can highlight friends' public characters. The website hashes them on the player's computer and sends only the hashes, keys them again with a server secret before storing them, matches only friends who list each other, and drops hashes that match nobody 60 days after the player's last upload. `char` is the player's own character; boss, rare and item names are game data.

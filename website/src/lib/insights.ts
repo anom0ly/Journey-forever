@@ -238,7 +238,7 @@ export function moments(j: Journey): Moment[] {
       title: `${i === 0 ? "First dungeon: " : "Dungeon: "}${r.name}`,
       where: [mins, group].filter(Boolean).join(", ") || undefined,
       kind: "dungeon",
-      tag: r.cleared === undefined ? undefined : r.cleared ? { text: "Cleared", tone: "teal" } : { text: "Left early", tone: "grey" },
+      tag: r.cleared === undefined || r.guessed ? undefined : r.cleared ? { text: "Cleared", tone: "teal" } : { text: "Left early", tone: "grey" },
     });
   });
   for (const e of j.events) {

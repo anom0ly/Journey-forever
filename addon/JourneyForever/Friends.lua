@@ -6,8 +6,10 @@ local _, ns = ...
 --
 --   JourneyForeverDB.friends = { t = time(), tags = { "Name#1234", ... } }
 --
--- The upload page hashes each tag in the browser before sending, so the
--- tags themselves never leave the player's computer.
+-- The upload page (or the uploader) hashes each tag on the player's computer
+-- and sends only the hashes; the website keys them again with a secret
+-- before storing them, matches only friends who list each other, and drops
+-- hashes that match nobody 60 days after the player's last upload.
 
 local Call, Str, Num = ns.Call, ns.Str, ns.Num
 local MAX = 500

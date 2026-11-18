@@ -3,11 +3,12 @@
 // localhost, /auth/login signs in a local "Dev" account instead, so the site
 // can be tried before a Battle.net client exists.
 
-import { hashTag } from "../lib/friendTags";
+import { ownTagHash } from "./friends";
 import type { Env, User } from "./env";
 import { cookie, HttpError, isLocal, json, now, parseCookies, randomToken, sha256 } from "./http";
 import { redact } from "../lib/errorReport";
 import { browserOf, groupKey, type SigninReason } from "../lib/problems";
+import { checkReportRate } from "./limits";
 import { recordProblem } from "./problems";
 import { bearerKey, keyUser } from "./uploader";
 
@@ -71,12 +72,12 @@ async function startSession(env: Env, url: URL, userId: string, to: string): Pro
 async function upsertUser(env: Env, bnetId: string, battletag: string | null): Promise<string> {
   const existing = await env.DB.prepare("SELECT id FROM users WHERE bnet_id = ?").bind(bnetId).first<{ id: string }>();
   if (existing) {
-    await env.DB.prepare("UPDATE users SET battletag = ?, tag_hash = ? WHERE id = ?").bind(battletag, battletag ? await hashTag(battletag) : null, existing.id).run();
+    await env.DB.prepare("UPDATE users SET battletag = ?, tag_key = ? WHERE id = ?").bind(battletag, await ownTagHash(env, battletag), existing.id).run();
     return existing.id;
   }
   const id = crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO users (id, bnet_id, battletag, tag_hash, created_at) VALUES (?, ?, ?, ?, ?)")
-    .bind(id, bnetId, battletag, battletag ? await hashTag(battletag) : null, now())
+  await env.DB.prepare("INSERT INTO users (id, bnet_id, battletag, tag_key, created_at) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, bnetId, battletag, await ownTagHash(env, battletag), now())
     .run();
   return id;
 }
@@ -158,10 +159,20 @@ export async function handleAuth(req: Request, env: Env, url: URL): Promise<Resp
 // A sign-in that didn't finish: kept for the Problems page (it can't be
 // tied to an account, so the callback address and browser say whose), and
 // the home page told why, so it can say what to do.
+// Anyone can open the callback address, so failures share the error-report
+// limit (past it they're not stored), and a cancel keeps the ?error= text out
+// of the title: otherwise every made-up value would add a problem of its own.
 async function signinFailed(req: Request, env: Env, url: URL, why: SigninReason, extra: Record<string, unknown>): Promise<Response> {
+  const back = Response.redirect(`${url.origin}/?signin=failed&why=${why}`, 302);
+  try {
+    await checkReportRate(env, req, null);
+  } catch {
+    return back;
+  }
   const detail: Record<string, unknown> = { why, callback: redirectUri(env, url), browser: browserOf(req.headers.get("user-agent")) };
   for (const [k, v] of Object.entries(extra)) if (v !== undefined) detail[k] = typeof v === "string" ? redact(v) : v;
-  const message = `${SIGNIN_TEXT[why]}${extra.status ? ` (${extra.status}${extra.bnet ? ` ${extra.bnet}` : ""})` : extra.bnet ? ` (${extra.bnet})` : ""}`;
+  const bnet = why === "denied" ? undefined : extra.bnet;
+  const message = `${SIGNIN_TEXT[why]}${extra.status ? ` (${extra.status}${bnet ? ` ${bnet}` : ""})` : bnet ? ` (${bnet})` : ""}`;
   const status = await recordProblem(env, {
     kind: "signin",
     key: groupKey("signin", `${why} ${url.host}`, message),
@@ -170,7 +181,7 @@ async function signinFailed(req: Request, env: Env, url: URL, why: SigninReason,
     detail,
   });
   if (why !== "denied" && why !== "expired" && status !== "hidden") console.error(new Error(`Sign-in failed: ${message}`), JSON.stringify(detail));
-  return Response.redirect(`${url.origin}/?signin=failed&why=${why}`, 302);
+  return back;
 }
 
 const SIGNIN_TEXT: Record<SigninReason, string> = {

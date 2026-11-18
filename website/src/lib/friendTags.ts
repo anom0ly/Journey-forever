@@ -1,5 +1,7 @@
 // The parts of Battle.net friends that both the browser and the Worker
 // use: hashing a BattleTag, and what a hash and a tag look like. See friends.ts.
+// This hash is only for sending: anyone can work it out from a tag, so the
+// Worker keys it again with a secret before storing it (worker/friends.ts).
 
 export type FriendSource = "jf" | "rts";
 
