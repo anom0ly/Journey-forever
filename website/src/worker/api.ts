@@ -8,10 +8,11 @@ import { searchPattern } from "../lib/search";
 import type { CharacterSummary } from "../lib/journey";
 import { clearSessionCookie, currentUser, requireUser } from "./auth";
 import { forgetFriends, friendsOf, saveFriends, setFriendsVisible } from "./friends";
-import { board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, ranksOf, refreshFlag, report, reportedBy, recalcList, recalcSave, reviewAction, reviewList, saveBoards } from "./boards";
+import { applyModeration, board, boardsMeta, ignoreReporter, isAdmin, myReport, publicRanks, ranksOf, refreshFlag, report, reportedBy, recalcList, recalcSave, reviewAction, reviewList, saveBoards } from "./boards";
 import type { Env, User } from "./env";
 import { summaryProblem } from "../lib/checks";
 import { dismissNotice, listProblems, problemAction } from "./problems";
+import { checkImage, checkJourneyGzip } from "./files";
 import { HttpError, json, now, readBody, sha256 } from "./http";
 import { claimKey, handleUploader, handleUploaderHealth, uploaderDownload } from "./uploader";
 
@@ -79,22 +80,17 @@ export async function shotPublicId(userId: string, id: string): Promise<string> 
   return (await sha256(`${userId}:${id}`)).slice(0, 32);
 }
 
-// Bytes an account keeps: journeys and screenshots (thumbnails are small and
-// capped per screenshot).
-async function accountBytes(env: Env, userId: string): Promise<number> {
-  const r = await env.DB.prepare(
-    `SELECT (SELECT COALESCE(SUM(journey_size), 0) FROM characters WHERE user_id = ?1)
-          + (SELECT COALESCE(SUM(size), 0) FROM screenshots WHERE user_id = ?1) AS bytes`,
-  )
-    .bind(userId)
-    .first<{ bytes: number }>();
-  return r?.bytes ?? 0;
-}
+// Bytes an account keeps: journeys, screenshots and their thumbnails. SQL,
+// with the account as ?1, so each limit is checked inside the write that
+// would pass it: D1 runs one write at a time, so two uploads sent at once
+// can't both squeeze in.
+const ACCOUNT_BYTES = `((SELECT COALESCE(SUM(journey_size), 0) FROM characters WHERE user_id = ?1)
+  + (SELECT COALESCE(SUM(size), 0) + COALESCE(SUM(thumb_size), 0) FROM screenshots WHERE user_id = ?1))`;
 
-function checkRoom(used: number, replacing: number, adding: number): void {
-  if (used - replacing + adding > MAX_ACCOUNT_BYTES) {
-    throw new HttpError(413, `Your account is full (${Math.round(MAX_ACCOUNT_BYTES / 1e9)} GB). Delete some screenshots or characters first.`);
-  }
+const FULL = `Your account is full (${Math.round(MAX_ACCOUNT_BYTES / 1e9)} GB). Delete some screenshots or characters first.`;
+
+function changed(r: D1Result): boolean {
+  return (r.meta?.changes ?? 0) > 0;
 }
 
 async function journeyObject(userId: string, key: string): Promise<string> {
@@ -366,21 +362,21 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
       if (m === "PUT") {
         // The summary, sent before the journey itself (which needs the row).
         const summary = checkSummary(new TextDecoder().decode(await readBody(req, SUMMARY_LIMIT)), key);
-        const exists = await env.DB.prepare("SELECT 1 FROM characters WHERE user_id = ? AND key = ?").bind(user.id, key).first();
-        if (!exists) {
-          const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM characters WHERE user_id = ?").bind(user.id).first<{ n: number }>();
-          if ((n?.n ?? 0) >= MAX_CHARACTERS) throw new HttpError(413, `You can keep up to ${MAX_CHARACTERS} characters. Delete one first.`);
-        }
         const head = await env.FILES.head(await journeyObject(user.id, key));
         const t = now();
-        await env.DB.batch([
-          env.DB.prepare(
-            `INSERT INTO characters (user_id, key, name, realm, summary, journey_size, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT (user_id, key) DO UPDATE SET name = excluded.name, realm = excluded.realm,
-               summary = excluded.summary, journey_size = excluded.journey_size, updated_at = excluded.updated_at`,
-          ).bind(user.id, key, summary.name, summary.realm, JSON.stringify(summary), head?.size ?? null, t),
-          env.DB.prepare("UPDATE users SET last_upload_at = ? WHERE id = ?").bind(t, user.id),
-        ]);
+        // A new character only while the account has room for one.
+        const saved = await env.DB.prepare(
+          `INSERT INTO characters (user_id, key, name, realm, summary, journey_size, updated_at)
+           SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE (SELECT COUNT(*) FROM characters WHERE user_id = ?1 AND key <> ?2) < ?8
+           ON CONFLICT (user_id, key) DO UPDATE SET name = excluded.name, realm = excluded.realm,
+             summary = excluded.summary, journey_size = excluded.journey_size, updated_at = excluded.updated_at`,
+        )
+          .bind(user.id, key, summary.name, summary.realm, JSON.stringify(summary), head?.size ?? null, t, MAX_CHARACTERS)
+          .run();
+        if (!changed(saved)) throw new HttpError(413, `You can keep up to ${MAX_CHARACTERS} characters. Delete one first.`);
+        await env.DB.prepare("UPDATE users SET last_upload_at = ? WHERE id = ?").bind(t, user.id).run();
+        // Hidden by the reviewer before (even if deleted since): hidden again.
+        await applyModeration(env, user.id, key, summary.name, summary.realm);
         return json(characterOut(await ownCharacter(env, user, key)));
       }
       if (m === "PATCH") {
@@ -435,11 +431,22 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         }
         const row = await ownCharacter(env, user, key);
         const body = await readBody(req, JOURNEY_LIMIT);
-        checkRoom(await accountBytes(env, user.id), row.journey_size ?? 0, body.byteLength);
-        await env.FILES.put(await journeyObject(user.id, key), body, {
-          httpMetadata: { contentType: "application/json", contentEncoding: "gzip" },
-        });
-        await env.DB.prepare("UPDATE characters SET journey_size = ? WHERE user_id = ? AND key = ?").bind(body.byteLength, user.id, key).run();
+        await checkJourneyGzip(body);
+        // The new size is written (if it fits) before the file, and put back if storing fails.
+        const fits = await env.DB.prepare(
+          `UPDATE characters SET journey_size = ?3 WHERE user_id = ?1 AND key = ?2 AND ${ACCOUNT_BYTES} - COALESCE(journey_size, 0) + ?3 <= ?4`,
+        )
+          .bind(user.id, key, body.byteLength, MAX_ACCOUNT_BYTES)
+          .run();
+        if (!changed(fits)) throw new HttpError(413, FULL);
+        try {
+          await env.FILES.put(await journeyObject(user.id, key), body, {
+            httpMetadata: { contentType: "application/json", contentEncoding: "gzip" },
+          });
+        } catch (err) {
+          await env.DB.prepare("UPDATE characters SET journey_size = ? WHERE user_id = ? AND key = ?").bind(row.journey_size, user.id, key).run();
+          throw err;
+        }
         return json({ ok: true, size: body.byteLength });
       }
     }
@@ -461,34 +468,58 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         if (typeof meta.t !== "number" || typeof meta.kind !== "string") throw new HttpError(400, "x-shot needs t and kind");
         await ownCharacter(env, user, key);
         const body = await readBody(req, IMAGE_LIMIT);
-        const old = await env.DB.prepare("SELECT size FROM screenshots WHERE user_id = ? AND id = ?").bind(user.id, id).first<{ size: number | null }>();
-        if (!old) {
-          const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM screenshots WHERE user_id = ?").bind(user.id).first<{ n: number }>();
-          if ((n?.n ?? 0) >= MAX_SCREENSHOTS) throw new HttpError(413, `You can keep up to ${MAX_SCREENSHOTS} screenshots. Delete some first.`);
-        }
-        checkRoom(await accountBytes(env, user.id), old?.size ?? 0, body.byteLength);
-        await env.FILES.put(shotObject(user.id, id, false), body, { httpMetadata: { contentType: type } });
+        const stored = checkImage(body);
+        const old = await env.DB.prepare("SELECT 1 FROM screenshots WHERE user_id = ? AND id = ?").bind(user.id, id).first();
         const text = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : null);
         const int = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : null);
-        await env.DB.prepare(
+        // The row (if the account has room) before the file; a new row is
+        // taken out again if storing the file fails.
+        const saved = await env.DB.prepare(
           `INSERT INTO screenshots (user_id, id, char_key, t, kind, label, file, width, height, size, content_type, created_at, pid)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13
+           WHERE (SELECT COUNT(*) FROM screenshots WHERE user_id = ?1 AND id <> ?2) < ?14
+             AND ${ACCOUNT_BYTES} - COALESCE((SELECT size FROM screenshots WHERE user_id = ?1 AND id = ?2), 0) + ?10 <= ?15
            ON CONFLICT (user_id, id) DO UPDATE SET char_key = excluded.char_key, t = excluded.t, kind = excluded.kind, label = excluded.label,
              size = excluded.size, content_type = excluded.content_type, pid = excluded.pid`,
         )
           .bind(user.id, id, key, Math.round(meta.t), meta.kind.slice(0, 24), text(meta.label, 200), text(meta.file, 120),
-            int(meta.width), int(meta.height), body.byteLength, type, now(), await shotPublicId(user.id, id))
+            int(meta.width), int(meta.height), body.byteLength, stored, now(), await shotPublicId(user.id, id), MAX_SCREENSHOTS, MAX_ACCOUNT_BYTES)
           .run();
+        if (!changed(saved)) {
+          const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM screenshots WHERE user_id = ?").bind(user.id).first<{ n: number }>();
+          if (!old && (n?.n ?? 0) >= MAX_SCREENSHOTS) throw new HttpError(413, `You can keep up to ${MAX_SCREENSHOTS} screenshots. Delete some first.`);
+          throw new HttpError(413, FULL);
+        }
+        try {
+          await env.FILES.put(shotObject(user.id, id, false), body, { httpMetadata: { contentType: stored } });
+        } catch (err) {
+          if (!old) await env.DB.prepare("DELETE FROM screenshots WHERE user_id = ? AND id = ?").bind(user.id, id).run();
+          throw err;
+        }
         return json({ ok: true });
       }
       if (parts.length === 5 && parts[4] === "thumb" && m === "PUT") {
         const type = req.headers.get("content-type") ?? "";
         if (!IMAGE_TYPES.has(type)) throw new HttpError(415, "Thumbnails must be JPEG, PNG or WebP");
         // Only for a screenshot that's already stored (sent just before it).
-        const shot = await env.DB.prepare("SELECT 1 FROM screenshots WHERE user_id = ? AND id = ? AND char_key = ?").bind(user.id, id, key).first();
+        const shot = await env.DB.prepare("SELECT thumb_size FROM screenshots WHERE user_id = ? AND id = ? AND char_key = ?")
+          .bind(user.id, id, key)
+          .first<{ thumb_size: number | null }>();
         if (!shot) throw new HttpError(404, "Send the screenshot before its thumbnail");
         const body = await readBody(req, THUMB_LIMIT);
-        await env.FILES.put(shotObject(user.id, id, true), body, { httpMetadata: { contentType: type } });
+        const stored = checkImage(body);
+        const fits = await env.DB.prepare(
+          `UPDATE screenshots SET thumb_size = ?3 WHERE user_id = ?1 AND id = ?2 AND ${ACCOUNT_BYTES} - COALESCE(thumb_size, 0) + ?3 <= ?4`,
+        )
+          .bind(user.id, id, body.byteLength, MAX_ACCOUNT_BYTES)
+          .run();
+        if (!changed(fits)) throw new HttpError(413, FULL);
+        try {
+          await env.FILES.put(shotObject(user.id, id, true), body, { httpMetadata: { contentType: stored } });
+        } catch (err) {
+          await env.DB.prepare("UPDATE screenshots SET thumb_size = ? WHERE user_id = ? AND id = ?").bind(shot.thumb_size, user.id, id).run();
+          throw err;
+        }
         return json({ ok: true });
       }
       if (parts.length === 4 && m === "DELETE") {
