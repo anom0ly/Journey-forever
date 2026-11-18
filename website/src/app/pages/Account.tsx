@@ -146,10 +146,10 @@ function FriendsSection() {
         <p class="small muted">
           {info.updatedAt
             ? "None of your friends have a public character here yet."
-            : "Upload with Journey Forever 1.1 or later (or Road to Sixty's friend sync) and your Battle.net friends' public characters are highlighted on the leaderboards and in Compare."}
+            : "Upload with Journey Forever 1.1 or later (or Road to Sixty's friend sync) and your Battle.net friends' public characters are highlighted on the leaderboards and in Compare, once they've uploaded a list with you on it too."}
         </p>
       )}
-      {info.notOnSite > 0 && <p class="small muted">{plural(info.notOnSite, "more friend doesn't", "more friends don't")} use the site yet, or have no public characters.</p>}
+      {info.notOnSite > 0 && <p class="small muted">{plural(info.notOnSite, "more friend doesn't", "more friends don't")} use the site yet, haven't uploaded a list with you on it, or have no public characters.</p>}
       {error && <div class="notice err">{error}</div>}
       <div class="row between" style={{ borderTop: "1px solid var(--line)", paddingTop: "14px" }}>
         <label class="row" style={{ gap: "10px", cursor: "pointer" }}>
@@ -169,8 +169,10 @@ function FriendsSection() {
         )}
       </div>
       <p class="tiny muted">
-        Friends are matched by scrambled BattleTags; we never see or show the tags themselves. Turning the switch off takes your public
-        characters out of your friends' highlights without making them private. Forget removes your list until your next upload.
+        A friend shows up only when you're on each other's lists. Your browser sends scrambled copies of the BattleTags, never the tags
+        themselves, and the site scrambles them again with a secret key before storing them. Tags that don't match anyone here are deleted
+        60 days after your last upload. Turning the switch off takes your public characters out of your friends' highlights without making
+        them private. Forget removes your list until your next upload.
       </p>
     </section>
   );
