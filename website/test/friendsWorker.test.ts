@@ -87,17 +87,12 @@ describe("friends on the server", () => {
     expect(await keyHash({ FRIENDS_KEY: "other" } as Env, plain)).not.toBe(own.tag_hash);
   });
 
-  it("keys lists stored before the key, so highlights carry on", async () => {
-    const { db, call } = await setup();
-    // As the old code leaves them: plain hashes in friend_tags and users.tag_hash.
-    for (const [u, f] of [["ann", "bob"], ["bob", "ann"], ["ann", "zed"]]) {
-      db.prepare("INSERT INTO friend_tags (user_id, source, tag_hash) VALUES (?, 'jf', ?)").run(u, await hashTag(tag(f)));
-    }
-    db.prepare("UPDATE users SET tag_hash = 'plain'").run();
-    expect(names(await call("/api/friends", "ann"))).toEqual(["bob"]);
-    expect((db.prepare("SELECT COUNT(*) AS n FROM friend_tags").get() as { n: number }).n).toBe(0);
-    expect((db.prepare("SELECT COUNT(*) AS n FROM users WHERE tag_hash IS NOT NULL").get() as { n: number }).n).toBe(0);
-    expect((db.prepare("SELECT COUNT(*) AS n FROM friend_keys").get() as { n: number }).n).toBe(3);
+  it("leaves no plain-hash table or column behind", async () => {
+    const { db } = await setup();
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r: any) => r.name);
+    expect(tables).not.toContain("friend_tags");
+    const cols = db.prepare("PRAGMA table_info(users)").all().map((r: any) => r.name);
+    expect(cols).not.toContain("tag_hash");
   });
 
   it("drops hashes matching nobody 60 days after the owner's last upload", async () => {

@@ -333,7 +333,6 @@ export async function handleApi(req: Request, env: Env, url: URL): Promise<Respo
         env.DB.prepare("DELETE FROM flags WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM ignored_reporters WHERE reporter_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM friend_keys WHERE user_id = ?").bind(user.id),
-        env.DB.prepare("DELETE FROM friend_tags WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM upload_errors WHERE key_id IN (SELECT id FROM upload_keys WHERE user_id = ?)").bind(user.id),
         env.DB.prepare("DELETE FROM upload_keys WHERE user_id = ?").bind(user.id),
         env.DB.prepare("DELETE FROM upload_codes WHERE user_id = ?").bind(user.id),
