@@ -7,9 +7,10 @@
 
 import type { Uploader } from "./app";
 import { statusPage, messagePage } from "./page";
+import { APP_NAME, pingProof } from "./instance";
 import { trayState, type WindowControl } from "./window";
 
-export const APP_NAME = "journey-forever-uploader";
+export { APP_NAME };
 
 export interface ServerHooks {
   uploader: Uploader;
@@ -35,7 +36,11 @@ export function handler(h: ServerHooks, port: () => number) {
     const html = (body: string, status = 200) =>
       new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY" } });
 
-    if (url.pathname === "/ping") return Response.json({ app: APP_NAME, version: h.uploader.status().version });
+    if (url.pathname === "/ping") {
+      const challenge = url.searchParams.get("c");
+      const proof = challenge && /^[0-9a-f]{32,128}$/.test(challenge) ? await pingProof(h.instanceToken, challenge, port()) : undefined;
+      return Response.json({ app: APP_NAME, version: h.uploader.status().version, ...(proof ? { proof } : {}) });
+    }
     if (url.pathname === "/" && req.method === "GET") {
       if (url.searchParams.get("t") !== h.instanceToken) {
         return html(messagePage("Journey Forever uploader", "Double-click the uploader to open this page.", false), 403);
