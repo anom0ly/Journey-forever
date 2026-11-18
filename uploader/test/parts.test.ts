@@ -8,6 +8,7 @@ import { addonFiles, installAddon, isNewer, keepAddonCurrent, MAX_ZIP_BYTES, pic
 import { asciiJson } from "../src/client";
 import { decodeTga, MAX_TGA_SIDE, prepareImage, shrink } from "../src/images";
 import { esc, scriptJson, statusPage } from "../src/page";
+import { APP_NAME, findRunning, pingProof } from "../src/instance";
 import { handler, hostOk } from "../src/server";
 import { psQuote, toastXml } from "../src/windows";
 import { candidateRoots, foreverIn } from "../src/wow";
@@ -196,6 +197,10 @@ describe("the status page and notifications", () => {
     expect((await req("/?t=page")).status).toBe(403);
     expect((await req("/?t=inst")).status).toBe(200);
     expect(await (await req("/ping")).json()).toEqual({ app: "journey-forever-uploader", version: "1.0.0" });
+    // A challenge gets a proof only a holder of the instance token can make.
+    const c = "ab".repeat(16);
+    expect(await (await req(`/ping?c=${c}`)).json()).toEqual({ app: "journey-forever-uploader", version: "1.0.0", proof: await pingProof("inst", c, 47213) });
+    expect(await (await req("/ping?c=nothex")).json()).toEqual({ app: "journey-forever-uploader", version: "1.0.0" });
     expect((await req("/action", { method: "POST", body: JSON.stringify({ action: "sync" }) })).status).toBe(403);
     expect((await req("/action", { method: "POST", headers: { "x-token": "page" }, body: JSON.stringify({ action: "sync" }) })).status).toBe(200);
     expect((await req("/quit", { method: "POST", headers: { "x-token": "page" } })).ok).toBe(false);
@@ -250,5 +255,44 @@ describe("uploading while WoW is open", () => {
     expect(holdWhilePlaying(t, t - PLAYING_GAP_MS, true)).toBe(false);
     expect(holdWhilePlaying(t, t - 60_000, false)).toBe(false);
     expect(holdWhilePlaying(t, 0, true)).toBe(false); // first upload after starting
+  });
+});
+
+describe("finding the running copy", () => {
+  // Port -> what answers there: the real uploader (knows "inst"), an
+  // impostor that copies the app name, or nothing.
+  const fakeNet = (who: Record<number, "real" | "fake" | "old">) => async (url: string) => {
+    const u = new URL(url);
+    const port = Number(u.port), c = u.searchParams.get("c") ?? "";
+    const w = who[port];
+    if (!w) throw new Error("refused");
+    const body: Record<string, string> = { app: APP_NAME, version: "1.3.10" };
+    if (w === "real") body.proof = await pingProof("inst", c, port);
+    if (w === "fake") body.proof = await pingProof("guess", c, port);
+    return Response.json(body);
+  };
+
+  it("trusts only a copy that proves it knows the token", async () => {
+    expect(await findRunning("inst", fakeNet({ 47213: "real" }))).toEqual({ port: 47213, version: "1.3.10", proven: true });
+    expect(await findRunning("inst", fakeNet({ 47213: "fake" }))).toMatchObject({ port: 47213, proven: false });
+    // An older uploader can't answer the check: not trusted either.
+    expect(await findRunning("inst", fakeNet({ 47213: "old" }))).toMatchObject({ proven: false });
+    // No token file: nothing can be proven.
+    expect(await findRunning(undefined, fakeNet({ 47213: "real" }))).toMatchObject({ proven: false });
+    expect(await findRunning("inst", fakeNet({}))).toBeUndefined();
+  });
+
+  it("looks past something squatting on a lower port", async () => {
+    expect(await findRunning("inst", fakeNet({ 47213: "fake", 47215: "real" }))).toMatchObject({ port: 47215, proven: true });
+  });
+
+  it("binds the proof to the port, so it can't be relayed from another one", async () => {
+    const relay = async (url: string) => {
+      const u = new URL(url);
+      if (u.port !== "47213") throw new Error("refused");
+      // Asks the real copy on 47214 and passes its answer on.
+      return Response.json({ app: APP_NAME, version: "1.3.10", proof: await pingProof("inst", u.searchParams.get("c") ?? "", 47214) });
+    };
+    expect(await findRunning("inst", relay)).toMatchObject({ port: 47213, proven: false });
   });
 });

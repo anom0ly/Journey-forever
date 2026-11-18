@@ -50,7 +50,13 @@ and can disconnect it.
 - The status page is served on `127.0.0.1` (ports 47213–47222), answers only
   requests addressed to 127.0.0.1/localhost, opens only with the instance
   token from the user's own folder, and its buttons need a token printed in
-  the page.
+  the page. The copy serving it makes a fresh instance token each start.
+- Opening the uploader again while it runs: the new copy finds the running
+  one on those ports and checks it can answer a challenge with an HMAC of
+  the instance token (`src/instance.ts`) before sending the token to show the
+  window or quit it. Something else squatting on a port gets nothing; an
+  uploader older than 1.3.10 can't answer, so the new copy asks you to quit
+  it from the tray first.
 - The window and tray icon are `src/host.ps1`, run by Windows PowerShell 5.1
   with Microsoft's WebView2 control (the Edge engine built into Windows 10
   and 11; DLLs in `vendor/webview2` from NuGet `Microsoft.Web.WebView2`
