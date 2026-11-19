@@ -208,3 +208,33 @@ export function killsHeadToHead(a: KillStats, b: KillStats, level?: number): H2H
 export function killsByLevel(k: KillStats, max: number): number[] {
   return Array.from({ length: max }, (_, i) => k.byLevel[i] ?? 0);
 }
+
+// Played time spent leveling, from the per-level times the Levels tab shows
+// (/played at each ding). `seconds` runs from level 1 until the character
+// reached `level` (their own level, or `upTo` when lower); `into` is the
+// played time since on the level they haven't finished, when known.
+export interface LevelingTime {
+  level: number;
+  seconds: number;
+  missing: number; // finished levels with no recorded time
+  into?: number;
+}
+
+export function levelingTime(j: Journey, upTo?: number): LevelingTime {
+  const level = Math.min(upTo ?? j.character.level, j.character.level);
+  let seconds = 0, missing = 0;
+  for (const r of levelStats(j).rows) {
+    if (r.level >= level) break;
+    if (r.played !== undefined) seconds += r.played;
+    else missing++;
+  }
+  let into: number | undefined;
+  if (level === j.character.level) {
+    const total = played(j);
+    const at = j.levels.find((l) => l.level === level)?.played;
+    const reached = levelTimes(j).get(level);
+    if (total !== undefined && at !== undefined && total >= at) into = total - at;
+    else if (reached !== undefined) into = playedBetween(j.sessions, reached, Math.max(reached, ...j.sessions.map((s) => s.end)));
+  }
+  return { level, seconds, missing, into };
+}

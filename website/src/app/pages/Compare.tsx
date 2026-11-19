@@ -3,7 +3,7 @@
 // against each other. Numbers come from lib/compare.ts and lib/stats.ts.
 
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { cutAtLevel, deathsByLevel, headToHead, killsByLevel, killsHeadToHead, levelRace, routeByLevel, routeFacts, sharedLevel, winner, type H2HRow } from "../../lib/compare";
+import { cutAtLevel, deathsByLevel, headToHead, killsByLevel, killsHeadToHead, levelingTime, levelRace, routeByLevel, routeFacts, sharedLevel, winner, type H2HRow } from "../../lib/compare";
 import type { Journey } from "../../lib/journey";
 import { killStats, sharedPrey, typeShares } from "../../lib/kills";
 import { slugFromLink } from "../../lib/search";
@@ -678,8 +678,75 @@ function RouteTab({ ja, jb, names }: TabProps) {
   );
 }
 
-function LevelsTab({ ja, jb, names }: TabProps) {
+// Each one's played time from level 1 to the level they're on. At the same
+// level it says who got there sooner; at different levels it compares them
+// at the lower one instead of naming a winner.
+function LevelingTotal({ ja, jb, names, cut }: TabProps) {
+  const ta = levelingTime(ja), tb = levelingTime(jb);
+  if (!ta.seconds && !tb.seconds) return null;
+  const same = ta.level === tb.level;
+  const d = ta.seconds - tb.seconds;
+  const low = Math.min(ta.level, tb.level);
+  const fa = same ? ta : levelingTime(ja, low), fb = same ? tb : levelingTime(jb, low);
+  const fd = fa.seconds - fb.seconds;
+  const ahead = ta.level > tb.level ? names.a : names.b;
+  const sub = (t: typeof ta) =>
+    [`level 1 → ${t.level}`, !cut && t.into && t.into >= 60 ? `plus ${duration(t.into)} into ${t.level + 1}` : undefined, t.missing ? `${plural(t.missing, "level")} not recorded` : undefined]
+      .filter(Boolean)
+      .join(" · ");
+  const color = (diff: number) => (diff > 0 ? COLOR.b : COLOR.a);
+  return (
+    <section class="card lvl-total">
+      <div class="row between" style={{ alignItems: "baseline" }}>
+        <h2>{same ? `Time to level ${ta.level}` : "Time spent leveling"}</h2>
+        <span class="tiny muted">played time, all levels added up</span>
+      </div>
+      <div class="lvl-total-grid">
+        <div class="lvl-total-side">
+          <span class="lvl-total-big" style={{ color: COLOR.a }}>
+            {duration(ta.seconds)}
+          </span>
+          <span class="small muted">{sub(ta)}</span>
+        </div>
+        {same ? (
+          Math.abs(d) < 60 ? (
+            <span class="lvl-total-verdict muted">Dead even</span>
+          ) : (
+            <span class="lvl-total-verdict" style={{ color: color(d), borderColor: color(d) }}>
+              {d > 0 ? names.b : names.a} {duration(Math.abs(d))} sooner
+            </span>
+          )
+        ) : (
+          <span class="lvl-total-verdict muted">
+            {ahead} is {plural(Math.abs(ta.level - tb.level), "level")} ahead
+          </span>
+        )}
+        <div class="lvl-total-side right">
+          <span class="lvl-total-big" style={{ color: COLOR.b }}>
+            {duration(tb.seconds)}
+          </span>
+          <span class="small muted">{sub(tb)}</span>
+        </div>
+      </div>
+      <div class="lvl-total-split" aria-hidden="true">
+        <div style={{ flex: ta.seconds, background: COLOR.a }} />
+        <div style={{ flex: tb.seconds, background: COLOR.b }} />
+      </div>
+      {!same && fa.seconds > 0 && fb.seconds > 0 && (
+        <p class="lvl-total-fair small muted">
+          At the same level: {names.a} reached level {low} after <b style={{ color: COLOR.a }}>{duration(fa.seconds)}</b>, {names.b} after{" "}
+          <b style={{ color: COLOR.b }}>{duration(fb.seconds)}</b>
+          {Math.abs(fd) < 60 ? ", dead even so far." : <>, so <b style={{ color: color(fd) }}>{fd > 0 ? names.b : names.a}</b> is {duration(Math.abs(fd))} faster so far.</>}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function LevelsTab({ ja, jb, names, cut }: TabProps) {
   const la = levelStats(ja), lb = levelStats(jb);
+  const ta = levelingTime(ja), tb = levelingTime(jb);
+  const td = ta.level === tb.level ? ta.seconds - tb.seconds : undefined;
   const max = Math.max(ja.character.level, jb.character.level);
   const rows = [];
   for (let l = max; l >= 1; l--) {
@@ -703,6 +770,7 @@ function LevelsTab({ ja, jb, names }: TabProps) {
   const pct = (v?: number) => (v === undefined ? undefined : `${Math.round(v * 100)}%`);
   return (
     <>
+      <LevelingTotal ja={ja} jb={jb} names={names} cut={cut} />
       <section class="tiles three">
         <Duo label="Fastest level" a={la.fastest ? `${la.fastest.level} · ${duration(la.fastest.played)}` : undefined} b={lb.fastest ? `${lb.fastest.level} · ${duration(lb.fastest.played)}` : undefined} sub="played" />
         <Duo label="Average per level" a={la.average !== undefined ? duration(la.average) : undefined} b={lb.average !== undefined ? duration(lb.average) : undefined} sub="played" />
@@ -729,7 +797,27 @@ function LevelsTab({ ja, jb, names }: TabProps) {
                 <th>{names.b}'s zone</th>
               </tr>
             </thead>
-            <tbody>{rows}</tbody>
+            <tbody>
+              {(ta.seconds > 0 || tb.seconds > 0) && (
+                <tr class="total-row">
+                  <td>Total</td>
+                  <td class="num" style={{ color: COLOR.a }}>
+                    {duration(ta.seconds)}
+                    {td === undefined && <span class="muted"> · to {ta.level}</span>}
+                  </td>
+                  <td class="num" style={{ color: COLOR.b }}>
+                    {duration(tb.seconds)}
+                    {td === undefined && <span class="muted"> · to {tb.level}</span>}
+                  </td>
+                  <td class="num" style={{ color: td === undefined || Math.abs(td) < 60 ? undefined : td > 0 ? COLOR.b : COLOR.a }}>
+                    {td === undefined ? <span class="muted">different levels</span> : Math.abs(td) < 60 ? "even" : `${td > 0 ? names.b : names.a} by ${duration(Math.abs(td))}`}
+                  </td>
+                  <td />
+                  <td />
+                </tr>
+              )}
+              {rows}
+            </tbody>
           </table>
         </div>
       </section>
