@@ -321,6 +321,21 @@ label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; 
 .duo-vals > span { min-width: 0; overflow-wrap: anywhere; }
 .duo-vals > span:last-child { text-align: right; }
 .duo-vals.words { font-size: 16px; line-height: 1.3; }
+/* Compare › Levels: time spent leveling */
+.lvl-total-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 16px; align-items: center; }
+.lvl-total-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.lvl-total-side.right { text-align: right; align-items: flex-end; }
+.lvl-total-big { font-size: 36px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.lvl-total-verdict { border: 1px solid var(--line-2); border-radius: 999px; padding: 6px 14px; font-size: 14px; font-weight: 600; white-space: nowrap; text-align: center; }
+.lvl-total-split { display: flex; gap: 3px; height: 10px; border-radius: 6px; overflow: hidden; }
+.lvl-total-fair { margin: 0; border-top: 1px solid var(--line); padding-top: 12px; }
+table.data tr.total-row td { font-weight: 600; background: var(--surface-2); border-bottom: 2px solid var(--line-2); }
+table.data tr.total-row td .muted { font-weight: 400; }
+@media (max-width: 640px) {
+  .lvl-total-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .lvl-total-verdict { grid-column: 1 / -1; grid-row: 2; justify-self: center; white-space: normal; }
+  .lvl-total-big { font-size: 26px; }
+}
 @media (max-width: 640px) { .duo-vals { font-size: 20px; } }
 .lanes { display: flex; flex-direction: column; gap: 10px; overflow-x: auto; }
 .lane { display: grid; grid-template-columns: 110px minmax(520px, 1fr); gap: 12px; align-items: center; }
