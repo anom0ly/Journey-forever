@@ -364,7 +364,7 @@ export class Uploader {
       const r = await sync(client, saved, shots, {
         shots: this.settings.shots,
         manualShots: this.settings.manualShots,
-        known: new Set(st.known),
+        known: new Set([...st.known, ...(st.unreadable ?? [])]),
         idOf,
         prepare: async (f) => prepareImage(f.name, await f.read()),
         friendsHash: st.friendsHash,
@@ -374,15 +374,17 @@ export class Uploader {
       const names = new Set(shots.map((f) => f.name));
       for (const k of Object.keys(ids)) if (!names.has(k.split("|")[0])) delete ids[k];
       st.known = [...new Set([...st.known, ...r.shotIds])].slice(-20_000);
+      st.unreadable = [...new Set([...(st.unreadable ?? []), ...r.badShots.map((b) => b.id)])].slice(-1000);
       st.friendsHash = r.friendsHash;
       st.signature = sig;
       this.characters = [...new Set(saved.map((f) => f.path.split("/")).filter((p) => p[5] === "SavedVariables").map((p) => p[4]))];
       const msg = uploadMessage(r, this.store.config.site);
-      const notes = r.notes.map((n) => `${n.path.split("/").pop()}: ${n.message}`);
+      const notes = [...r.notes.map((n) => `${n.path.split("/").pop()}: ${n.message}`), ...r.badShots.map((b) => `${b.file}: ${b.message}`)];
       if (msg) st.lastUploadAt = Math.floor(Date.now() / 1000);
       this.store.log(msg?.log ?? "Checked, nothing new to upload");
       for (const n of notes) this.store.log(`Couldn't read ${n}`, false);
       for (const n of r.notes) this.report({ area: "read", file: n.path.split("/").pop(), message: n.message });
+      for (const b of r.badShots) this.report({ area: "read", file: b.file, message: b.message });
       // The newest few errors the Journey Forever addon caught in game.
       for (const e of [...r.addonErrors].sort((x, y) => y.t - x.t).slice(0, 4)) {
         this.report({ area: "addon", message: e.message, game: { at: e.t, times: e.count, version: e.version } });
