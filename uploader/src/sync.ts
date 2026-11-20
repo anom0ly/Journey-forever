@@ -66,6 +66,7 @@ export interface SyncResult {
   shots: number;
   shotIds: string[]; // uploaded now or found on the site already: for options.known next time
   notes: FileNote[]; // files that couldn't be read
+  badShots: { file: string; id: string; message: string }[]; // screenshots that couldn't be read, skipped
   addonErrors: AddonError[]; // errors our addon caught in game, for the site's Problems page
   skippedPreLaunch: number;
   friendsHash?: string;
@@ -121,6 +122,7 @@ export async function sync(client: Client, saved: InputFile[], shots: ShotSource
   // Screenshots: the ones logged by our addon (and, when switched on, the
   // ones taken by hand during a session) that weren't uploaded before.
   const shotIds: string[] = [];
+  const badShots: SyncResult["badShots"] = [];
   let uploaded = 0;
   if (o.shots && shots.length) {
     const files: Found[] = [];
@@ -154,7 +156,14 @@ export async function sync(client: Client, saved: InputFile[], shots: ShotSource
     let n = 0;
     for (const s of todo) {
       say(`Uploading screenshot ${++n} of ${todo.length}`);
-      const img = await o.prepare(s.file.file);
+      // One unreadable screenshot is skipped, not the end of the upload.
+      let img: PreparedImage;
+      try {
+        img = await o.prepare(s.file.file);
+      } catch (e) {
+        badShots.push({ file: s.file.name, id: s.file.id!, message: (e as Error).message || String(e) });
+        continue;
+      }
       await client.saveScreenshot(s.charKey, img, { t: s.t, kind: s.kind, label: s.label, file: s.file.name, width: img.width, height: img.height });
       shotIds.push(img.id);
       uploaded++;
@@ -177,6 +186,7 @@ export async function sync(client: Client, saved: InputFile[], shots: ShotSource
     shots: uploaded,
     shotIds,
     notes,
+    badShots,
     addonErrors,
     skippedPreLaunch: journeys.length - active.length,
     friendsHash,

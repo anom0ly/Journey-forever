@@ -6,7 +6,7 @@ import { join } from "node:path";
 import jpeg from "jpeg-js";
 import { addonFiles, installAddon, isNewer, keepAddonCurrent, MAX_ZIP_BYTES, pickRelease, RELEASE_BOT, tocVersion } from "../src/addon";
 import { asciiJson } from "../src/client";
-import { decodeTga, MAX_TGA_SIDE, prepareImage, shrink } from "../src/images";
+import { decodeTga, jpegSize, MAX_TGA_SIDE, prepareImage, shrink } from "../src/images";
 import { esc, scriptJson, statusPage } from "../src/page";
 import { APP_NAME, findRunning, pingProof } from "../src/instance";
 import { handler, hostOk } from "../src/server";
@@ -27,6 +27,22 @@ describe("screenshots", () => {
     expect([img.width, img.height]).toEqual([1920, 1080]);
     const thumb = jpeg.decode(img.thumb!);
     expect([thumb.width, thumb.height]).toEqual([480, 270]);
+  });
+
+  it("uploads a damaged JPEG as it is, without a thumbnail", async () => {
+    const data = new Uint8Array(640 * 360 * 4).map((_, i) => (i * 7) % 251);
+    const whole = new Uint8Array(jpeg.encode({ width: 640, height: 360, data }, 90).data);
+    // Cut short with its end marker put back: jpeg-js says "unexpected marker: ffd9".
+    const cut = new Uint8Array([...whole.slice(0, whole.length >> 1), 0xff, 0xd9]);
+    expect(() => jpeg.decode(cut)).toThrow(/unexpected marker: ffd9/);
+    const img = await prepareImage("WoWScrnShot_111926_195000.jpg", cut);
+    expect(img.image).toBe(cut);
+    expect(img.type).toBe("image/jpeg");
+    expect(img.thumb).toBeUndefined();
+    expect([img.width, img.height]).toEqual([640, 360]);
+    expect(jpegSize(whole)).toEqual({ width: 640, height: 360 });
+    // Not a JPEG at all: still an error, for the upload to skip it.
+    await expect(prepareImage("WoWScrnShot_111926_195001.jpg", new Uint8Array([1, 2, 3]))).rejects.toThrow();
   });
 
   it("turns an RLE TGA into JPEG", async () => {

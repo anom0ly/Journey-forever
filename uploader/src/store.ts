@@ -32,6 +32,7 @@ export interface State {
   signature?: string; // the saved files as last uploaded
   lastUploadAt?: number;
   known: string[]; // screenshot ids uploaded (or found on the site)
+  unreadable?: string[]; // screenshot ids that couldn't be read: not tried again unless the file changes
   ids: Record<string, string>; // "<name>|<size>|<mtime>" -> id, so files aren't hashed twice
   friendsHash?: string;
   addonCheckedAt?: number;

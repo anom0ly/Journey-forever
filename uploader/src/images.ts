@@ -115,6 +115,29 @@ function pngSize(b: Uint8Array): { width: number; height: number } | undefined {
   return { width: v.getUint32(16), height: v.getUint32(20) };
 }
 
+// Width and height from a JPEG's frame header (SOF), without decoding it.
+export function jpegSize(b: Uint8Array): { width: number; height: number } | undefined {
+  if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return undefined;
+  let p = 2;
+  while (p + 9 < b.length) {
+    if (b[p] !== 0xff) return undefined;
+    const m = b[p + 1];
+    if (m === 0xff) {
+      p++; // fill byte
+      continue;
+    }
+    const len = (b[p + 2] << 8) | b[p + 3];
+    // SOF0 to SOF15, except DHT (C4), JPG (C8) and DAC (CC).
+    if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+      const height = (b[p + 5] << 8) | b[p + 6], width = (b[p + 7] << 8) | b[p + 8];
+      return width && height ? { width, height } : undefined;
+    }
+    if (m === 0xda || m === 0xd9 || len < 2) return undefined; // picture data before any frame header
+    p += 2 + len;
+  }
+  return undefined;
+}
+
 export async function prepareImage(name: string, bytes: Uint8Array): Promise<PreparedImage> {
   const id = await shotId(bytes);
   if (/\.tga$/i.test(name)) {
@@ -124,6 +147,16 @@ export async function prepareImage(name: string, bytes: Uint8Array): Promise<Pre
   if (/\.png$/i.test(name)) {
     return { id, image: bytes, type: "image/png", ...pngSize(bytes) };
   }
-  const px = jpeg.decode(bytes, { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 1024 });
+  let px: Pixels;
+  try {
+    px = jpeg.decode(bytes, { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 1024 });
+  } catch (e) {
+    // A damaged JPEG (cut short, say) that browsers still show but jpeg-js
+    // won't decode: upload it as it is, with no thumbnail (the site shows the
+    // full image then). Not even a JPEG header: give up on this one.
+    const size = jpegSize(bytes);
+    if (!size) throw e;
+    return { id, image: bytes, type: "image/jpeg", ...size };
+  }
   return { id, image: bytes, type: "image/jpeg", thumb: toJpeg(shrink(px, 480), 80), width: px.width, height: px.height };
 }

@@ -127,6 +127,26 @@ describe("one upload", () => {
     expect(on.shots).toBe(new Set(logged).size + 1);
   });
 
+  it("skips a screenshot it can't read and uploads the rest", async () => {
+    const saved = await readSaved(await listSaved(FOREVER));
+    const { readUpload } = await import("../../website/src/lib/parse/upload");
+    const brannoc = readUpload(saved).journeys.find((j) => j.character.name === "Brannoc")!;
+    const logged = [...new Set(brannoc.events.filter((e) => e.k === "shot" && !e.failed && typeof e.shot === "string").map((e) => `${e.shot}.jpg`))];
+    expect(logged.length).toBeGreaterThan(1);
+    const shots = await shotFiles(logged);
+    const bad = shots[0];
+    shots[0] = { ...bad, read: async () => new Uint8Array([1, 2, 3]) };
+    const site = new FakeSite();
+    const r = await sync(site, saved, shots, options());
+    expect(r.shots).toBe(logged.length - 1);
+    expect(r.badShots.map((b) => b.file)).toEqual([bad.name]);
+    expect(r.badShots[0].id).toBe(await shotId(new Uint8Array([1, 2, 3])));
+    // Remembered as unreadable: left alone next time.
+    const again = await sync(site, saved, shots, options(new Set([...r.shotIds, r.badShots[0].id]), r.friendsHash));
+    expect(again.shots).toBe(0);
+    expect(again.badShots).toEqual([]);
+  });
+
   it("leaves screenshots alone when they're switched off", async () => {
     const saved = await readSaved(await listSaved(FOREVER));
     const site = new FakeSite();
@@ -139,7 +159,7 @@ describe("one upload", () => {
 describe("the notification", () => {
   it("names one character's levels, time and screenshots", () => {
     const m = uploadMessage(
-      { characters: [{ key: "Adom-Toretto", name: "Adom", fromLevel: 23, toLevel: 25, played: 8040, isNew: false, fillsGap: false }], shots: 4, shotIds: [], notes: [], addonErrors: [], skippedPreLaunch: 0 },
+      { characters: [{ key: "Adom-Toretto", name: "Adom", fromLevel: 23, toLevel: 25, played: 8040, isNew: false, fillsGap: false }], shots: 4, shotIds: [], notes: [], badShots: [], addonErrors: [], skippedPreLaunch: 0 },
       "https://site",
     )!;
     expect(m.title).toBe("Adom's journey is up to date");
