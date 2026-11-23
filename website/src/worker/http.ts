@@ -1,5 +1,6 @@
 export class HttpError extends Error {
-  constructor(readonly status: number, message: string) {
+  // detail goes in the log only, never in the answer to the browser.
+  constructor(readonly status: number, message: string, readonly detail?: string) {
     super(message);
   }
 }

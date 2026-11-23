@@ -9,7 +9,10 @@ import { mapInfo, type MapInfo } from "../lib/maps";
 const ready = new Map<number, HTMLCanvasElement>();
 const soft = new Map<number, HTMLCanvasElement>();
 const pending = new Set<number>();
-const failed = new Set<number>();
+// Maps whose art failed to load: when to try again, and how many tries so far.
+const failed = new Map<number, { retryAt: number; tries: number }>();
+export const RETRY_AFTER_MS = 20_000;
+export const MAX_TRIES = 3;
 
 // The art if it has loaded; otherwise starts loading it and calls onLoad
 // once it's there. With feathered, the art fades to clear at its edges.
@@ -20,16 +23,24 @@ export function mapArt(id: number, onLoad: () => void, feathered = false): HTMLC
     if (!f) soft.set(id, (f = feather(done)));
     return f;
   }
-  if (done || pending.has(id) || failed.has(id)) return done;
+  if (done || pending.has(id)) return done;
+  const miss = failed.get(id);
+  if (miss && (miss.tries >= MAX_TRIES || Date.now() < miss.retryAt)) return undefined;
   const art = mapInfo(id)?.art;
   if (!art) return undefined;
   pending.add(id);
   load(art)
     .then((canvas) => {
       ready.set(id, canvas);
+      failed.delete(id);
       onLoad();
     })
-    .catch(() => failed.add(id))
+    .catch(() => {
+      const tries = (miss?.tries ?? 0) + 1;
+      failed.set(id, { retryAt: Date.now() + RETRY_AFTER_MS, tries });
+      // Redraw then, so the map is asked for again even if nothing moves.
+      if (tries < MAX_TRIES) setTimeout(onLoad, RETRY_AFTER_MS + 50);
+    })
     .finally(() => pending.delete(id));
   return undefined;
 }
@@ -60,8 +71,13 @@ async function load(art: NonNullable<MapInfo["art"]>): Promise<HTMLCanvasElement
 }
 
 async function tile(file: number): Promise<ImageData> {
-  const res = await fetch(`/maps/${file}.blp`);
-  if (!res.ok) throw new Error(`Map tile ${file}: ${res.status}`);
+  // One quick retry for a tile the server couldn't get just then.
+  let res = await fetch(`/maps/${file}.blp`).catch(() => undefined);
+  if (!res?.ok && res?.status !== 404) {
+    await new Promise((r) => setTimeout(r, 1500));
+    res = await fetch(`/maps/${file}.blp`);
+  }
+  if (!res?.ok) throw new Error(`Map tile ${file}: ${res?.status}`);
   const px = decodeBlp(await res.arrayBuffer());
   return new ImageData(px.data, px.width, px.height);
 }

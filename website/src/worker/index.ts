@@ -4,7 +4,7 @@ import { isAdmin, reviewCount } from "./boards";
 import type { Env, User } from "./env";
 import { checkSameOrigin, HttpError, isLocal, json, withSecurityHeaders } from "./http";
 import { checkRate } from "./limits";
-import { handleMapTile } from "./maps";
+import { handleMapTile, refillMapTiles } from "./maps";
 import { handleErrorReport } from "./errors";
 import { noticesFor, openProblemCount } from "./problems";
 import { bearerKey, canUseUploader, keyAllows, keyUser, outdatedBlocked, uploaderSwitches } from "./uploader";
@@ -73,7 +73,8 @@ export default {
     } catch (err) {
       // Logged errors are what Workers Issues groups and alerts on: anything
       // unexpected, and our own 5xx answers (map art not reachable).
-      const where = JSON.stringify({ method: req.method, path: url.pathname.slice(0, 200), userId: seen.userId ?? undefined });
+      const detail = err instanceof HttpError ? err.detail : undefined;
+      const where = JSON.stringify({ method: req.method, path: url.pathname.slice(0, 200), userId: seen.userId ?? undefined, detail });
       if (err instanceof HttpError) {
         if (err.status >= 500) console.error(err, where);
         res = json({ error: err.message }, { status: err.status, headers: err.status === 429 ? { "retry-after": "10" } : {} });
@@ -84,6 +85,10 @@ export default {
     }
     // Pages and files from dist/ get theirs from public/_headers.
     return own ? withSecurityHeaders(res) : res;
+  },
+  // Weekly (wrangler.jsonc "triggers"): copy any map art R2 is missing.
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(refillMapTiles(env).then(() => undefined));
   },
 } satisfies ExportedHandler<Env>;
 
