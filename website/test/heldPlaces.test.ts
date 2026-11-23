@@ -196,3 +196,19 @@ describe("established reporters", () => {
     expect(est).toEqual({ "bob#1": false, "cat#1": true });
   });
 });
+
+describe("review badge", () => {
+  it("matches the Waiting list when an item's only check line has gone away", async () => {
+    const { to60, decide, call } = await setup();
+    await to60("ann", 6 * DAY);
+    await decide("ann", "approve");
+    await to60("ann", 7 * DAY, ["Level 46 took 17 minutes of played time."]);
+    expect((await call("/api/review?status=open", "boss")).body.items.length).toBe(1);
+    expect((await call("/api/me", "boss")).body.reviewCount).toBe(1);
+    // A new upload drops the line: the item stays open in the table but
+    // has nothing new, so the Waiting list skips it and so must the badge.
+    await to60("ann", 7 * DAY, []);
+    expect((await call("/api/review?status=open", "boss")).body.items.length).toBe(0);
+    expect((await call("/api/me", "boss")).body.reviewCount).toBe(0);
+  });
+});

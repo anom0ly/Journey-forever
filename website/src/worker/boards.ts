@@ -723,17 +723,34 @@ async function openForChecks(env: Env, userId: string, key: string, stored: stri
     .run();
 }
 
+// The nav badge. It counts exactly what the Waiting and Top places tabs
+// list: an open item only counts while it still has a report since it was
+// last cleared, or a check line nobody has seen. A check line can go away
+// after it opened the item (a new upload, or other players' times moving a
+// relative check), and the Waiting list then skips the item, so the badge
+// has to skip it too.
 export async function reviewCount(env: Env): Promise<number> {
   const places = await env.DB.prepare(
     `SELECT COUNT(DISTINCT h.user_id || ':' || h.char_key) AS n FROM board_held h JOIN characters c ON c.user_id = h.user_id AND c.key = h.char_key
      WHERE h.declined = 0 AND ${LISTED}`,
   ).first<{ n: number }>();
-  const r = await env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM flags f WHERE f.status = 'open' AND (f.checks_opened_at > COALESCE(f.cleared_at, 0) OR EXISTS (
-       SELECT 1 FROM reports r WHERE r.user_id = f.user_id AND r.char_key = f.char_key AND r.created_at > COALESCE(f.cleared_at, 0)
-         AND r.reporter_id NOT IN (SELECT reporter_id FROM ignored_reporters)))`,
-  ).first<{ n: number }>();
-  return (r?.n ?? 0) + (places?.n ?? 0);
+  const { results } = await env.DB.prepare(
+    `SELECT f.user_id, f.char_key, f.seen_checks, c.checks,
+       EXISTS (SELECT 1 FROM reports r WHERE r.user_id = f.user_id AND r.char_key = f.char_key AND r.created_at > COALESCE(f.cleared_at, 0)
+         AND r.reporter_id NOT IN (SELECT reporter_id FROM ignored_reporters)) AS reported
+     FROM flags f JOIN characters c ON c.user_id = f.user_id AND c.key = f.char_key
+     WHERE f.status = 'open' ORDER BY c.board_state DESC, f.updated_at DESC LIMIT 100`,
+  ).all<{ user_id: string; char_key: string; seen_checks: string | null; checks: string | null; reported: number }>();
+  let open = 0;
+  for (const f of results) {
+    if (f.reported || (await hasNewChecks(env, f))) open++;
+  }
+  return open + (places?.n ?? 0);
+}
+
+async function hasNewChecks(env: Env, f: { user_id: string; char_key: string; seen_checks: string | null; checks: string | null }): Promise<boolean> {
+  const checks = [...parseLines(f.checks), ...(await relativeChecks(env, f.user_id, f.char_key))];
+  return newCheckLines(checks, parseLines(f.seen_checks)).length > 0;
 }
 
 interface ReviewFlag {
