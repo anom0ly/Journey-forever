@@ -271,6 +271,23 @@ function Sessions({ j }: { j: Journey }) {
   );
 }
 
+function PlayIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M7 4l13 8-13 8z" />
+    </svg>
+  );
+}
+
+function SlidesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="6" y="3" width="15" height="12" rx="1.5" transform="rotate(6 13 9)" />
+      <rect x="3" y="8" width="15" height="12" rx="1.5" />
+    </svg>
+  );
+}
+
 interface GalleryItem {
   t: number;
   label: string;
@@ -278,7 +295,7 @@ interface GalleryItem {
   note?: JEvent;
 }
 
-function Gallery({ j, shots, title = "Screenshots and notes", notes = true }: { j: Journey; shots: Screenshot[]; title?: string; notes?: boolean }) {
+function Gallery({ j, shots, show, title = "Screenshots and notes", notes = true }: { j: Journey; shots: Screenshot[]; show: string; title?: string; notes?: boolean }) {
   const [open, setOpen] = useState<Screenshot>();
   const items: GalleryItem[] = [
     ...shots.map((s) => ({ t: s.t, label: s.label ?? "Screenshot", shot: s })),
@@ -290,10 +307,17 @@ function Gallery({ j, shots, title = "Screenshots and notes", notes = true }: { 
     <div class="card">
       <div class="row between" style={{ alignItems: "baseline" }}>
         <h2>{title}</h2>
-        <span class="tiny muted">
-          {plural(shots.length, "screenshot")}
-          {notes && ` · ${plural(items.length - shots.length, "note")}`}
-        </span>
+        <div class="row" style={{ gap: "12px" }}>
+          <span class="tiny muted">
+            {plural(shots.length, "screenshot")}
+            {notes && ` · ${plural(items.length - shots.length, "note")}`}
+          </span>
+          {shots.length > 0 && (
+            <a class="btn primary small-btn" href={show}>
+              <PlayIcon /> Play slideshow
+            </a>
+          )}
+        </div>
       </div>
       {items.length ? (
         <div class="shots">
@@ -329,9 +353,14 @@ function Gallery({ j, shots, title = "Screenshots and notes", notes = true }: { 
           <img src={open.url} alt={open.label ?? "Screenshot"} />
           <span>{open.label}</span>
           <span class="small muted">{[dateTime(open.t), zoneAt(j, open.t)].filter(Boolean).join(" · ")}</span>
-          <button type="button" class="btn" onClick={() => setOpen(undefined)}>
-            Close
-          </button>
+          <div class="row" style={{ justifyContent: "center" }}>
+            <a class="btn" href={`${show}${show.includes("?") ? "&" : "?"}from=${encodeURIComponent(open.id)}`} onClick={(e) => e.stopPropagation()}>
+              <PlayIcon /> Play from here
+            </a>
+            <button type="button" class="btn" onClick={() => setOpen(undefined)}>
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -439,6 +468,12 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
               Report
             </button>
           )}
+          {shots.length > 0 && (
+            <a class="btn" href={`${base}/slideshow`}>
+              <SlidesIcon />
+              Slideshow
+            </a>
+          )}
           <a class="btn primary" href={`${base}/replay`}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M7 4l13 8-13 8z" />
@@ -470,7 +505,7 @@ export function JourneyView({ j, stored, shots, base, onStored, tab = "" }: { j:
       <TabNav base={base} tab={tab} at60={c.level >= 60} />
 
       {tab === "at60" ? (
-        <SixtyTab j={j} gallery={<Gallery j={j} shots={shots.filter((x) => x.t >= (reachedCap(j) ?? Infinity))} title="Screenshots at 60" notes={false} />} />
+        <SixtyTab j={j} gallery={<Gallery j={j} shots={shots.filter((x) => x.t >= (reachedCap(j) ?? Infinity))} show={`${base}/slideshow?at60=1`} title="Screenshots at 60" notes={false} />} />
       ) : tab === "deaths" ? (
         <DeathsTab j={j} map={<a href={`${base}/replay`} style={{ textDecoration: "none", color: "var(--text)" }}><RouteThumb j={j} layers={DEATH_LAYERS} caption={false} /></a>} />
       ) : tab === "kills" ? (
@@ -520,7 +555,7 @@ function Overview({ j, shots, base }: { j: Journey; shots: Screenshot[]; base: s
         <Deaths j={j} />
       </section>
 
-      <Gallery j={j} shots={shots} />
+      <Gallery j={j} shots={shots} show={`${base}/slideshow`} />
 
       <section class="split">
         <div class="wide" style={{ display: "flex", flexDirection: "column" }}>

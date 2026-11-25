@@ -17,6 +17,7 @@ import { PICK_ADVICE, pickProblem, pickSummary } from "../../lib/pick";
 import type { AddonError } from "../../lib/parse/types";
 import { navigate } from "../router";
 import { UploaderNudge, UploaderPromo } from "./GetUploader";
+import { KIND_TAG } from "../kinds";
 
 const ADDON_NAMES: Record<string, string> = { rts: "Road to Sixty", jt: "Journey Tracker", jf: "Journey Forever" };
 const MISSING_MEANS: Record<string, string> = {
@@ -26,19 +27,6 @@ const MISSING_MEANS: Record<string, string> = {
 };
 // Addons whose file can be left out without the upload counting as incomplete.
 const OPTIONAL = new Set(["jt"]);
-const KIND_TAG: Record<string, { tag: string; cls: string }> = {
-  dungeon: { tag: "Dungeon", cls: "teal" },
-  epic: { tag: "Epic loot", cls: "lilac" },
-  blue: { tag: "Rare loot", cls: "lilac" },
-  level: { tag: "Level up", cls: "gold" },
-  halfway: { tag: "Halfway", cls: "gold" },
-  death: { tag: "Death", cls: "red" },
-  boss: { tag: "Boss", cls: "teal" },
-  rare: { tag: "Rare", cls: "gold" },
-  zone: { tag: "New zone", cls: "teal" },
-  manual: { tag: "By hand", cls: "" },
-};
-
 export function sourcesLine(sources: SourceInfo[]): { text: string; ok: boolean } {
   const parts: string[] = [];
   let ok = true;
